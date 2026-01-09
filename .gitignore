@@ -1,0 +1,90 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native - iOS
+**/Pods/
+**/build/
+**/*.xcworkspace
+!**/*.xcworkspace/contents.xcworkspacedata
+**/*.xcodeproj/*
+!**/*.xcodeproj/project.pbxproj
+!**/*.xcodeproj/xcshareddata/
+!**/*.xcodeproj/xcshareddata/**
+**/xcuserdata/
+**/*.xcuserstate
+**/DerivedData/
+**/*.hmap
+**/*.ipa
+**/.xcode.env.local
+
+# Native - Android
+**/android/build/
+**/android/app/build/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Generated files
+expo-env.d.ts
+**/expo-env.d.ts
+
+# Bundle artifacts
+*.jsbundle
+
+# SDK Framework binaries (uncomment if you want to exclude large binaries)
+# Framework/*.zip
+# **/*.framework/
+# **/*.a
+
+# Swift/Xcode
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# Supabase
+.supabase/
+

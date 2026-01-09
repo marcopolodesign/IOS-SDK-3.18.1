@@ -1,0 +1,255 @@
+
+/* Class = "UILabel"; text = "-"; ObjectID = "09I-lp-Nze"; */
+"09I-lp-Nze.text" = "-";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "0cf-Aj-Ywx"; */
+"0cf-Aj-Ywx.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "步数"; ObjectID = "0wy-he-Fst"; */
+"0wy-he-Fst.normalTitle" = "步数";
+
+/* Class = "UIButton"; normalTitle = "固件版本"; ObjectID = "2SR-zx-fYS"; */
+"2SR-zx-fYS.normalTitle" = "固件版本";
+
+/* Class = "UIButton"; normalTitle = "目标"; ObjectID = "2dl-fE-gLg"; */
+"2dl-fE-gLg.normalTitle" = "目标";
+
+/* Class = "UIButton"; normalTitle = "扫描"; ObjectID = "2j1-9K-jUL"; */
+"2j1-9K-jUL.normalTitle" = "扫描";
+
+/* Class = "UIButton"; normalTitle = "右"; ObjectID = "3OC-jT-phX"; */
+"3OC-jT-phX.normalTitle" = "右";
+
+/* Class = "UILabel"; text = "心率: "; ObjectID = "434-nu-YWI"; */
+"434-nu-YWI.text" = "心率: ";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "48k-GW-Thj"; */
+"48k-GW-Thj.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "3"; ObjectID = "5Jp-PN-sbG"; */
+"5Jp-PN-sbG.normalTitle" = "3";
+
+/* Class = "UILabel"; text = "单位: "; ObjectID = "5U9-d0-hR4"; */
+"5U9-d0-hR4.text" = "单位: ";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "71B-cm-ZZV"; */
+"71B-cm-ZZV.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "左"; ObjectID = "75Y-2Y-eoy"; */
+"75Y-2Y-eoy.normalTitle" = "左";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "7TU-5X-StY"; */
+"7TU-5X-StY.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "MAC"; ObjectID = "9Yl-au-4Vb"; */
+"9Yl-au-4Vb.normalTitle" = "MAC";
+
+/* Class = "UIButton"; normalTitle = "1"; ObjectID = "ALw-zh-Ivg"; */
+"ALw-zh-Ivg.normalTitle" = "1";
+
+/* Class = "UIButton"; normalTitle = "校准"; ObjectID = "B60-07-Avg"; */
+"B60-07-Avg.normalTitle" = "校准";
+
+/* Class = "UIButton"; normalTitle = "绑定"; ObjectID = "BME-ir-Lwe"; */
+"BME-ir-Lwe.normalTitle" = "绑定";
+
+/* Class = "UIButton"; normalTitle = "英制"; ObjectID = "BYe-FW-v3S"; */
+"BYe-FW-v3S.normalTitle" = "英制";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "CfI-oT-9oI"; */
+"CfI-oT-9oI.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "开"; ObjectID = "Csq-SA-K0u"; */
+"Csq-SA-K0u.normalTitle" = "开";
+
+/* Class = "UIButton"; normalTitle = "查找手环"; ObjectID = "DXB-aU-Cyh"; */
+"DXB-aU-Cyh.normalTitle" = "查找手环";
+
+/* Class = "UIButton"; normalTitle = "矮"; ObjectID = "EH3-Ac-kIB"; */
+"EH3-Ac-kIB.normalTitle" = "矮";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "Enq-wD-Pqx"; */
+"Enq-wD-Pqx.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "开"; ObjectID = "F0p-Pl-hUh"; */
+"F0p-Pl-hUh.normalTitle" = "开";
+
+/* Class = "UILabel"; text = "久坐: "; ObjectID = "FqO-D9-uva"; */
+"FqO-D9-uva.text" = "久坐: ";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "Fzq-v4-Evd"; */
+"Fzq-v4-Evd.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "1000"; ObjectID = "HNj-gg-dgl"; */
+"HNj-gg-dgl.normalTitle" = "1000";
+
+/* Class = "UIButton"; normalTitle = "关"; ObjectID = "Huf-CX-xBJ"; */
+"Huf-CX-xBJ.normalTitle" = "关";
+
+/* Class = "UIButton"; normalTitle = "表盘"; ObjectID = "Iev-Zv-pcy"; */
+"Iev-Zv-pcy.normalTitle" = "表盘";
+
+/* Class = "UINavigationItem"; title = "SMART BAND"; ObjectID = "Jy7-jV-O7Z"; */
+"Jy7-jV-O7Z.title" = "SMART BAND";
+
+/* Class = "UIButton"; normalTitle = "解绑"; ObjectID = "Ltb-sH-Kf4"; */
+"Ltb-sH-Kf4.normalTitle" = "解绑";
+
+/* Class = "UIButton"; normalTitle = "12小时"; ObjectID = "N8G-T6-Qrr"; */
+"N8G-T6-Qrr.normalTitle" = "12小时";
+
+/* Class = "UITextField"; placeholder = "Enter mac"; ObjectID = "NRP-0b-ccg"; */
+"NRP-0b-ccg.placeholder" = "Enter mac";
+
+/* Class = "UITextField"; text = "c3:bd:48:ca:2f:ff"; ObjectID = "NRP-0b-ccg"; */
+"NRP-0b-ccg.text" = "c3:bd:48:ca:2f:ff";
+
+/* Class = "UIButton"; normalTitle = "1个"; ObjectID = "NzO-IY-Owu"; */
+"NzO-IY-Owu.normalTitle" = "1个";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "OFk-el-fFE"; */
+"OFk-el-fFE.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "时间格式"; ObjectID = "OhR-UL-acJ"; */
+"OhR-UL-acJ.normalTitle" = "时间格式";
+
+/* Class = "UILabel"; text = "语言: "; ObjectID = "Os5-Qx-uxk"; */
+"Os5-Qx-uxk.text" = "语言: ";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "OwM-J0-6Sp"; */
+"OwM-J0-6Sp.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "关"; ObjectID = "Pka-cF-L0i"; */
+"Pka-cF-L0i.normalTitle" = "关";
+
+/* Class = "UINavigationItem"; title = "手环设置"; ObjectID = "QC6-e9-6DV"; */
+"QC6-e9-6DV.title" = "手环设置";
+
+/* Class = "UILabel"; text = "闹钟: "; ObjectID = "R9S-AC-1fL"; */
+"R9S-AC-1fL.text" = "闹钟: ";
+
+/* Class = "UIButton"; normalTitle = "闹钟"; ObjectID = "Rvm-gP-vFs"; */
+"Rvm-gP-vFs.normalTitle" = "闹钟";
+
+/* Class = "UIButton"; normalTitle = "2"; ObjectID = "SDa-zX-rdY"; */
+"SDa-zX-rdY.normalTitle" = "2";
+
+/* Class = "UIButton"; normalTitle = "高"; ObjectID = "SkH-q7-4P1"; */
+"SkH-q7-4P1.normalTitle" = "高";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "T8N-wO-fPp"; */
+"T8N-wO-fPp.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "个人信息"; ObjectID = "TyS-kc-jp3"; */
+"TyS-kc-jp3.normalTitle" = "个人信息";
+
+/* Class = "UIButton"; normalTitle = "开"; ObjectID = "Uo8-Rd-tUo"; */
+"Uo8-Rd-tUo.normalTitle" = "开";
+
+/* Class = "UIButton"; normalTitle = "手环语言"; ObjectID = "Uyq-jX-Naf"; */
+"Uyq-jX-Naf.normalTitle" = "手环语言";
+
+/* Class = "UIButton"; normalTitle = "推送"; ObjectID = "WZA-8d-57u"; */
+"WZA-8d-57u.normalTitle" = "推送";
+
+/* Class = "UIButton"; normalTitle = "关"; ObjectID = "X65-f7-qe9"; */
+"X65-f7-qe9.normalTitle" = "关";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "XUe-FF-mZg"; */
+"XUe-FF-mZg.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "单位"; ObjectID = "boI-vd-UcE"; */
+"boI-vd-UcE.normalTitle" = "单位";
+
+/* Class = "UIButton"; normalTitle = "睡眠"; ObjectID = "dJF-Tu-BEi"; */
+"dJF-Tu-BEi.normalTitle" = "睡眠";
+
+/* Class = "UILabel"; text = "血压: "; ObjectID = "dMX-Ub-MBz"; */
+"dMX-Ub-MBz.text" = "血压: ";
+
+/* Class = "UIButton"; normalTitle = "久坐"; ObjectID = "dz8-Sb-6Im"; */
+"dz8-Sb-6Im.normalTitle" = "久坐";
+
+/* Class = "UIButton"; normalTitle = "特性"; ObjectID = "dzj-gw-4Bd"; */
+"dzj-gw-4Bd.normalTitle" = "特性";
+
+/* Class = "UIButton"; normalTitle = "电量"; ObjectID = "f7s-jJ-QcI"; */
+"f7s-jJ-QcI.normalTitle" = "电量";
+
+/* Class = "UIButton"; normalTitle = "500"; ObjectID = "fA0-pG-Lb3"; */
+"fA0-pG-Lb3.normalTitle" = "500";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "fC5-jG-n85"; */
+"fC5-jG-n85.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "关"; ObjectID = "gmF-zo-75H"; */
+"gmF-zo-75H.normalTitle" = "关";
+
+/* Class = "UILabel"; text = "推送: "; ObjectID = "hs7-yJ-bK2"; */
+"hs7-yJ-bK2.text" = "推送: ";
+
+/* Class = "UILabel"; text = "用户: "; ObjectID = "jfd-Rj-f1f"; */
+"jfd-Rj-f1f.text" = "用户: ";
+
+/* Class = "UILabel"; text = "表盘: "; ObjectID = "krH-qq-rbN"; */
+"krH-qq-rbN.text" = "表盘: ";
+
+/* Class = "UIButton"; normalTitle = "开"; ObjectID = "lO8-2g-rI1"; */
+"lO8-2g-rI1.normalTitle" = "开";
+
+/* Class = "UIButton"; normalTitle = "关"; ObjectID = "lva-rt-3OP"; */
+"lva-rt-3OP.normalTitle" = "关";
+
+/* Class = "UIButton"; normalTitle = "公制"; ObjectID = "mXp-iz-JUv"; */
+"mXp-iz-JUv.normalTitle" = "公制";
+
+/* Class = "UILabel"; text = "目标: "; ObjectID = "nso-50-adi"; */
+"nso-50-adi.text" = "目标: ";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "oll-NI-Od8"; */
+"oll-NI-Od8.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "Cn"; ObjectID = "pEA-Do-PrF"; */
+"pEA-Do-PrF.normalTitle" = "Cn";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "q7Z-cP-Rj7"; */
+"q7Z-cP-Rj7.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "24小时"; ObjectID = "qjI-iI-xF4"; */
+"qjI-iI-xF4.normalTitle" = "24小时";
+
+/* Class = "UIButton"; normalTitle = "开"; ObjectID = "rE5-mM-Iwr"; */
+"rE5-mM-Iwr.normalTitle" = "开";
+
+/* Class = "UILabel"; text = "翻腕: "; ObjectID = "rYd-j4-yEJ"; */
+"rYd-j4-yEJ.text" = "翻腕: ";
+
+/* Class = "UIButton"; normalTitle = "停止"; ObjectID = "rzn-ea-Cjf"; */
+"rzn-ea-Cjf.normalTitle" = "停止";
+
+/* Class = "UILabel"; text = "左右手: "; ObjectID = "uiQ-96-sps"; */
+"uiQ-96-sps.text" = "左右手: ";
+
+/* Class = "UILabel"; text = "时间格式: "; ObjectID = "uuS-UX-dxb"; */
+"uuS-UX-dxb.text" = "时间格式: ";
+
+/* Class = "UIBarButtonItem"; title = "手环设置"; ObjectID = "uzo-xy-YG4"; */
+"uzo-xy-YG4.title" = "手环设置";
+
+/* Class = "UIButton"; normalTitle = "翻腕亮屏"; ObjectID = "vCz-k2-cqd"; */
+"vCz-k2-cqd.normalTitle" = "翻腕亮屏";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "xhj-sY-WXt"; */
+"xhj-sY-WXt.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "2个"; ObjectID = "yH4-BH-ElI"; */
+"yH4-BH-ElI.normalTitle" = "2个";
+
+/* Class = "UIButton"; normalTitle = "En"; ObjectID = "yNA-GC-cX2"; */
+"yNA-GC-cX2.normalTitle" = "En";
+
+/* Class = "UILabel"; text = "-"; ObjectID = "z6b-Nv-aet"; */
+"z6b-Nv-aet.text" = "-";
+
+/* Class = "UIButton"; normalTitle = "左右手"; ObjectID = "zDM-bJ-ide"; */
+"zDM-bJ-ide.normalTitle" = "左右手";

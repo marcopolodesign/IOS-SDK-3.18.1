@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "Smart Ring",
+    "slug": "smart-ring-expo-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0D"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartring.app",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
+        "NSBluetoothPeripheralUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
+        "NSHealthShareUsageDescription": "Smart Ring needs access to read your health data from Apple Health to provide comprehensive health insights",
+        "NSHealthUpdateUsageDescription": "Smart Ring needs access to write health data to Apple Health to keep your records synchronized",
+        "UIBackgroundModes": [
+          "bluetooth-central"
+        ]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D0D0D"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-router"
+    ],
+    "scheme": "smartring",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

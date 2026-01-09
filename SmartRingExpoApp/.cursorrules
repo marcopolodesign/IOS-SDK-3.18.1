@@ -1,0 +1,34 @@
+# Smart Ring Expo App - Project Rules
+
+## Strava API Credentials (Development Reference)
+# These are stored here for development reference only.
+# Actual secrets should be in .env file (gitignored).
+
+STRAVA_CLIENT_ID=192408
+STRAVA_CLIENT_SECRET=8805f999c93c83583878fdf651a139030b3677ce
+STRAVA_ACCESS_TOKEN=70ae2b63d5f6f6eee7a1a04fbc9705e082423019
+STRAVA_REFRESH_TOKEN=4b61a4b05f22ed591e5e33c46696826c2238f6bf
+
+## Project Structure
+- /src/services/ - Business logic and API integrations
+- /src/screens/ - React Native screens
+- /src/components/ - Reusable UI components
+- /src/hooks/ - Custom React hooks
+- /src/types/ - TypeScript type definitions
+- /src/theme/ - Colors and styling constants
+- /supabase/ - Supabase local config and migrations
+
+## Code Style
+- Use TypeScript for all new files
+- Follow React Native best practices
+- Use functional components with hooks
+- Keep services separated from UI logic
+
+## Environment Variables
+- SUPABASE_URL - Supabase project URL
+- SUPABASE_ANON_KEY - Supabase anonymous key
+- STRAVA_CLIENT_ID - Strava OAuth client ID
+- STRAVA_CLIENT_SECRET - Strava OAuth client secret
+
+
+

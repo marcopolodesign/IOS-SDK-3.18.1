@@ -1,0 +1,431 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2C0C55721EC9665A00BE41BC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0C55711EC9665A00BE41BC /* AppDelegate.swift */; };
+		2C0C55741EC9665A00BE41BC /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0C55731EC9665A00BE41BC /* ViewController.swift */; };
+		2C0C55771EC9665A00BE41BC /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2C0C55751EC9665A00BE41BC /* Main.storyboard */; };
+		2C0C55791EC9665A00BE41BC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2C0C55781EC9665A00BE41BC /* Assets.xcassets */; };
+		2C0C557C1EC9665A00BE41BC /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2C0C557A1EC9665A00BE41BC /* LaunchScreen.storyboard */; };
+		2C198DA11EC9B9F800EFC235 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2C198DA01EC9B9F800EFC235 /* CoreBluetooth.framework */; };
+		2C90539B1ED30F31000EEDCF /* SetViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C90539A1ED30F31000EEDCF /* SetViewController.swift */; };
+		759824C5236143A8000351C1 /* CRPSmartBand.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2C55F2D91FB19512006221F7 /* CRPSmartBand.framework */; };
+		759824C6236143A8000351C1 /* CRPSmartBand.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2C55F2D91FB19512006221F7 /* CRPSmartBand.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		75A1CEE025B6FFB4008DE977 /* OTAFramework.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 75A1CEDD25B6FFB4008DE977 /* OTAFramework.framework */; };
+		75A1CEE225B6FFB4008DE977 /* RTKLEFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 75A1CEDE25B6FFB4008DE977 /* RTKLEFoundation.framework */; };
+		75A1CEE325B6FFB4008DE977 /* RTKLEFoundation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 75A1CEDE25B6FFB4008DE977 /* RTKLEFoundation.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		75A1CEE425B6FFB4008DE977 /* RTKOTASDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 75A1CEDF25B6FFB4008DE977 /* RTKOTASDK.framework */; };
+		75A1CEE525B6FFB4008DE977 /* RTKOTASDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 75A1CEDF25B6FFB4008DE977 /* RTKOTASDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		DA77AF5F2BB2D54C009EC0B9 /* SpeexKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA77AF5E2BB2D54B009EC0B9 /* SpeexKit.framework */; };
+		DA77AF602BB2D54C009EC0B9 /* SpeexKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA77AF5E2BB2D54B009EC0B9 /* SpeexKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		DA77AF622BB2D61E009EC0B9 /* libopus.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DA77AF612BB2D616009EC0B9 /* libopus.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		759824C7236143A8000351C1 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				759824C6236143A8000351C1 /* CRPSmartBand.framework in Embed Frameworks */,
+				75A1CEE525B6FFB4008DE977 /* RTKOTASDK.framework in Embed Frameworks */,
+				75A1CEE325B6FFB4008DE977 /* RTKLEFoundation.framework in Embed Frameworks */,
+				DA77AF602BB2D54C009EC0B9 /* SpeexKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		2C0C556E1EC9665A00BE41BC /* SdkDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SdkDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C0C55711EC9665A00BE41BC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		2C0C55731EC9665A00BE41BC /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		2C0C55761EC9665A00BE41BC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		2C0C55781EC9665A00BE41BC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		2C0C557B1EC9665A00BE41BC /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		2C0C557D1EC9665A00BE41BC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2C198DA01EC9B9F800EFC235 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
+		2C1E4DE61EF38D0500FC25A4 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
+		2C1E4DE71EF38D0500FC25A4 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/LaunchScreen.strings"; sourceTree = "<group>"; };
+		2C55F2D91FB19512006221F7 /* CRPSmartBand.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = CRPSmartBand.framework; sourceTree = "<group>"; };
+		2C90539A1ED30F31000EEDCF /* SetViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SetViewController.swift; sourceTree = "<group>"; };
+		75A1CEDD25B6FFB4008DE977 /* OTAFramework.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OTAFramework.framework; path = "TestSdk/Release-iphoneos/OTAFramework.framework"; sourceTree = "<group>"; };
+		75A1CEDE25B6FFB4008DE977 /* RTKLEFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = RTKLEFoundation.framework; path = "TestSdk/Release-iphoneos/RTKLEFoundation.framework"; sourceTree = "<group>"; };
+		75A1CEDF25B6FFB4008DE977 /* RTKOTASDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = RTKOTASDK.framework; path = "TestSdk/Release-iphoneos/RTKOTASDK.framework"; sourceTree = "<group>"; };
+		DA77AF5E2BB2D54B009EC0B9 /* SpeexKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpeexKit.framework; path = "TestSdk/Release-iphoneos/SpeexKit.framework"; sourceTree = "<group>"; };
+		DA77AF612BB2D616009EC0B9 /* libopus.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libopus.a; path = "TestSdk/Release-iphoneos/libopus.a"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2C0C556B1EC9665A00BE41BC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				75A1CEE025B6FFB4008DE977 /* OTAFramework.framework in Frameworks */,
+				DA77AF622BB2D61E009EC0B9 /* libopus.a in Frameworks */,
+				2C198DA11EC9B9F800EFC235 /* CoreBluetooth.framework in Frameworks */,
+				75A1CEE225B6FFB4008DE977 /* RTKLEFoundation.framework in Frameworks */,
+				DA77AF5F2BB2D54C009EC0B9 /* SpeexKit.framework in Frameworks */,
+				75A1CEE425B6FFB4008DE977 /* RTKOTASDK.framework in Frameworks */,
+				759824C5236143A8000351C1 /* CRPSmartBand.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2C0C55651EC9665A00BE41BC = {
+			isa = PBXGroup;
+			children = (
+				2C0C55701EC9665A00BE41BC /* SdkDemo */,
+				2C0C556F1EC9665A00BE41BC /* Products */,
+				2C198D9F1EC9B9F800EFC235 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		2C0C556F1EC9665A00BE41BC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2C0C556E1EC9665A00BE41BC /* SdkDemo.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2C0C55701EC9665A00BE41BC /* SdkDemo */ = {
+			isa = PBXGroup;
+			children = (
+				2C1E4DD31EF386C600FC25A4 /* Release-iphoneos */,
+				2C0C55711EC9665A00BE41BC /* AppDelegate.swift */,
+				2C0C55731EC9665A00BE41BC /* ViewController.swift */,
+				2C90539A1ED30F31000EEDCF /* SetViewController.swift */,
+				2C0C55751EC9665A00BE41BC /* Main.storyboard */,
+				2C0C55781EC9665A00BE41BC /* Assets.xcassets */,
+				2C0C557A1EC9665A00BE41BC /* LaunchScreen.storyboard */,
+				2C0C557D1EC9665A00BE41BC /* Info.plist */,
+			);
+			name = SdkDemo;
+			path = TestSdk;
+			sourceTree = "<group>";
+		};
+		2C198D9F1EC9B9F800EFC235 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DA77AF612BB2D616009EC0B9 /* libopus.a */,
+				DA77AF5E2BB2D54B009EC0B9 /* SpeexKit.framework */,
+				75A1CEDD25B6FFB4008DE977 /* OTAFramework.framework */,
+				75A1CEDE25B6FFB4008DE977 /* RTKLEFoundation.framework */,
+				75A1CEDF25B6FFB4008DE977 /* RTKOTASDK.framework */,
+				2C198DA01EC9B9F800EFC235 /* CoreBluetooth.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		2C1E4DD31EF386C600FC25A4 /* Release-iphoneos */ = {
+			isa = PBXGroup;
+			children = (
+				2C55F2D91FB19512006221F7 /* CRPSmartBand.framework */,
+			);
+			path = "Release-iphoneos";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2C0C556D1EC9665A00BE41BC /* SdkDemo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2C0C55801EC9665A00BE41BC /* Build configuration list for PBXNativeTarget "SdkDemo" */;
+			buildPhases = (
+				2C0C556A1EC9665A00BE41BC /* Sources */,
+				2C0C556B1EC9665A00BE41BC /* Frameworks */,
+				2C0C556C1EC9665A00BE41BC /* Resources */,
+				759824C7236143A8000351C1 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SdkDemo;
+			productName = TestSdk;
+			productReference = 2C0C556E1EC9665A00BE41BC /* SdkDemo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2C0C55661EC9665A00BE41BC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 0830;
+				LastUpgradeCheck = 0830;
+				ORGANIZATIONNAME = sylar;
+				TargetAttributes = {
+					2C0C556D1EC9665A00BE41BC = {
+						CreatedOnToolsVersion = 8.3.2;
+						DevelopmentTeam = YH6NZ3S4HV;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.BackgroundModes = {
+								enabled = 1;
+							};
+						};
+					};
+				};
+			};
+			buildConfigurationList = 2C0C55691EC9665A00BE41BC /* Build configuration list for PBXProject "SdkDemo" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				English,
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 2C0C55651EC9665A00BE41BC;
+			productRefGroup = 2C0C556F1EC9665A00BE41BC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2C0C556D1EC9665A00BE41BC /* SdkDemo */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2C0C556C1EC9665A00BE41BC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C0C557C1EC9665A00BE41BC /* LaunchScreen.storyboard in Resources */,
+				2C0C55791EC9665A00BE41BC /* Assets.xcassets in Resources */,
+				2C0C55771EC9665A00BE41BC /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2C0C556A1EC9665A00BE41BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C0C55741EC9665A00BE41BC /* ViewController.swift in Sources */,
+				2C90539B1ED30F31000EEDCF /* SetViewController.swift in Sources */,
+				2C0C55721EC9665A00BE41BC /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		2C0C55751EC9665A00BE41BC /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				2C0C55761EC9665A00BE41BC /* Base */,
+				2C1E4DE61EF38D0500FC25A4 /* zh-Hans */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		2C0C557A1EC9665A00BE41BC /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				2C0C557B1EC9665A00BE41BC /* Base */,
+				2C1E4DE71EF38D0500FC25A4 /* zh-Hans */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		2C0C557E1EC9665A00BE41BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = NO;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 10.3;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		2C0C557F1EC9665A00BE41BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = NO;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 10.3;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		2C0C55811EC9665A00BE41BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				DEVELOPMENT_TEAM = YH6NZ3S4HV;
+				ENABLE_BITCODE = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TestSdk",
+					"$(PROJECT_DIR)/TestSdk/Debug-iphoneos",
+					"$(PROJECT_DIR)/TestSdk/Debug-iphonesimulator",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos/CRPSmartBand.framework/Frameworks",
+				);
+				INFOPLIST_FILE = TestSdk/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos",
+				);
+				OTHER_CFLAGS = "-fembed-bitcode";
+				PRODUCT_BUNDLE_IDENTIFIER = com.crrepa.sdkDemo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_VERSION = 4.0;
+			};
+			name = Debug;
+		};
+		2C0C55821EC9665A00BE41BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				DEVELOPMENT_TEAM = YH6NZ3S4HV;
+				ENABLE_BITCODE = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TestSdk",
+					"$(PROJECT_DIR)/TestSdk/Debug-iphoneos",
+					"$(PROJECT_DIR)/TestSdk/Debug-iphonesimulator",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos/CRPSmartBand.framework/Frameworks",
+				);
+				INFOPLIST_FILE = TestSdk/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TestSdk/Release-iphoneos",
+				);
+				OTHER_CFLAGS = "-fembed-bitcode";
+				PRODUCT_BUNDLE_IDENTIFIER = com.crrepa.sdkDemo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_VERSION = 4.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2C0C55691EC9665A00BE41BC /* Build configuration list for PBXProject "SdkDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2C0C557E1EC9665A00BE41BC /* Debug */,
+				2C0C557F1EC9665A00BE41BC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2C0C55801EC9665A00BE41BC /* Build configuration list for PBXNativeTarget "SdkDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2C0C55811EC9665A00BE41BC /* Debug */,
+				2C0C55821EC9665A00BE41BC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 2C0C55661EC9665A00BE41BC /* Project object */;
+}
