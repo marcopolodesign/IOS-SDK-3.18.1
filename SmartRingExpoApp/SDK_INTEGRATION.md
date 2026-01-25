@@ -1,17 +1,18 @@
 # Smart Ring SDK Integration Guide
 
-This guide explains how to integrate the CRPSmartBand SDK with the React Native app for real device connectivity.
+This guide explains how to integrate the QCBandSDK (demo SDK) with the React Native app for real device connectivity. The native QCBand bridge files are already part of the Xcode project; you only need to copy and embed the frameworks.
 
 ## Current Status
 
 | Component | Status |
 |-----------|--------|
-| ✅ Native Bridge Header | `ios/SmartRing/SmartRingBridge.h` |
-| ✅ Native Bridge Implementation | `ios/SmartRing/SmartRingBridge.m` |
+| ✅ Native Bridge Header | `ios/QCBandBridge/QCBandBridge.h` |
+| ✅ Native Bridge Implementation | `ios/QCBandBridge/QCBandBridge.m` |
 | ✅ Bridging Header | `ios/SmartRing/SmartRing-Bridging-Header.h` |
-| ✅ React Native Service | `src/services/SmartRingService.ts` |
+| ✅ React Native Service | `src/services/QCBandService.ts` |
+| ✅ Unified Service | `src/services/UnifiedSmartRingService.ts` |
 | ✅ Mock Data Service | `src/services/SmartRingMockService.ts` |
-| ⚠️ SDK Frameworks | Not yet copied (using mock data) |
+| ⚠️ SDK Frameworks | QCBandSDK.framework must be copied from Demo Files |
 
 ## Quick Setup (When Ready)
 
@@ -23,8 +24,7 @@ cd SmartRingExpoApp
 ```
 
 This script will:
-- Copy SDK frameworks from the parent directory
-- Place them in `ios/Frameworks/`
+- Copy SDK frameworks from `../Demo Files` into `ios/Frameworks/`
 - Verify the installation
 
 ### 2. Add Frameworks in Xcode
@@ -32,12 +32,8 @@ This script will:
 1. Open `ios/SmartRing.xcworkspace` in Xcode
 2. Select the SmartRing target
 3. Go to **General** → **Frameworks, Libraries, and Embedded Content**
-4. Click **+** and add each framework:
-   - `CRPSmartBand.framework`
-   - `RTKLEFoundation.framework`
-   - `RTKOTASDK.framework`
-   - `OTAFramework.framework`
-   - `SpeexKit.framework`
+4. Click **+** and add each framework (Embed & Sign):
+   - `QCBandSDK.framework` (from `ios/Frameworks`)
 5. Set each framework to **Embed & Sign**
 
 ### 3. Update Build Settings
@@ -57,7 +53,7 @@ cd ios
 pod install
 ```
 
-### 5. Enable Real SDK
+### 5. Enable QCBandSDK
 
 Edit `src/services/SmartRingService.ts`:
 
@@ -220,4 +216,3 @@ src/services/
 ├── SmartRingService.ts        # Main service (switches mock/real)
 └── SmartRingMockService.ts    # Mock implementation
 ```
-

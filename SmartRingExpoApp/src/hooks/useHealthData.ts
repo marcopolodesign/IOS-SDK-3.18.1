@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import SmartRingService from '../services/SmartRingService';
+import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import type {
   StepsData,
   SleepData,
@@ -55,23 +55,23 @@ export const useHealthData = (): UseHealthDataReturn => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const unsubSteps = SmartRingService.onStepsReceived((data) => {
+    const unsubSteps = UnifiedSmartRingService.onStepsReceived((data) => {
       setSteps(data);
     });
 
-    const unsubSleep = SmartRingService.onSleepDataReceived((data) => {
+    const unsubSleep = UnifiedSmartRingService.onSleepDataReceived((data) => {
       setSleep(data);
     });
 
-    const unsubHeartRate = SmartRingService.onHeartRateReceived((data) => {
+    const unsubHeartRate = UnifiedSmartRingService.onHeartRateReceived((data) => {
       setHeartRate(data);
     });
 
-    const unsubSpO2 = SmartRingService.onSpO2Received((data) => {
+    const unsubSpO2 = UnifiedSmartRingService.onSpO2Received((data) => {
       setSpO2(data);
     });
 
-    const unsubBloodPressure = SmartRingService.onBloodPressureReceived((data) => {
+    const unsubBloodPressure = UnifiedSmartRingService.onBloodPressureReceived((data) => {
       setBloodPressure(data);
     });
 
@@ -87,7 +87,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refreshSteps = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.getSteps();
+      const data = await UnifiedSmartRingService.getSteps();
       setSteps(data);
     } finally {
       setIsLoading(false);
@@ -97,7 +97,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refreshSleep = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.getSleepData();
+      const data = await UnifiedSmartRingService.getSleepData();
       setSleep(data);
     } finally {
       setIsLoading(false);
@@ -107,7 +107,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refresh24HourHeartRate = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.get24HourHeartRate();
+      const data = await UnifiedSmartRingService.get24HourHeartRate();
       setHeartRateHistory(data);
     } finally {
       setIsLoading(false);
@@ -117,7 +117,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refreshHRV = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.getHRVData();
+      const data = await UnifiedSmartRingService.getHRVData();
       setHRV(data);
     } catch (error) {
       console.log('HRV data not available');
@@ -129,7 +129,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refreshStress = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.getStressData();
+      const data = await UnifiedSmartRingService.getStressData();
       setStress(data);
     } catch (error) {
       console.log('Stress data not available');
@@ -141,7 +141,7 @@ export const useHealthData = (): UseHealthDataReturn => {
   const refreshTemperature = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await SmartRingService.getTemperature();
+      const data = await UnifiedSmartRingService.getTemperature();
       setTemperature(data);
     } catch (error) {
       console.log('Temperature data not available');
@@ -151,32 +151,32 @@ export const useHealthData = (): UseHealthDataReturn => {
   }, []);
 
   const startHeartRateMonitoring = useCallback(() => {
-    SmartRingService.startHeartRateMonitoring();
+    UnifiedSmartRingService.startHeartRateMonitoring();
     setIsMonitoringHeartRate(true);
   }, []);
 
   const stopHeartRateMonitoring = useCallback(() => {
-    SmartRingService.stopHeartRateMonitoring();
+    UnifiedSmartRingService.stopHeartRateMonitoring();
     setIsMonitoringHeartRate(false);
   }, []);
 
   const startSpO2Monitoring = useCallback(() => {
-    SmartRingService.startSpO2Monitoring();
+    UnifiedSmartRingService.startSpO2Monitoring();
     setIsMonitoringSpO2(true);
   }, []);
 
   const stopSpO2Monitoring = useCallback(() => {
-    SmartRingService.stopSpO2Monitoring();
+    UnifiedSmartRingService.stopSpO2Monitoring();
     setIsMonitoringSpO2(false);
   }, []);
 
   const startBloodPressureMonitoring = useCallback(() => {
-    SmartRingService.startBloodPressureMonitoring();
+    UnifiedSmartRingService.startBloodPressureMonitoring();
     setIsMonitoringBloodPressure(true);
   }, []);
 
   const stopBloodPressureMonitoring = useCallback(() => {
-    SmartRingService.stopBloodPressureMonitoring();
+    UnifiedSmartRingService.stopBloodPressureMonitoring();
     setIsMonitoringBloodPressure(false);
   }, []);
 

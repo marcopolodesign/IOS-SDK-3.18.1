@@ -33,7 +33,9 @@ class StravaService {
   private _isConnected: boolean = false;
 
   constructor() {
-    this.loadTokensFromDatabase();
+    // DISABLED: Strava token loading on startup to reduce startup noise
+    // Token loading will happen when user accesses Strava features
+    // this.loadTokensFromDatabase();
   }
 
   // ============================================
@@ -230,10 +232,11 @@ class StravaService {
   // ============================================
 
   private async loadTokensFromDatabase() {
-    console.log('[StravaService] loadTokensFromDatabase called');
+    // Verbose logs disabled to reduce noise
+    // console.log('[StravaService] loadTokensFromDatabase called');
     const userId = authService.currentUser?.id;
     if (!userId) {
-      console.log('[StravaService] No user ID, skipping');
+      // console.log('[StravaService] No user ID, skipping');
       return;
     }
 

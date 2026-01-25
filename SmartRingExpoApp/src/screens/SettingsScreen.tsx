@@ -13,17 +13,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { colors, spacing, borderRadius, fontSize, fontWeight, shadows } from '../theme/colors';
+import { router } from 'expo-router';
+import { colors, spacing, borderRadius, fontSize, fontFamily, shadows } from '../theme/colors';
 import { BatteryIndicator } from '../components';
 import { useSmartRing, useAuth } from '../hooks';
-import SmartRingService from '../services/SmartRingService';
+import { useOnboarding } from '../context/OnboardingContext';
+import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import { stravaService } from '../services/StravaService';
 
 interface SettingsScreenProps {}
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
-  const { isConnected, connectedDevice, battery, version, findDevice, disconnect, isMockMode } = useSmartRing();
+  const { isConnected, connectedDevice, battery, version, findDevice, disconnect, forgetDevice, isMockMode } = useSmartRing();
   const { user, profile: authProfile, signOut, isAuthenticated } = useAuth();
+  const { clearDevicePairing, resetOnboarding } = useOnboarding();
   
   const [profile, setProfile] = useState({
     height: 175,
@@ -45,8 +48,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const loadSettings = async () => {
     try {
       const [profileData, goalData] = await Promise.all([
-        SmartRingService.getProfile(),
-        SmartRingService.getGoal(),
+        UnifiedSmartRingService.getProfile(),
+        UnifiedSmartRingService.getGoal(),
       ]);
       setProfile(profileData);
       setGoal(goalData.goal);
@@ -58,7 +61,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const handleSaveProfile = async () => {
     setIsLoading(true);
     try {
-      await SmartRingService.setProfile(profile);
+      await UnifiedSmartRingService.setProfile(profile);
       Alert.alert('Success', 'Profile saved successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to save profile');
@@ -70,7 +73,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const handleSaveGoal = async () => {
     setIsLoading(true);
     try {
-      await SmartRingService.setGoal(goal);
+      await UnifiedSmartRingService.setGoal(goal);
       Alert.alert('Success', 'Goal saved successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to save goal');
@@ -82,7 +85,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const handleTimeFormatChange = async (value: boolean) => {
     setIs24Hour(value);
     try {
-      await SmartRingService.setTimeFormat(value);
+      await UnifiedSmartRingService.setTimeFormat(value);
     } catch (error) {
       console.log('Failed to set time format');
     }
@@ -91,7 +94,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const handleUnitChange = async (value: boolean) => {
     setIsMetric(value);
     try {
-      await SmartRingService.setUnit(value);
+      await UnifiedSmartRingService.setUnit(value);
     } catch (error) {
       console.log('Failed to set unit');
     }
@@ -113,6 +116,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     );
   };
 
+  const handleForgetDevice = () => {
+    Alert.alert(
+      'Forget Device',
+      'This will remove the paired device from the app. You\'ll need to scan and reconnect.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: async () => {
+            await forgetDevice();
+            await clearDevicePairing();
+            router.replace('/(onboarding)/connect');
+          },
+        },
+      ]
+    );
+  };
+
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
@@ -124,6 +146,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           style: 'destructive',
           onPress: async () => {
             await signOut();
+            router.replace('/(auth)/login');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetOnboarding = () => {
+    Alert.alert(
+      'Reset Onboarding',
+      'This will sign you out and reset all onboarding data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await resetOnboarding();
+            await signOut();
+            router.replace('/(auth)/login');
           },
         },
       ]
@@ -211,16 +253,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           )}
 
           {isConnected && (
-            <View style={styles.deviceActions}>
-              <Pressable style={styles.actionButton} onPress={handleFindDevice}>
-                <FindIcon />
-                <Text style={styles.actionButtonText}>Find Device</Text>
+            <>
+              <View style={styles.deviceActions}>
+                <Pressable style={styles.actionButton} onPress={handleFindDevice}>
+                  <FindIcon />
+                  <Text style={styles.actionButtonText}>Find Device</Text>
+                </Pressable>
+                <Pressable style={[styles.actionButton, styles.actionButtonDanger]} onPress={handleDisconnect}>
+                  <DisconnectIcon />
+                  <Text style={[styles.actionButtonText, styles.actionButtonTextDanger]}>Disconnect</Text>
+                </Pressable>
+              </View>
+              <Pressable style={[styles.forgetButton]} onPress={handleForgetDevice}>
+                <ForgetIcon />
+                <Text style={styles.forgetButtonText}>Forget Device</Text>
               </Pressable>
-              <Pressable style={[styles.actionButton, styles.actionButtonDanger]} onPress={handleDisconnect}>
-                <DisconnectIcon />
-                <Text style={[styles.actionButtonText, styles.actionButtonTextDanger]}>Disconnect</Text>
-              </Pressable>
-            </View>
+            </>
           )}
         </View>
 
@@ -384,6 +432,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
             </View>
           </View>
         </View>
+
+        {/* Developer Options */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Developer</Text>
+          <View style={styles.card}>
+            <TouchableOpacity style={styles.devButton} onPress={handleResetOnboarding}>
+              <Text style={styles.devButtonText}>Reset Onboarding</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -408,6 +466,15 @@ const DisconnectIcon = () => (
   </Svg>
 );
 
+const ForgetIcon = () => (
+  <Svg width={20} height={20} viewBox="0 0 24 24">
+    <Path
+      d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+      fill={colors.warning}
+    />
+  </Svg>
+);
+
 const SignOutIcon = () => (
   <Svg width={20} height={20} viewBox="0 0 24 24">
     <Path
@@ -428,7 +495,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
+    fontFamily: fontFamily.demiBold,
     color: colors.text,
   },
   scrollView: {
@@ -443,7 +510,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.textSecondary,
     marginBottom: spacing.md,
     textTransform: 'uppercase',
@@ -473,13 +540,13 @@ const styles = StyleSheet.create({
   },
   deviceName: {
     fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.text,
   },
   deviceMac: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
-    fontFamily: 'monospace',
+    fontFamily: fontFamily.regular,
     marginBottom: spacing.xs,
   },
   deviceStats: {
@@ -489,6 +556,7 @@ const styles = StyleSheet.create({
   },
   deviceVersion: {
     fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   mockBadge: {
@@ -499,7 +567,7 @@ const styles = StyleSheet.create({
   },
   mockBadgeText: {
     fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
+    fontFamily: fontFamily.demiBold,
     color: colors.textInverse,
   },
   noDeviceCard: {
@@ -512,6 +580,7 @@ const styles = StyleSheet.create({
   },
   noDeviceText: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   deviceActions: {
@@ -536,11 +605,28 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.primary,
   },
   actionButtonTextDanger: {
     color: colors.error,
+  },
+  forgetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    marginTop: spacing.sm,
+  },
+  forgetButtonText: {
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+    color: colors.warning,
   },
   inputRow: {
     flexDirection: 'row',
@@ -552,6 +638,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.text,
   },
   inputContainer: {
@@ -568,9 +655,11 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: colors.text,
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
   },
   inputUnit: {
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
     width: 40,
   },
@@ -589,11 +678,12 @@ const styles = StyleSheet.create({
   },
   genderButtonText: {
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   genderButtonTextActive: {
     color: colors.textInverse,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
   },
   saveButton: {
     backgroundColor: colors.primary,
@@ -607,7 +697,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.textInverse,
   },
   goalPresets: {
@@ -627,11 +717,12 @@ const styles = StyleSheet.create({
   },
   presetButtonText: {
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   presetButtonTextActive: {
     color: colors.textInverse,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
   },
   settingRow: {
     flexDirection: 'row',
@@ -641,6 +732,7 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.text,
   },
   aboutRow: {
@@ -650,10 +742,12 @@ const styles = StyleSheet.create({
   },
   aboutLabel: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   aboutValue: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.text,
   },
   accountCard: {
@@ -677,7 +771,7 @@ const styles = StyleSheet.create({
   },
   accountAvatarText: {
     fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    fontFamily: fontFamily.demiBold,
     color: colors.textInverse,
   },
   accountInfo: {
@@ -685,11 +779,12 @@ const styles = StyleSheet.create({
   },
   accountName: {
     fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.text,
   },
   accountEmail: {
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     color: colors.textSecondary,
   },
   connectedServices: {
@@ -708,10 +803,12 @@ const styles = StyleSheet.create({
   },
   serviceLabel: {
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     color: colors.text,
   },
   serviceStatus: {
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     color: colors.textMuted,
   },
   serviceStatusConnected: {
@@ -730,8 +827,17 @@ const styles = StyleSheet.create({
   },
   signOutButtonText: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontFamily: fontFamily.demiBold,
     color: colors.error,
+  },
+  devButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  devButtonText: {
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
+    color: colors.primary,
   },
 });
 

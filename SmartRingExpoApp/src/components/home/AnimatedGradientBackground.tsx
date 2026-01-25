@@ -10,12 +10,25 @@ interface AnimatedGradientBackgroundProps {
 }
 
 // Background images - update paths once you add images
+const overviewVariants = {
+  dusk: require('../../assets/backgrounds/dusk.jpg'), // 05:30-09:00
+  mid: require('../../assets/backgrounds/mid.jpg'), // 09:00-13:00
+  afternoon: require('../../assets/backgrounds/afternoon.jpg'), // 13:00-17:00
+  dawn: require('../../assets/backgrounds/dawn.jpg'), // 17:00-20:00
+  night: require('../../assets/backgrounds/night.jpg'), // 20:00-05:30
+};
+
 const backgroundImages: Record<TabType, any> = {
-  overview: require('../../assets/backgrounds/overview.jpg'),
+  overview: overviewVariants.mid, // default fallback
   sleep: require('../../assets/backgrounds/sleep.jpg'),
   nutrition: require('../../assets/backgrounds/nutrition.jpg'),
   activity: require('../../assets/backgrounds/activity.jpg'),
 };
+
+// Prefetch all backgrounds once to avoid flash on first load (iOS shows previous image while decoding)
+const backgroundsToPrefetch = Array.from(
+  new Set([...Object.values(overviewVariants), ...Object.values(backgroundImages)]),
+);
 
 // Fallback colors if images aren't loaded
 const fallbackColors: Record<TabType, string> = {
@@ -30,49 +43,81 @@ export function AnimatedGradientBackground({
   children,
 }: AnimatedGradientBackgroundProps) {
   const [previousTab, setPreviousTab] = useState<TabType>(activeTab);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current; // drives crossfade: prev = 1->0, next = 0->1
+
+  // Preload all background assets so the first render of each tab doesn't flash the prior image
+  useEffect(() => {
+    backgroundsToPrefetch.forEach((asset) => {
+      const uri = Image.resolveAssetSource(asset)?.uri;
+      if (uri) {
+        Image.prefetch(uri).catch(() => {
+          // best-effort; ignore failures
+        });
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (activeTab !== previousTab) {
-      // Reset opacity to 0 for the new image
       fadeAnim.setValue(0);
-      
-      // Fade in the new image
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
         useNativeDriver: true,
-      }).start(() => {
-        // After animation completes, update the previous tab
-        setPreviousTab(activeTab);
-      });
+      }).start(() => setPreviousTab(activeTab));
     }
   }, [activeTab, previousTab]);
 
+  const prevOpacity =
+    activeTab === previousTab
+      ? 1
+      : fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const nextOpacity =
+    activeTab === previousTab
+      ? 0
+      : fadeAnim;
+
+  const getOverviewBackground = () => {
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    // Night: 20:00 - 05:30
+    if (minutes >= 20 * 60 || minutes < 5 * 60 + 30) return overviewVariants.night;
+    if (minutes < 9 * 60) return overviewVariants.dusk; // 05:30 - 09:00
+    if (minutes < 13 * 60) return overviewVariants.mid; // 09:00 - 13:00
+    if (minutes < 17 * 60) return overviewVariants.afternoon; // 13:00 - 17:00
+    return overviewVariants.dawn; // 17:00 - 20:00
+  };
+
+  const getBackgroundForTab = (tab: TabType) => {
+    if (tab === 'overview') return getOverviewBackground();
+    return backgroundImages[tab];
+  };
+
   return (
     <View style={styles.container}>
-      {/* Background layer (previous/current image) */}
-      <ImageBackground
-        source={backgroundImages[previousTab]}
-        style={styles.backgroundImage}
-        resizeMode="cover"
-      >
-        {/* Overlay for darkening */}
-        <View style={styles.darkOverlay} />
-      </ImageBackground>
+      {/* Previous/current layer */}
+      <Animated.View pointerEvents="none" style={[styles.backgroundLayer, { opacity: prevOpacity }]}>
+        <ImageBackground
+          source={getBackgroundForTab(previousTab)}
+          style={styles.backgroundImage}
+          resizeMode="cover"
+          defaultSource={getBackgroundForTab(previousTab)}
+        >
+          <View style={styles.darkOverlay} />
+        </ImageBackground>
+      </Animated.View>
 
-      {/* Foreground layer (new image fading in) */}
-      {activeTab !== previousTab && (
-        <Animated.View style={[styles.foregroundContainer, { opacity: fadeAnim }]}>
-          <ImageBackground
-            source={backgroundImages[activeTab]}
-            style={styles.backgroundImage}
-            resizeMode="cover"
-          >
-            <View style={styles.darkOverlay} />
-          </ImageBackground>
-        </Animated.View>
-      )}
+      {/* Incoming layer */}
+      <Animated.View pointerEvents="none" style={[styles.backgroundLayer, { opacity: nextOpacity }]}>
+        <ImageBackground
+          source={getBackgroundForTab(activeTab)}
+          style={styles.backgroundImage}
+          resizeMode="cover"
+          defaultSource={getBackgroundForTab(activeTab)}
+        >
+          <View style={styles.darkOverlay} />
+        </ImageBackground>
+      </Animated.View>
 
       {/* Content */}
       <View style={styles.content}>{children}</View>
@@ -104,13 +149,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
   backgroundImage: {
     ...StyleSheet.absoluteFillObject,
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
-  },
-  foregroundContainer: {
-    ...StyleSheet.absoluteFillObject,
   },
   darkOverlay: {
     ...StyleSheet.absoluteFillObject,

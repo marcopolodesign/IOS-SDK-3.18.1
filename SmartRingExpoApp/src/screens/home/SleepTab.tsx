@@ -1,14 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated } from 'react-native';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
 import { SleepStatsRow } from '../../components/home/StatsRow';
-import { SleepStagesChart } from '../../components/home/SleepStagesChart';
-import { InsightCard } from '../../components/home/InsightCard';
-import { useHomeData, getSleepMessage } from '../../hooks/useHomeData';
-import { spacing, fontSize } from '../../theme/colors';
+import { SleepHypnogram } from '../../components/home/SleepHypnogram';
+import { MetricInsightCard } from '../../components/home/MetricInsightCard';
+import { useHomeDataContext } from '../../context/HomeDataContext';
+import { getSleepMessage } from '../../hooks/useHomeData';
+import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
-export function SleepTab() {
-  const homeData = useHomeData();
+type SleepTabProps = {
+  onScroll?: Animated.AnimatedEvent<any>;
+};
+
+export function SleepTab({ onScroll }: SleepTabProps) {
+  const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
@@ -19,12 +24,18 @@ export function SleepTab() {
 
   const sleepMessage = getSleepMessage(homeData.sleepScore);
   const sleep = homeData.lastNightSleep;
+  const sleepInsight =
+    homeData.insightType === 'sleep'
+      ? homeData.insight
+      : 'Your deep sleep was above average last night. Deep sleep is crucial for physical recovery and memory consolidation.';
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      scrollEventThrottle={16}
+      onScroll={onScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -33,6 +44,14 @@ export function SleepTab() {
         />
       }
     >
+      {/* Syncing Indicator */}
+      {homeData.isSyncing && (
+        <View style={styles.syncingBanner}>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.8)" />
+          <Text style={styles.syncingText}>Syncing with ring...</Text>
+        </View>
+      )}
+
       {/* Sleep Score Gauge */}
       <View style={styles.gaugeSection}>
         <SemiCircularGauge
@@ -43,34 +62,38 @@ export function SleepTab() {
         <Text style={styles.scoreMessage}>{sleepMessage}</Text>
       </View>
 
-      {/* Sleep Stats */}
+      {/* Metrics + Insight Card */}
+      <View style={styles.metricsInsightSection}>
+        <MetricInsightCard
+          metrics={[
+            { label: 'Sleep', value: sleep.score || 0 },
+            { label: 'Rest HR', value: sleep.restingHR || '--' },
+            { label: 'Resp', value: sleep.respiratoryRate || '--' },
+          ]}
+          insight={sleepInsight}
+          backgroundImage={require('../../assets/backgrounds/insights/violet-insight.jpg')}
+        />
+      </View>
+
+      {/* Sleep Stats
       <View style={styles.statsSection}>
         <SleepStatsRow
           timeAsleep={sleep.timeAsleep}
           restingHR={sleep.restingHR}
           respiratoryRate={sleep.respiratoryRate}
         />
-      </View>
+      </View> */}
 
-      {/* Sleep Stages Chart */}
+      {/* Sleep Stages Hypnogram */}
       {sleep.segments.length > 0 && (
         <View style={styles.chartSection}>
-          <SleepStagesChart
+          <SleepHypnogram
             segments={sleep.segments}
             bedTime={sleep.bedTime}
             wakeTime={sleep.wakeTime}
           />
         </View>
       )}
-
-      {/* Sleep Insight */}
-      <View style={styles.insightSection}>
-        <InsightCard
-          insight="Your deep sleep was above average last night. Deep sleep is crucial for physical recovery and memory consolidation."
-          type="sleep"
-          title="Sleep Analysis"
-        />
-      </View>
 
       {/* Sleep Tips Section */}
       <View style={styles.tipsSection}>
@@ -94,7 +117,7 @@ export function SleepTab() {
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -102,9 +125,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  metricsInsightSection: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
   content: {
     paddingTop: spacing.lg,
     paddingBottom: 100,
+  },
+  syncingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.3)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 12,
+    gap: 8,
+  },
+  syncingText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
   },
   gaugeSection: {
     alignItems: 'center',
@@ -113,6 +157,7 @@ const styles = StyleSheet.create({
   scoreMessage: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     textAlign: 'center',
     marginTop: spacing.sm,
     paddingHorizontal: spacing.xl,
@@ -133,7 +178,7 @@ const styles = StyleSheet.create({
   tipsTitle: {
     color: '#FFFFFF',
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
     marginBottom: spacing.md,
   },
   tipCard: {
@@ -145,6 +190,7 @@ const styles = StyleSheet.create({
   tipText: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     lineHeight: 22,
   },
   bottomSpacer: {
@@ -153,5 +199,3 @@ const styles = StyleSheet.create({
 });
 
 export default SleepTab;
-
-

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { GlassCard } from './GlassCard';
-import { spacing, fontSize } from '../../theme/colors';
+import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
 interface StatItem {
   label: string;
@@ -156,17 +156,17 @@ const styles = StyleSheet.create({
   statValue: {
     color: '#FFFFFF',
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontFamily: fontFamily.demiBold,
   },
   statUnit: {
     fontSize: fontSize.sm,
-    fontWeight: '400',
+    fontFamily: fontFamily.regular,
     color: 'rgba(255, 255, 255, 0.7)',
   },
   statLabel: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: fontSize.xs,
-    fontWeight: '500',
+    fontFamily: fontFamily.regular,
     marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,

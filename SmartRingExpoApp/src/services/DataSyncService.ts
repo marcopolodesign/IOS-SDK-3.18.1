@@ -1,6 +1,6 @@
 import { supabase, supabaseService } from './SupabaseService';
 import { authService } from './AuthService';
-import { UnifiedSmartRingService } from './UnifiedSmartRingService';
+import UnifiedSmartRingService from './UnifiedSmartRingService';
 import { stravaService } from './StravaService';
 import {
   StepsData,
@@ -97,7 +97,7 @@ class DataSyncService {
     this.notifyListeners();
 
     try {
-      const smartRingService = UnifiedSmartRingService.getInstance();
+      const smartRingService = UnifiedSmartRingService;
 
       // Create a sync record
       const battery = await smartRingService.getBattery();
@@ -149,7 +149,7 @@ class DataSyncService {
 
   private async syncHeartRateData(
     userId: string,
-    service: ReturnType<typeof UnifiedSmartRingService.getInstance>,
+    service: typeof UnifiedSmartRingService,
     syncId: string | null
   ) {
     try {
@@ -183,7 +183,7 @@ class DataSyncService {
 
   private async syncStepsData(
     userId: string,
-    service: ReturnType<typeof UnifiedSmartRingService.getInstance>
+    service: typeof UnifiedSmartRingService
   ) {
     try {
       const hourlySteps = await service.get24HourSteps();
@@ -218,7 +218,7 @@ class DataSyncService {
 
   private async syncSleepData(
     userId: string,
-    service: ReturnType<typeof UnifiedSmartRingService.getInstance>
+    service: typeof UnifiedSmartRingService
   ) {
     try {
       const sleepData = await service.getSleepData();
@@ -250,7 +250,7 @@ class DataSyncService {
 
   private async syncVitalsData(
     userId: string,
-    service: ReturnType<typeof UnifiedSmartRingService.getInstance>
+    service: typeof UnifiedSmartRingService
   ) {
     try {
       const now = new Date().toISOString();
@@ -427,6 +427,5 @@ class DataSyncService {
 
 export const dataSyncService = new DataSyncService();
 export default dataSyncService;
-
 
 

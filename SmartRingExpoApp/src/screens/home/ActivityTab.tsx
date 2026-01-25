@@ -1,12 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, Animated } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
 import { ActivityStatsRow } from '../../components/home/StatsRow';
 import { GlassCard } from '../../components/home/GlassCard';
 import { InsightCard } from '../../components/home/InsightCard';
-import { useHomeData, getActivityMessage, Workout } from '../../hooks/useHomeData';
-import { spacing, fontSize, borderRadius } from '../../theme/colors';
+import { useHomeDataContext } from '../../context/HomeDataContext';
+import { getActivityMessage, Workout } from '../../hooks/useHomeData';
+import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 
 // Workout type icons
 function WorkoutIcon({ type }: { type: string }) {
@@ -80,8 +81,12 @@ function WorkoutCard({ workout }: { workout: Workout }) {
   );
 }
 
-export function ActivityTab() {
-  const homeData = useHomeData();
+type ActivityTabProps = {
+  onScroll?: Animated.AnimatedEvent<any>;
+};
+
+export function ActivityTab({ onScroll }: ActivityTabProps) {
+  const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
@@ -94,10 +99,12 @@ export function ActivityTab() {
   const activity = homeData.activity;
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      scrollEventThrottle={16}
+      onScroll={onScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -175,7 +182,7 @@ export function ActivityTab() {
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -227,6 +234,7 @@ const styles = StyleSheet.create({
   scoreMessage: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.md,
+    fontFamily: fontFamily.regular,
     textAlign: 'center',
     marginTop: spacing.sm,
     paddingHorizontal: spacing.xl,
@@ -244,7 +252,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: '#FFFFFF',
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
     marginBottom: spacing.md,
   },
   workoutsCard: {
@@ -271,11 +279,12 @@ const styles = StyleSheet.create({
   workoutName: {
     color: '#FFFFFF',
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
   workoutMeta: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     marginTop: 2,
   },
   workoutDivider: {
@@ -290,11 +299,12 @@ const styles = StyleSheet.create({
   emptyText: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: fontSize.md,
-    fontWeight: '500',
+    fontFamily: fontFamily.regular,
   },
   emptySubtext: {
     color: 'rgba(255, 255, 255, 0.5)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     marginTop: 4,
   },
   goalsSection: {
@@ -320,11 +330,12 @@ const styles = StyleSheet.create({
   goalTitle: {
     color: '#FFFFFF',
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
   goalProgress: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
   },
   progressBarBg: {
     height: 6,
@@ -342,5 +353,3 @@ const styles = StyleSheet.create({
 });
 
 export default ActivityTab;
-
-

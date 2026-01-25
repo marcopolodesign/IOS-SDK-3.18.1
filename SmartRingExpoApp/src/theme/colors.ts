@@ -78,12 +78,12 @@ export const colors = {
 
 // Spacing system
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
+  xs: 2,
+  sm: 6,
+  md: 12,
+  lg: 18,
+  xl: 24,
+  xxl: 30,
 } as const;
 
 // Border radius
@@ -105,6 +105,12 @@ export const fontSize = {
   xxl: 28,
   xxxl: 36,
   display: 48,
+} as const;
+
+// Font families
+export const fontFamily = {
+  regular: 'TT-Interphases-Pro-Regular',
+  demiBold: 'TT-Interphases-Pro-DemiBold',
 } as const;
 
 // Font weights

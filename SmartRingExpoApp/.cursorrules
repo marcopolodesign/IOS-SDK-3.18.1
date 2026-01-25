@@ -1,6 +1,317 @@
-# Smart Ring Expo App - Project Rules
+# Smart Ring Expo App - Frontend Development Rules
 
-## Strava API Credentials (Development Reference)
+You are an expert frontend developer specializing in **Expo and React Native** for this project.
+
+## 🎯 Project Overview
+- **Framework**: Expo ~54.0.0
+- **React Native**: 0.81.5
+- **React**: 19.1.0
+- **TypeScript**: ~5.3.0 (strict mode)
+- **Navigation**: Expo Router ~6.0.21 (file-based routing)
+- **Theme**: Premium dark theme (#0D0D0D background)
+
+## 🚨 CRITICAL: React Native vs Web Technologies
+
+### ❌ DO NOT USE:
+- **Tailwind CSS** - React Native uses StyleSheet API, not CSS. Use `StyleSheet.create()` with the custom theme system.
+- **GSAP** - This is a web-only animation library. Use React Native Animated API or React Native Reanimated instead.
+- **Web CSS libraries** - No CSS selectors, pseudo-classes, or media queries in React Native.
+- **HTML elements** - Use React Native components: `View`, `Text`, `TouchableOpacity`, etc.
+
+### ✅ USE INSTEAD:
+- **React Native StyleSheet** - Always use `StyleSheet.create()` for styling
+- **React Native Animated API** - For simple animations with `useNativeDriver: true`
+- **React Native Reanimated** - For complex animations (already installed: ~4.1.1)
+- **Custom Theme System** - Import from `src/theme/colors.ts`
+
+## 📁 Project Structure
+```
+app/                    # Expo Router pages (file-based routing)
+src/
+  ├── components/      # Reusable UI components
+  ├── screens/         # Full-screen views
+  ├── services/        # Business logic & API calls
+  ├── hooks/           # Custom React hooks
+  ├── types/           # TypeScript type definitions
+  └── theme/           # Colors and styling constants
+supabase/              # Supabase local config and migrations
+```
+
+## 🎨 Styling Guidelines
+
+### Always Use the Theme System
+```typescript
+import { colors, spacing, borderRadius, fontSize, shadows } from '../theme/colors';
+
+const styles = StyleSheet.create({
+  container: {
+    padding: spacing.md,           // 16px
+    borderRadius: borderRadius.md, // 12px
+    backgroundColor: colors.surface, // #1A1A2E
+    borderWidth: 1,
+    borderColor: colors.border,    // #2A2A4A
+  },
+  title: {
+    fontSize: fontSize.lg,         // 16
+    color: colors.text,            // #FFFFFF
+    fontWeight: '600',
+  },
+});
+```
+
+### Theme Colors Reference
+- `colors.background` (#0D0D0D) - Main background
+- `colors.primary` (#00D4AA) - Teal accent for steps
+- `colors.secondary` (#FF6B6B) - Red for heart rate
+- `colors.tertiary` (#6B8EFF) - Blue for sleep
+- `colors.text` (#FFFFFF) - Primary text
+- `colors.textSecondary` (#A0A0A0) - Secondary text
+- `colors.surface` (#1A1A2E) - Card background
+- Health metrics: `colors.heartRate`, `colors.steps`, `colors.sleep`, `colors.calories`, `colors.spo2`
+
+### Glassmorphism Pattern
+```typescript
+backgroundColor: 'rgba(255, 255, 255, 0.1)',
+borderWidth: 1,
+borderColor: 'rgba(255, 255, 255, 0.2)',
+borderRadius: borderRadius.xl,
+```
+
+## 🎬 Animation Guidelines
+
+### Simple Animations (React Native Animated)
+```typescript
+import { Animated } from 'react-native';
+
+const fadeAnim = useRef(new Animated.Value(0)).current;
+
+Animated.timing(fadeAnim, {
+  toValue: 1,
+  duration: 400,
+  useNativeDriver: true, // ALWAYS use native driver when possible
+}).start();
+```
+
+### Complex Animations (React Native Reanimated)
+```typescript
+import { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+
+const animatedStyle = useAnimatedStyle(() => ({
+  opacity: withTiming(isVisible ? 1 : 0),
+  transform: [{ translateY: withTiming(isVisible ? 0 : 100) }],
+}));
+```
+
+## 📝 Component Pattern
+
+```typescript
+import React from 'react';
+import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { colors, spacing, borderRadius } from '../../theme/colors';
+
+interface ComponentProps {
+  title: string;
+  style?: ViewStyle;
+  onPress?: () => void;
+}
+
+export function Component({ title, style, onPress }: ComponentProps) {
+  return (
+    <View style={[styles.container, style]}>
+      <Text style={styles.title}>{title}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+  },
+  title: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '600',
+  },
+});
+
+export default Component;
+```
+
+## 🎣 Hook Pattern
+
+```typescript
+import { useState, useEffect, useCallback } from 'react';
+import Service from '../services/Service';
+
+export function useCustomHook() {
+  const [state, setState] = useState<Type>(initialValue);
+  
+  const action = useCallback(async () => {
+    try {
+      const result = await Service.method();
+      setState(result);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }, [dependencies]);
+  
+  useEffect(() => {
+    action();
+    return () => {
+      // Cleanup
+    };
+  }, [action]);
+  
+  return { state, action };
+}
+```
+
+## 🧭 Navigation (Expo Router)
+
+- **File-based routing** - Files in `app/` become routes
+- **Tab navigation** - Use `(tabs)` group for tabs
+- **Typed routes** - Enabled via `experiments.typedRoutes`
+
+```typescript
+// Navigate programmatically
+import { router } from 'expo-router';
+router.push('/path');
+
+// Link component
+import { Link } from 'expo-router';
+<Link href="/path">Go to Page</Link>
+```
+
+## 🔌 Service Layer Pattern
+
+- **Never call native modules directly** - Always use service layer
+- Use `SmartRingService` wrapper, not `NativeModules.SmartRingBridge`
+- Services handle error handling and data transformation
+
+```typescript
+// ✅ CORRECT
+import SmartRingService from '../services/SmartRingService';
+await SmartRingService.connect(macAddress);
+
+// ❌ WRONG
+import { NativeModules } from 'react-native';
+NativeModules.SmartRingBridge.connect(macAddress);
+```
+
+## 📦 Key Dependencies
+
+```json
+{
+  "expo": "~54.0.0",
+  "react-native": "0.81.5",
+  "react": "19.1.0",
+  "expo-router": "~6.0.21",
+  "react-native-reanimated": "~4.1.1",
+  "react-native-svg": "15.12.1",
+  "expo-linear-gradient": "~15.0.8",
+  "@react-navigation/native": "^7.0.14"
+}
+```
+
+## 🎯 TypeScript Best Practices
+
+- ✅ **Strict mode enabled** - Always type everything
+- ✅ **Interface over type** - Prefer `interface` for object shapes
+- ✅ **Explicit return types** - For functions, especially async
+- ✅ **Use `as const`** - For literal types in theme objects
+
+```typescript
+// ✅ Good
+interface User {
+  id: string;
+  name: string;
+}
+
+async function fetchUser(id: string): Promise<User> {
+  // ...
+}
+
+// ❌ Bad
+function fetchUser(id) {  // No types
+  // ...
+}
+```
+
+## 🎨 UI Component Library
+
+### GlassCard
+```typescript
+import { GlassCard } from '../components/home/GlassCard';
+
+<GlassCard variant="default" style={customStyle}>
+  {/* Content */}
+</GlassCard>
+```
+
+### MetricCard
+```typescript
+import { MetricCard } from '../components/MetricCard';
+
+<MetricCard
+  label="Heart Rate"
+  value={72}
+  unit="bpm"
+  color={colors.heartRate}
+/>
+```
+
+### RingIndicator
+```typescript
+import { RingIndicator } from '../components/RingIndicator';
+
+<RingIndicator
+  value={75}
+  max={100}
+  size={120}
+  strokeWidth={8}
+  color={colors.primary}
+/>
+```
+
+## ⚡ Performance Best Practices
+
+1. **useMemo** - For expensive computations
+2. **useCallback** - For functions passed as props
+3. **FlatList** - Always use `FlatList` for lists (not `ScrollView`)
+4. **Native driver** - Always use `useNativeDriver: true` in animations
+5. **Lazy loading** - Load screens/components on demand
+
+## 🐛 Error Handling
+
+```typescript
+// Always handle errors in async operations
+try {
+  const result = await asyncOperation();
+  // Handle success
+} catch (error: unknown) {
+  console.error('Operation failed:', error);
+  if (error instanceof Error) {
+    // Handle Error instance
+  }
+}
+```
+
+## 📋 Code Style
+
+- **2 spaces** for indentation
+- **Semicolons** - Use semicolons
+- **Single quotes** - Prefer single quotes for strings
+- **Trailing commas** - Use in objects/arrays
+- **Named exports** - Prefer over default exports
+- **Async/await** - Prefer over promises.then()
+- **Early returns** - For cleaner code flow
+- **Destructuring** - Use for props and state
+
+## 🔐 Environment Variables (Reference)
+
+### Strava API Credentials (Development Reference)
 # These are stored here for development reference only.
 # Actual secrets should be in .env file (gitignored).
 
@@ -9,26 +320,52 @@ STRAVA_CLIENT_SECRET=8805f999c93c83583878fdf651a139030b3677ce
 STRAVA_ACCESS_TOKEN=70ae2b63d5f6f6eee7a1a04fbc9705e082423019
 STRAVA_REFRESH_TOKEN=4b61a4b05f22ed591e5e33c46696826c2238f6bf
 
-## Project Structure
-- /src/services/ - Business logic and API integrations
-- /src/screens/ - React Native screens
-- /src/components/ - Reusable UI components
-- /src/hooks/ - Custom React hooks
-- /src/types/ - TypeScript type definitions
-- /src/theme/ - Colors and styling constants
-- /supabase/ - Supabase local config and migrations
-
-## Code Style
-- Use TypeScript for all new files
-- Follow React Native best practices
-- Use functional components with hooks
-- Keep services separated from UI logic
-
-## Environment Variables
+### Supabase
 - SUPABASE_URL - Supabase project URL
 - SUPABASE_ANON_KEY - Supabase anonymous key
-- STRAVA_CLIENT_ID - Strava OAuth client ID
-- STRAVA_CLIENT_SECRET - Strava OAuth client secret
 
+## 🎯 Common Patterns in This Project
 
+1. **Service Layer** - All SDK calls go through service layer
+2. **Hook Abstraction** - Hooks wrap services and manage state
+3. **Event-Driven Updates** - Real-time data via event emitters
+4. **Glassmorphism UI** - Frosted glass effect cards
+5. **Dark Theme** - Premium dark theme (#0D0D0D background)
+6. **Gradient Backgrounds** - Animated background images per tab
+7. **Health Metrics** - Steps, HR, Sleep, SpO2, BP, etc.
 
+## 🚫 What NOT to Do
+
+- ❌ Don't use Tailwind CSS syntax or classes
+- ❌ Don't use GSAP or web animation libraries
+- ❌ Don't use HTML elements or CSS
+- ❌ Don't call native modules directly
+- ❌ Don't use class components (use function components with hooks)
+- ❌ Don't use inline styles (except for dynamic values)
+- ❌ Don't forget to use `useNativeDriver: true` in animations
+
+## ✅ What TO Do
+
+- ✅ Use React Native StyleSheet with theme system
+- ✅ Use React Native Animated/Reanimated for animations
+- ✅ Use TypeScript strict mode with explicit types
+- ✅ Use Expo Router for navigation
+- ✅ Use custom hooks for state management
+- ✅ Use service layer for all API/SDK calls
+- ✅ Follow the existing component patterns
+- ✅ Use the theme colors and spacing constants
+- ✅ Handle errors gracefully with try/catch
+- ✅ Use React Native components (View, Text, etc.)
+
+## 📚 Key Files to Reference
+
+- `src/theme/colors.ts` - Theme system (colors, spacing, typography)
+- `src/hooks/useSmartRing.ts` - Smart ring hook example
+- `src/services/SmartRingService.ts` - Service layer example
+- `src/components/home/GlassCard.tsx` - Component pattern example
+- `ARCHITECTURE.md` - Complete architecture documentation
+- `PROJECT_OVERVIEW.md` - Project overview
+
+---
+
+**Remember**: This is a React Native/Expo app, not a web app. Use React Native APIs, not web APIs.

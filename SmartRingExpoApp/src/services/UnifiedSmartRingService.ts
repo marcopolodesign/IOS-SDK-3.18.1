@@ -1,18 +1,17 @@
 /**
  * UnifiedSmartRingService - Unified interface for multiple smart ring SDKs
- * 
+ *
  * This service provides a single API that works with:
  * - CRPSmartBand SDK (via SmartRingService)
  * - QCBandSDK (via QCBandService)
- * - Mock data (for development and testing)
- * 
+ *
  * It automatically detects which SDK is available and uses the appropriate one.
+ * Requires a physical device connection - no mock data.
  */
 
 import { Platform } from 'react-native';
 import SmartRingService from './SmartRingService';
 import QCBandService from './QCBandService';
-import SmartRingMockService from './SmartRingMockService';
 import type {
   DeviceInfo,
   StepsData,
@@ -29,10 +28,9 @@ import type {
   BluetoothState,
 } from '../types/sdk.types';
 
-export type SDKType = 'crp' | 'qcband' | 'mock' | 'none';
+export type SDKType = 'crp' | 'qcband' | 'none';
 
 interface UnifiedServiceConfig {
-  preferMock?: boolean;
   preferredSDK?: SDKType;
 }
 
@@ -40,8 +38,27 @@ class UnifiedSmartRingService {
   private activeSDK: SDKType = 'none';
   private config: UnifiedServiceConfig = {};
 
+  // JavaScript-side connection state listeners (for manual state notifications)
+  private jsConnectionListeners: Set<(state: ConnectionState) => void> = new Set();
+
   constructor() {
+    this.config = { preferredSDK: 'qcband' };
     this.detectSDK();
+  }
+
+  /**
+   * Manually emit a connection state change to all JS listeners
+   * Used when the native SDK doesn't emit events (e.g., after autoReconnect)
+   */
+  emitConnectionState(state: ConnectionState): void {
+    console.log('📱 [UnifiedService] Emitting connection state:', state);
+    this.jsConnectionListeners.forEach(callback => {
+      try {
+        callback(state);
+      } catch (e) {
+        console.error('Error in connection state listener:', e);
+      }
+    });
   }
 
   /**
@@ -54,48 +71,37 @@ class UnifiedSmartRingService {
 
   /**
    * Detect which SDK is available
+   * NOTE: Verbose logs disabled to reduce startup noise
    */
   private detectSDK(): void {
-    if (this.config.preferMock || (__DEV__ && this.config.preferMock !== false)) {
-      this.activeSDK = 'mock';
-      console.log('📱 UnifiedSmartRingService: Using MOCK mode');
-      return;
-    }
-
     if (Platform.OS !== 'ios') {
-      this.activeSDK = 'mock';
-      console.log('📱 UnifiedSmartRingService: Non-iOS platform, using MOCK mode');
+      this.activeSDK = 'none';
       return;
     }
 
     // Check for preferred SDK first
     if (this.config.preferredSDK === 'qcband' && QCBandService.isAvailable()) {
       this.activeSDK = 'qcband';
-      console.log('📱 UnifiedSmartRingService: Using QCBandSDK');
       return;
     }
 
-    if (this.config.preferredSDK === 'crp' && !SmartRingService.isUsingMockData()) {
+    if (this.config.preferredSDK === 'crp' && SmartRingService.isNativeModuleAvailable()) {
       this.activeSDK = 'crp';
-      console.log('📱 UnifiedSmartRingService: Using CRPSmartBand SDK');
       return;
     }
 
     // Auto-detect: try QCBandSDK first (newer), then CRPSmartBand
     if (QCBandService.isAvailable()) {
       this.activeSDK = 'qcband';
-      console.log('📱 UnifiedSmartRingService: Auto-detected QCBandSDK');
       return;
     }
 
-    if (!SmartRingService.isUsingMockData()) {
+    if (SmartRingService.isNativeModuleAvailable()) {
       this.activeSDK = 'crp';
-      console.log('📱 UnifiedSmartRingService: Auto-detected CRPSmartBand SDK');
       return;
     }
 
-    this.activeSDK = 'mock';
-    console.log('📱 UnifiedSmartRingService: No SDK detected, using MOCK mode');
+    this.activeSDK = 'none';
   }
 
   /**
@@ -106,23 +112,39 @@ class UnifiedSmartRingService {
   }
 
   /**
-   * Check if using mock data
+   * Check if using mock data (always false - mock data removed)
    */
   isUsingMockData(): boolean {
-    return this.activeSDK === 'mock';
+    return false;
+  }
+
+  /**
+   * Check if any SDK is available
+   */
+  isSDKAvailable(): boolean {
+    return this.activeSDK !== 'none';
+  }
+
+  private ensureSDKAvailable(): void {
+    if (this.activeSDK === 'none') {
+      throw new Error('No Smart Ring SDK available - requires native iOS build with connected device');
+    }
   }
 
   // ========== Connection Methods ==========
 
   async scan(duration: number = 10): Promise<DeviceInfo[]> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
-        return await QCBandService.scan(duration);
+        // QCBandService.scan() initiates scanning and devices arrive via onDeviceDiscovered events
+        // It returns { success, message } not devices array
+        await QCBandService.scan(duration);
+        return []; // Devices will come through onDeviceDiscovered callback
       case 'crp':
         return await SmartRingService.scan(duration);
-      case 'mock':
       default:
-        return await SmartRingMockService.scan(duration);
+        return [];
     }
   }
 
@@ -134,22 +156,18 @@ class UnifiedSmartRingService {
       case 'crp':
         SmartRingService.stopScan();
         break;
-      case 'mock':
-      default:
-        SmartRingMockService.stopScan();
-        break;
     }
   }
 
   async connect(mac: string): Promise<{ success: boolean; message: string }> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         return await QCBandService.connect(mac);
       case 'crp':
         return await SmartRingService.connect(mac);
-      case 'mock':
       default:
-        return await SmartRingMockService.connect(mac);
+        return { success: false, message: 'No SDK available' };
     }
   }
 
@@ -161,65 +179,173 @@ class UnifiedSmartRingService {
       case 'crp':
         SmartRingService.disconnect();
         break;
-      case 'mock':
-      default:
-        SmartRingMockService.disconnect();
-        break;
     }
+  }
+
+  async isConnected(): Promise<{
+    connected: boolean;
+    state: string;
+    deviceName: string | null;
+    deviceMac: string | null;
+  }> {
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const status = await QCBandService.getConnectionStatus();
+        return {
+          connected: status.connected,
+          state: status.state,
+          deviceName: status.deviceName,
+          deviceMac: status.deviceMac,
+        };
+      }
+      case 'crp':
+        return await SmartRingService.isConnected();
+      default:
+        return { connected: false, state: 'unavailable', deviceName: null, deviceMac: null };
+    }
+  }
+
+  async getFullConnectionStatus(): Promise<{
+    managerState: string;
+    managerStateCode: number;
+    cachedState: string;
+    cachedStateCode: number;
+    isConnected: boolean;
+    deviceName: string | null;
+    deviceMac: string | null;
+  }> {
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const status = await QCBandService.getConnectionStatus();
+        return {
+          managerState: status.state,
+          managerStateCode: status.stateCode,
+          cachedState: status.state,
+          cachedStateCode: status.stateCode,
+          isConnected: status.connected,
+          deviceName: status.deviceName,
+          deviceMac: status.deviceMac,
+        };
+      }
+      case 'crp':
+        return await SmartRingService.getFullConnectionStatus();
+      default:
+        return {
+          managerState: 'unavailable',
+          managerStateCode: -1,
+          cachedState: 'unavailable',
+          cachedStateCode: -1,
+          isConnected: false,
+          deviceName: null,
+          deviceMac: null,
+        };
+    }
+  }
+
+  async getPairedDevice(): Promise<{
+    hasPairedDevice: boolean;
+    device: DeviceInfo | null;
+  }> {
+    switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.getPairedDevice();
+      case 'crp':
+        return await SmartRingService.getPairedDevice();
+      default:
+        return { hasPairedDevice: false, device: null };
+    }
+  }
+
+  async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
+    switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.forgetPairedDevice();
+      case 'crp':
+        return await SmartRingService.forgetPairedDevice();
+      default:
+        return { success: false, message: 'No SDK available' };
+    }
+  }
+
+  async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
+    let result: { success: boolean; message: string; deviceId?: string; deviceName?: string };
+
+    switch (this.activeSDK) {
+      case 'qcband':
+        result = await QCBandService.autoReconnect();
+        break;
+      case 'crp':
+        // CRP doesn't have this method
+        result = { success: false, message: 'Not supported' };
+        break;
+      default:
+        result = { success: false, message: 'No SDK available' };
+    }
+
+    // Manually emit connection state since native SDK may not emit events after autoReconnect
+    if (result.success) {
+      // Small delay to ensure native SDK is fully ready
+      setTimeout(() => {
+        this.emitConnectionState('connected');
+      }, 500);
+    }
+
+    return result;
   }
 
   // ========== Data Retrieval ==========
 
   async getSteps(): Promise<StepsData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         return await QCBandService.getCurrentSteps();
       case 'crp':
         return await SmartRingService.getSteps();
-      case 'mock':
       default:
-        return await SmartRingMockService.getSteps();
+        throw new Error('No SDK available');
     }
   }
 
   async getSleepData(): Promise<SleepData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         return await QCBandService.getSleepByDay(0);
       case 'crp':
         return await SmartRingService.getSleepData();
-      case 'mock':
       default:
-        return await SmartRingMockService.getSleepData();
+        throw new Error('No SDK available');
     }
   }
 
   async getBattery(): Promise<BatteryData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         return await QCBandService.getBattery();
       case 'crp':
         return await SmartRingService.getBattery();
-      case 'mock':
       default:
-        return await SmartRingMockService.getBattery();
+        throw new Error('No SDK available');
     }
   }
 
   async getVersion(): Promise<{ version: string }> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         const qcVersion = await QCBandService.getVersion();
         return { version: qcVersion.softwareVersion };
       case 'crp':
         return await SmartRingService.getVersion();
-      case 'mock':
       default:
-        return await SmartRingMockService.getVersion();
+        throw new Error('No SDK available');
     }
   }
 
   async get24HourHeartRate(): Promise<number[]> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         // QCBandSDK uses scheduled HR data
@@ -227,48 +353,132 @@ class UnifiedSmartRingService {
         return data.map(d => d.heartRate);
       case 'crp':
         return await SmartRingService.get24HourHeartRate();
-      case 'mock':
       default:
-        return await SmartRingMockService.get24HourHeartRate();
+        return [];
+    }
+  }
+
+  async get24HourSteps(): Promise<number[]> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband':
+        // Not provided by QCBandSDK; return empty array for now
+        return [];
+      case 'crp':
+        return await SmartRingService.get24HourSteps();
+      default:
+        return [];
     }
   }
 
   async getHRVData(): Promise<HRVData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         const hrvData = await QCBandService.getHRVData([0]);
         return hrvData[0] || {};
       case 'crp':
         return await SmartRingService.getHRVData();
-      case 'mock':
       default:
-        return await SmartRingMockService.getHRVData();
+        throw new Error('No SDK available');
     }
   }
 
   async getStressData(): Promise<StressData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         const stressData = await QCBandService.getStressData([0]);
         return stressData[0] || { level: 0 };
       case 'crp':
         return await SmartRingService.getStressData();
-      case 'mock':
       default:
-        return await SmartRingMockService.getStressData();
+        throw new Error('No SDK available');
     }
   }
 
   async getTemperature(): Promise<TemperatureData> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         const tempData = await QCBandService.getScheduledTemperature(0);
         return tempData[0] || { temperature: 0 };
       case 'crp':
         return await SmartRingService.getTemperature();
-      case 'mock':
       default:
-        return await SmartRingMockService.getTemperature();
+        throw new Error('No SDK available');
+    }
+  }
+
+  async getHeartRate(): Promise<HeartRateData> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const data = await QCBandService.getScheduledHeartRate([0]);
+        const first = data[0];
+        return first || { heartRate: 0 };
+      }
+      case 'crp':
+        return await SmartRingService.getHeartRate();
+      default:
+        throw new Error('No SDK available');
+    }
+  }
+
+  async getSpO2(): Promise<SpO2Data> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const data = await QCBandService.getManualBloodOxygen(0);
+        const first = data[0];
+        return first || { spo2: 0 };
+      }
+      case 'crp':
+        return await SmartRingService.getSpO2();
+      default:
+        throw new Error('No SDK available');
+    }
+  }
+
+  async getBloodGlucose(dayIndex: number = 0): Promise<Array<{
+    glucose: number;
+    minGlucose?: number;
+    maxGlucose?: number;
+    type?: number;
+    gluType?: number;
+    timestamp: number;
+  }>> {
+    switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.getBloodGlucose(dayIndex);
+      case 'crp':
+        return []; // Not supported
+      default:
+        return [];
+    }
+  }
+
+  async measureHeartRate(): Promise<{ success: boolean }> {
+    if (this.activeSDK === 'none') {
+      return { success: false };
+    }
+    switch (this.activeSDK) {
+      case 'qcband': {
+        // Use startHeartRateMeasuring for single measurement (more reliable)
+        // Results come via onHeartRateData event
+        try {
+          const result = await QCBandService.startHeartRateMeasuring();
+          return { success: !!result?.success };
+        } catch (error) {
+          console.log('⚠️ startHeartRateMeasuring failed, trying startMeasurement:', error);
+          const result = await QCBandService.startMeasurement('heartRate');
+          return { success: !!result?.success || result?.success === undefined };
+        }
+      }
+      case 'crp':
+        return await SmartRingService.measureHeartRate();
+      default:
+        return { success: false };
     }
   }
 
@@ -282,10 +492,6 @@ class UnifiedSmartRingService {
       case 'crp':
         SmartRingService.startHeartRateMonitoring();
         break;
-      case 'mock':
-      default:
-        SmartRingMockService.startHeartRateMonitoring();
-        break;
     }
   }
 
@@ -297,24 +503,19 @@ class UnifiedSmartRingService {
       case 'crp':
         SmartRingService.stopHeartRateMonitoring();
         break;
-      case 'mock':
-      default:
-        SmartRingMockService.stopHeartRateMonitoring();
-        break;
     }
   }
 
   startSpO2Monitoring(): void {
     switch (this.activeSDK) {
       case 'qcband':
-        QCBandService.startMeasurement('spo2');
+        // Start SpO2 measurement - results come via onSpO2Data event
+        QCBandService.startMeasurement('spo2').catch(err => {
+          console.log('⚠️ startMeasurement spo2 error:', err.message);
+        });
         break;
       case 'crp':
         SmartRingService.startSpO2Monitoring();
-        break;
-      case 'mock':
-      default:
-        SmartRingMockService.startSpO2Monitoring();
         break;
     }
   }
@@ -322,14 +523,12 @@ class UnifiedSmartRingService {
   stopSpO2Monitoring(): void {
     switch (this.activeSDK) {
       case 'qcband':
-        QCBandService.stopMeasurement('spo2');
+        QCBandService.stopMeasurement('spo2').catch(err => {
+          console.log('⚠️ stopMeasurement spo2 error:', err.message);
+        });
         break;
       case 'crp':
         SmartRingService.stopSpO2Monitoring();
-        break;
-      case 'mock':
-      default:
-        SmartRingMockService.stopSpO2Monitoring();
         break;
     }
   }
@@ -337,14 +536,12 @@ class UnifiedSmartRingService {
   startBloodPressureMonitoring(): void {
     switch (this.activeSDK) {
       case 'qcband':
-        QCBandService.startMeasurement('bloodPressure');
+        QCBandService.startMeasurement('bloodPressure').catch(err => {
+          console.log('⚠️ startMeasurement bloodPressure error:', err.message);
+        });
         break;
       case 'crp':
         SmartRingService.startBloodPressureMonitoring();
-        break;
-      case 'mock':
-      default:
-        SmartRingMockService.startBloodPressureMonitoring();
         break;
     }
   }
@@ -352,14 +549,12 @@ class UnifiedSmartRingService {
   stopBloodPressureMonitoring(): void {
     switch (this.activeSDK) {
       case 'qcband':
-        QCBandService.stopMeasurement('bloodPressure');
+        QCBandService.stopMeasurement('bloodPressure').catch(err => {
+          console.log('⚠️ stopMeasurement bloodPressure error:', err.message);
+        });
         break;
       case 'crp':
         SmartRingService.stopBloodPressureMonitoring();
-        break;
-      case 'mock':
-      default:
-        SmartRingMockService.stopBloodPressureMonitoring();
         break;
     }
   }
@@ -367,6 +562,7 @@ class UnifiedSmartRingService {
   // ========== Settings ==========
 
   async setProfile(profile: ProfileData): Promise<{ success: boolean }> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
       case 'qcband':
         return await QCBandService.setProfile({
@@ -379,19 +575,79 @@ class UnifiedSmartRingService {
         });
       case 'crp':
         return await SmartRingService.setProfile(profile);
-      case 'mock':
       default:
-        return await SmartRingMockService.setProfile(profile);
+        return { success: false };
+    }
+  }
+
+  async getProfile(): Promise<ProfileData> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const profile = await QCBandService.getProfile();
+        return {
+          age: profile.age,
+          height: profile.height,
+          weight: profile.weight,
+          gender: profile.gender,
+        };
+      }
+      case 'crp':
+        return await SmartRingService.getProfile();
+      default:
+        throw new Error('No SDK available');
+    }
+  }
+
+  async getGoal(): Promise<{ goal: number }> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband': {
+        const data = await QCBandService.getGoal();
+        return { goal: data.goal };
+      }
+      case 'crp': {
+        const data = await SmartRingService.getGoal();
+        return { goal: data.goal };
+      }
+      default:
+        throw new Error('No SDK available');
     }
   }
 
   async setGoal(goal: number): Promise<{ success: boolean }> {
+    this.ensureSDKAvailable();
     switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.setGoal(goal);
       case 'crp':
         return await SmartRingService.setGoal(goal);
-      case 'mock':
       default:
-        return await SmartRingMockService.setGoal(goal);
+        return { success: false };
+    }
+  }
+
+  async setTimeFormat(is24Hour: boolean): Promise<{ success: boolean }> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.setTimeFormat(is24Hour);
+      case 'crp':
+        return await SmartRingService.setTimeFormat(is24Hour);
+      default:
+        return { success: false };
+    }
+  }
+
+  async setUnit(isMetric: boolean): Promise<{ success: boolean }> {
+    this.ensureSDKAvailable();
+    switch (this.activeSDK) {
+      case 'qcband':
+        return await QCBandService.setUnit(isMetric);
+      case 'crp':
+        return await SmartRingService.setUnit(isMetric);
+      default:
+        return { success: false };
     }
   }
 
@@ -411,15 +667,25 @@ class UnifiedSmartRingService {
   // ========== Event Listeners ==========
 
   onConnectionStateChanged(callback: (state: ConnectionState) => void): () => void {
+    // Register for JS-side events (manual emissions from autoReconnect, etc.)
+    this.jsConnectionListeners.add(callback);
+
+    // Also register for native SDK events
+    let nativeUnsubscribe: () => void = () => {};
     switch (this.activeSDK) {
       case 'qcband':
-        return QCBandService.onConnectionStateChanged(callback);
+        nativeUnsubscribe = QCBandService.onConnectionStateChanged(callback);
+        break;
       case 'crp':
-        return SmartRingService.onConnectionStateChanged(callback);
-      case 'mock':
-      default:
-        return SmartRingMockService.onConnectionStateChanged(callback);
+        nativeUnsubscribe = SmartRingService.onConnectionStateChanged(callback);
+        break;
     }
+
+    // Return cleanup function that removes both
+    return () => {
+      this.jsConnectionListeners.delete(callback);
+      nativeUnsubscribe();
+    };
   }
 
   onBluetoothStateChanged(callback: (state: BluetoothState) => void): () => void {
@@ -428,9 +694,8 @@ class UnifiedSmartRingService {
         return QCBandService.onBluetoothStateChanged(callback);
       case 'crp':
         return SmartRingService.onBluetoothStateChanged(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onBluetoothStateChanged(callback);
+        return () => {};
     }
   }
 
@@ -440,9 +705,8 @@ class UnifiedSmartRingService {
         return QCBandService.onDeviceDiscovered(callback);
       case 'crp':
         return SmartRingService.onDeviceDiscovered(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onDeviceDiscovered(callback);
+        return () => {};
     }
   }
 
@@ -454,9 +718,8 @@ class UnifiedSmartRingService {
         });
       case 'crp':
         return SmartRingService.onHeartRateReceived(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onHeartRateReceived(callback);
+        return () => {};
     }
   }
 
@@ -473,19 +736,19 @@ class UnifiedSmartRingService {
         });
       case 'crp':
         return SmartRingService.onStepsReceived(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onStepsReceived(callback);
+        return () => {};
     }
   }
 
   onSleepDataReceived(callback: (data: SleepData) => void): () => void {
     switch (this.activeSDK) {
+      case 'qcband':
+        return () => {};
       case 'crp':
         return SmartRingService.onSleepDataReceived(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onSleepDataReceived(callback);
+        return () => {};
     }
   }
 
@@ -495,29 +758,30 @@ class UnifiedSmartRingService {
         return QCBandService.onBatteryChanged(callback);
       case 'crp':
         return SmartRingService.onBatteryReceived(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onBatteryReceived(callback);
+        return () => {};
     }
   }
 
   onSpO2Received(callback: (data: SpO2Data) => void): () => void {
     switch (this.activeSDK) {
+      case 'qcband':
+        return QCBandService.onSpO2Received(callback);
       case 'crp':
         return SmartRingService.onSpO2Received(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onSpO2Received(callback);
+        return () => {};
     }
   }
 
   onBloodPressureReceived(callback: (data: BloodPressureData) => void): () => void {
     switch (this.activeSDK) {
+      case 'qcband':
+        return () => {};
       case 'crp':
         return SmartRingService.onBloodPressureReceived(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onBloodPressureReceived(callback);
+        return () => {};
     }
   }
 
@@ -527,9 +791,8 @@ class UnifiedSmartRingService {
         return QCBandService.onError(callback);
       case 'crp':
         return SmartRingService.onError(callback);
-      case 'mock':
       default:
-        return SmartRingMockService.onError(callback);
+        return () => {};
     }
   }
 
@@ -583,8 +846,3 @@ class UnifiedSmartRingService {
 }
 
 export default new UnifiedSmartRingService();
-
-
-
-
-

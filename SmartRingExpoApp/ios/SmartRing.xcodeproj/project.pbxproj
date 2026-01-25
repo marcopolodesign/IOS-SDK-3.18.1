@@ -7,35 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		005CB9C3E41A0E4EEC0BB71A /* CRPSmartBand.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0F07E12E26E65B85F9B0FDA7 /* CRPSmartBand.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		085EEBD1438AE7FF468647DE /* QCCentralManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 4E5448C1AA0E2BFAF13BB011 /* QCCentralManager.m */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		28120BF2B3BBAD3A063FEE20 /* libPods-SmartRing.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8754D23405C5C3BFF34D705A /* libPods-SmartRing.a */; };
+		329F3DDC9D24201B19B70E56 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5986521E1992C6BFEDA46091 /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		4022B229F5C9231FB72A7B5F /* OTAFramework.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3979980EA805E605AF2B2520 /* OTAFramework.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		45DF94E0EA690019856A225F /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89453E845E35144AC422C779 /* ExpoModulesProvider.swift */; };
-		5D3F315E6A1961236E3BA9F9 /* RTKOTASDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 62A5F1B9DE58080136C82C49 /* RTKOTASDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		7A5F61A1E4AACCB8EA687117 /* SmartRingBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D17826D1C58F3D49E9758E2D /* SmartRingBridge.m */; };
-		8DB2FF6636477B6060D3959A /* libPods-SmartRing.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 23AB10A6C410FB4A7C2307A0 /* libPods-SmartRing.a */; };
-		9011ECBE159856574044F2A8 /* RTKOTASDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 62A5F1B9DE58080136C82C49 /* RTKOTASDK.framework */; };
-		B1DDADA7593D31C7FD8A60C3 /* RTKLEFoundation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5E58B955763263F4D0AE2AFA /* RTKLEFoundation.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		5AB4DBEE452BDDBA2CB1802C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9E97740E12A0CF7CC398B15A /* PrivacyInfo.xcprivacy */; };
+		71DA3D7CBA1214325E58EA79 /* QCBandBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 6AFF1BCB4EDB01CB45CD5B37 /* QCBandBridge.m */; };
+		8D295154592DD73E25AF80DE /* QCBandSDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E527FE0BE9AA8C54CCAC4CE7 /* QCBandSDK.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		CE463EFA8B204167E9BA7FAA /* CRPSmartBand.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F07E12E26E65B85F9B0FDA7 /* CRPSmartBand.framework */; };
-		D6C6C852D09B17C93CDACFA8 /* OTAFramework.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3979980EA805E605AF2B2520 /* OTAFramework.framework */; };
-		E94C832A92721A5C74F14176 /* RTKLEFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E58B955763263F4D0AE2AFA /* RTKLEFoundation.framework */; };
+		EF7FB9F6375A1BBC7F311ADC /* QCBandSDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E527FE0BE9AA8C54CCAC4CE7 /* QCBandSDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		FA89829D1245D04024BC9666 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8F2509BABAE4E1B4C4C8709D /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		CDF50A31BA86A6B43FECCC8E /* Embed Frameworks */ = {
+		A6FF719EC17A9D13AE136044 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				005CB9C3E41A0E4EEC0BB71A /* CRPSmartBand.framework in Embed Frameworks */,
-				B1DDADA7593D31C7FD8A60C3 /* RTKLEFoundation.framework in Embed Frameworks */,
-				5D3F315E6A1961236E3BA9F9 /* RTKOTASDK.framework in Embed Frameworks */,
-				4022B229F5C9231FB72A7B5F /* OTAFramework.framework in Embed Frameworks */,
+				EF7FB9F6375A1BBC7F311ADC /* QCBandSDK.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -43,25 +35,24 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0F07E12E26E65B85F9B0FDA7 /* CRPSmartBand.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CRPSmartBand.framework; path = Frameworks/CRPSmartBand.framework; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* SmartRing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SmartRing.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = SmartRing/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = SmartRing/Info.plist; sourceTree = "<group>"; };
-		23AB10A6C410FB4A7C2307A0 /* libPods-SmartRing.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-SmartRing.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		3979980EA805E605AF2B2520 /* OTAFramework.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OTAFramework.framework; path = Frameworks/OTAFramework.framework; sourceTree = "<group>"; };
-		5E58B955763263F4D0AE2AFA /* RTKLEFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = RTKLEFoundation.framework; path = Frameworks/RTKLEFoundation.framework; sourceTree = "<group>"; };
-		62A5F1B9DE58080136C82C49 /* RTKOTASDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = RTKOTASDK.framework; path = Frameworks/RTKOTASDK.framework; sourceTree = "<group>"; };
-		6E4740B84EFEEF972537968D /* Pods-SmartRing.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SmartRing.debug.xcconfig"; path = "Target Support Files/Pods-SmartRing/Pods-SmartRing.debug.xcconfig"; sourceTree = "<group>"; };
-		89453E845E35144AC422C779 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SmartRing/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		8F2509BABAE4E1B4C4C8709D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = SmartRing/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		2A836081B9478ACCE9A5268F /* QCBandBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = QCBandBridge.h; sourceTree = "<group>"; };
+		4221704CB4C95E9D19A3BECC /* QCCentralManager.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = QCCentralManager.h; sourceTree = "<group>"; };
+		4E5448C1AA0E2BFAF13BB011 /* QCCentralManager.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = QCCentralManager.m; sourceTree = "<group>"; };
+		5986521E1992C6BFEDA46091 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SmartRing/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		6AFF1BCB4EDB01CB45CD5B37 /* QCBandBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = QCBandBridge.m; sourceTree = "<group>"; };
+		8754D23405C5C3BFF34D705A /* libPods-SmartRing.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-SmartRing.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8CEEE2892F331AC0EB3F34A0 /* Pods-SmartRing.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SmartRing.debug.xcconfig"; path = "Target Support Files/Pods-SmartRing/Pods-SmartRing.debug.xcconfig"; sourceTree = "<group>"; };
+		9E97740E12A0CF7CC398B15A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = SmartRing/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = SmartRing/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		D17826D1C58F3D49E9758E2D /* SmartRingBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = SmartRingBridge.m; path = SmartRing/SmartRingBridge.m; sourceTree = "<group>"; };
-		EBD36812A13BDF0381EA2017 /* Pods-SmartRing.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SmartRing.release.xcconfig"; path = "Target Support Files/Pods-SmartRing/Pods-SmartRing.release.xcconfig"; sourceTree = "<group>"; };
+		E48845ED19601FD5900BBDA0 /* Pods-SmartRing.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SmartRing.release.xcconfig"; path = "Target Support Files/Pods-SmartRing/Pods-SmartRing.release.xcconfig"; sourceTree = "<group>"; };
+		E527FE0BE9AA8C54CCAC4CE7 /* QCBandSDK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QCBandSDK.framework; path = Frameworks/QCBandSDK.framework; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = SmartRing/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* SmartRing-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "SmartRing-Bridging-Header.h"; path = "SmartRing/SmartRing-Bridging-Header.h"; sourceTree = "<group>"; };
-		F507B278DD662C6F49FFD4AD /* SmartRingBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = SmartRingBridge.h; path = SmartRing/SmartRingBridge.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,11 +60,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8DB2FF6636477B6060D3959A /* libPods-SmartRing.a in Frameworks */,
-				CE463EFA8B204167E9BA7FAA /* CRPSmartBand.framework in Frameworks */,
-				E94C832A92721A5C74F14176 /* RTKLEFoundation.framework in Frameworks */,
-				9011ECBE159856574044F2A8 /* RTKOTASDK.framework in Frameworks */,
-				D6C6C852D09B17C93CDACFA8 /* OTAFramework.framework in Frameworks */,
+				28120BF2B3BBAD3A063FEE20 /* libPods-SmartRing.a in Frameworks */,
+				8D295154592DD73E25AF80DE /* QCBandSDK.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,40 +77,48 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				8F2509BABAE4E1B4C4C8709D /* PrivacyInfo.xcprivacy */,
-				F507B278DD662C6F49FFD4AD /* SmartRingBridge.h */,
-				D17826D1C58F3D49E9758E2D /* SmartRingBridge.m */,
+				9E97740E12A0CF7CC398B15A /* PrivacyInfo.xcprivacy */,
+				1CB48AD05375E17F9A5B3CB1 /* QCBandBridge */,
 			);
 			name = SmartRing;
+			sourceTree = "<group>";
+		};
+		1CB48AD05375E17F9A5B3CB1 /* QCBandBridge */ = {
+			isa = PBXGroup;
+			children = (
+				2A836081B9478ACCE9A5268F /* QCBandBridge.h */,
+				6AFF1BCB4EDB01CB45CD5B37 /* QCBandBridge.m */,
+				4221704CB4C95E9D19A3BECC /* QCCentralManager.h */,
+				4E5448C1AA0E2BFAF13BB011 /* QCCentralManager.m */,
+			);
+			path = QCBandBridge;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				23AB10A6C410FB4A7C2307A0 /* libPods-SmartRing.a */,
-				0F07E12E26E65B85F9B0FDA7 /* CRPSmartBand.framework */,
-				5E58B955763263F4D0AE2AFA /* RTKLEFoundation.framework */,
-				62A5F1B9DE58080136C82C49 /* RTKOTASDK.framework */,
-				3979980EA805E605AF2B2520 /* OTAFramework.framework */,
+				8754D23405C5C3BFF34D705A /* libPods-SmartRing.a */,
+				E527FE0BE9AA8C54CCAC4CE7 /* QCBandSDK.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		32DF90E4B2630A0EC00FDCC5 /* ExpoModulesProviders */ = {
+		38F8415FFDC7C9D17ABA8838 /* SmartRing */ = {
 			isa = PBXGroup;
 			children = (
-				4732B42B63642E149CE0DEE2 /* SmartRing */,
-			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
-		4732B42B63642E149CE0DEE2 /* SmartRing */ = {
-			isa = PBXGroup;
-			children = (
-				89453E845E35144AC422C779 /* ExpoModulesProvider.swift */,
+				5986521E1992C6BFEDA46091 /* ExpoModulesProvider.swift */,
 			);
 			name = SmartRing;
+			sourceTree = "<group>";
+		};
+		585CA4DA785E8D017D1C21B9 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				8CEEE2892F331AC0EB3F34A0 /* Pods-SmartRing.debug.xcconfig */,
+				E48845ED19601FD5900BBDA0 /* Pods-SmartRing.release.xcconfig */,
+			);
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -139,8 +135,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				8A594E46097578B9CB1AD181 /* Pods */,
-				32DF90E4B2630A0EC00FDCC5 /* ExpoModulesProviders */,
+				585CA4DA785E8D017D1C21B9 /* Pods */,
+				FFA26FD2BA46814CB45B1C5E /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -155,15 +151,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		8A594E46097578B9CB1AD181 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				6E4740B84EFEEF972537968D /* Pods-SmartRing.debug.xcconfig */,
-				EBD36812A13BDF0381EA2017 /* Pods-SmartRing.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -171,6 +158,14 @@
 			);
 			name = Supporting;
 			path = SmartRing/Supporting;
+			sourceTree = "<group>";
+		};
+		FFA26FD2BA46814CB45B1C5E /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				38F8415FFDC7C9D17ABA8838 /* SmartRing */,
+			);
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -181,14 +176,14 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "SmartRing" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				8334CA28DE39DB7865BBDC59 /* [Expo] Configure project */,
+				93AC5BE881E9BF42098F26A6 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				D1D76346108F66D93C557248 /* [CP] Embed Pods Frameworks */,
-				CDF50A31BA86A6B43FECCC8E /* Embed Frameworks */,
+				BDBCEF7D8545F2B3A1C0BCD7 /* [CP] Embed Pods Frameworks */,
+				A6FF719EC17A9D13AE136044 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -238,7 +233,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				FA89829D1245D04024BC9666 /* PrivacyInfo.xcprivacy in Resources */,
+				5AB4DBEE452BDDBA2CB1802C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,7 +315,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-SmartRing/Pods-SmartRing-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		8334CA28DE39DB7865BBDC59 /* [Expo] Configure project */ = {
+		93AC5BE881E9BF42098F26A6 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -344,7 +339,7 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-SmartRing/expo-configure-project.sh\"\n";
 		};
-		D1D76346108F66D93C557248 /* [CP] Embed Pods Frameworks */ = {
+		BDBCEF7D8545F2B3A1C0BCD7 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -374,8 +369,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				45DF94E0EA690019856A225F /* ExpoModulesProvider.swift in Sources */,
-				7A5F61A1E4AACCB8EA687117 /* SmartRingBridge.m in Sources */,
+				329F3DDC9D24201B19B70E56 /* ExpoModulesProvider.swift in Sources */,
+				71DA3D7CBA1214325E58EA79 /* QCBandBridge.m in Sources */,
+				085EEBD1438AE7FF468647DE /* QCCentralManager.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -384,33 +380,33 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 6E4740B84EFEEF972537968D /* Pods-SmartRing.debug.xcconfig */;
+			baseConfigurationReference = 8CEEE2892F331AC0EB3F34A0 /* Pods-SmartRing.debug.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartRing/SmartRing.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KSWF3L58X;
 				ENABLE_BITCODE = NO;
+				EXCLUDED_ARCHS = "EXCLUDED_ARCHS__EFFECTIVE_PLATFORM_SUFFIX_simulator__NATIVE_ARCH_64_BIT_x86_64=arm64 \"arm64e armv7 armv7s armv6 armv8 EXCLUDED_ARCHS=$(inherited)\" $(EXCLUDED_ARCHS__EFFECTIVE_PLATFORM_SUFFIX_$(EFFECTIVE_PLATFORM_SUFFIX)__NATIVE_ARCH_64_ BIT_$(NATIVE_ARCH_64_BIT))";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/Frameworks",
+					"\"$(PROJECT_DIR)/Frameworks\"",
 				);
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/Frameworks/QCBandSDK.framework/Headers\"",
 				);
 				INFOPLIST_FILE = SmartRing/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SDKROOT)/usr/lib/swift",
-					"$(inherited)",
-					"$(PROJECT_DIR)/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
@@ -431,28 +427,28 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = EBD36812A13BDF0381EA2017 /* Pods-SmartRing.release.xcconfig */;
+			baseConfigurationReference = E48845ED19601FD5900BBDA0 /* Pods-SmartRing.release.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartRing/SmartRing.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KSWF3L58X;
+				EXCLUDED_ARCHS = "EXCLUDED_ARCHS__EFFECTIVE_PLATFORM_SUFFIX_simulator__NATIVE_ARCH_64_BIT_x86_64=arm64 \"arm64e armv7 armv7s armv6 armv8 EXCLUDED_ARCHS=$(inherited)\" $(EXCLUDED_ARCHS__EFFECTIVE_PLATFORM_SUFFIX_$(EFFECTIVE_PLATFORM_SUFFIX)__NATIVE_ARCH_64_ BIT_$(NATIVE_ARCH_64_BIT))";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/Frameworks",
+					"\"$(PROJECT_DIR)/Frameworks\"",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/Frameworks/QCBandSDK.framework/Headers\"",
 				);
 				INFOPLIST_FILE = SmartRing/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(SDKROOT)/usr/lib/swift",
-					"$(inherited)",
-					"$(PROJECT_DIR)/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (

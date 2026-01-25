@@ -166,39 +166,6 @@ export function SleepStagesChart({
   );
 }
 
-// Generate mock sleep data for demonstration
-export function generateMockSleepData(): {
-  segments: SleepSegment[];
-  bedTime: Date;
-  wakeTime: Date;
-} {
-  const today = new Date();
-  const bedTime = new Date(today);
-  bedTime.setHours(23, 0, 0, 0);
-  bedTime.setDate(today.getDate() - 1);
-
-  const wakeTime = new Date(today);
-  wakeTime.setHours(7, 0, 0, 0);
-
-  const stages: SleepStage[] = ['awake', 'core', 'deep', 'core', 'rem', 'core', 'deep', 'core', 'rem', 'awake'];
-  const durations = [10, 30, 60, 45, 30, 50, 70, 40, 25, 20]; // minutes
-
-  const segments: SleepSegment[] = [];
-  let currentTime = new Date(bedTime);
-
-  stages.forEach((stage, index) => {
-    const endTime = new Date(currentTime.getTime() + durations[index] * 60 * 1000);
-    segments.push({
-      stage,
-      startTime: new Date(currentTime),
-      endTime,
-    });
-    currentTime = endTime;
-  });
-
-  return { segments, bedTime, wakeTime };
-}
-
 const styles = StyleSheet.create({
   container: {
     marginHorizontal: spacing.lg,

@@ -1,102 +1,28 @@
-import React, { useState, useRef } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  Dimensions, 
-  TouchableOpacity, 
-  Text, 
+import React, { useState, useRef, useCallback } from 'react';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  Text,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Rect, Line, Polyline } from 'react-native-svg';
 
 import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
 import { OverviewTab, SleepTab, NutritionTab, ActivityTab } from './home';
 import { TabType } from '../theme/gradients';
-import { useHomeData } from '../hooks/useHomeData';
-import { fontSize, spacing } from '../theme/colors';
+import { HomeDataProvider, useHomeDataContext } from '../context/HomeDataContext';
+import { useSmartRing } from '../hooks/useSmartRing';
+import { spacing, fontFamily } from '../theme/colors';
+import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const ICON_SIZE = 65;
 const ICON_STROKE_WIDTH = 1.5;
-
-// Binoculars icon for Overview
-function OverviewIcon({ focused }: { focused: boolean }) {
-  const color = focused ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      {/* Left lens */}
-      <Circle cx={7} cy={14} r={4} stroke={color} strokeWidth={1.5} />
-      {/* Right lens */}
-      <Circle cx={17} cy={14} r={4} stroke={color} strokeWidth={1.5} />
-      {/* Bridge */}
-      <Path d="M11 14h2" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      {/* Left eyepiece */}
-      <Path d="M4 10V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" stroke={color} strokeWidth={1.5} />
-      {/* Right eyepiece */}
-      <Path d="M14 10V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" stroke={color} strokeWidth={1.5} />
-    </Svg>
-  );
-}
-
-// Bed icon for Sleep
-function SleepIcon({ focused }: { focused: boolean }) {
-  const color = focused ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      {/* Bed frame */}
-      <Path d="M3 18V12a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      {/* Legs */}
-      <Path d="M3 18v2M21 18v2" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      {/* Pillow */}
-      <Rect x={5} y={7} width={4} height={3} rx={1} stroke={color} strokeWidth={1.5} />
-      {/* Headboard */}
-      <Path d="M3 10V7a2 2 0 0 1 2-2h2" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-// Lightning bolt for Nutrition
-function NutritionIcon({ focused }: { focused: boolean }) {
-  const color = focused ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-// Circular arrow for Activity
-function ActivityIcon({ focused }: { focused: boolean }) {
-  const color = focused ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      {/* Circular path */}
-      <Path
-        d="M21 12a9 9 0 1 1-9-9"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-      />
-      {/* Arrow head */}
-      <Path
-        d="M12 3l3 0 0 3"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
 
 // Tab configuration
 const tabs = [
@@ -109,13 +35,38 @@ const tabs = [
 // Map tab index to TabType
 const tabIndexMap: TabType[] = ['overview', 'sleep', 'nutrition', 'activity'];
 
-export function NewHomeScreen() {
+function NewHomeScreenContent() {
   const insets = useSafeAreaInsets();
   const [activeIndex, setActiveIndex] = useState(0);
-  const homeData = useHomeData();
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  const homeData = useHomeDataContext();
   const scrollViewRef = useRef<ScrollView>(null);
+  const { autoConnect, isAutoConnecting } = useSmartRing();
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [hasScrolled, setHasScrolled] = useState(false);
+
+  // Use homeData.isRingConnected as the source of truth for connection status
+  // This is set by useHomeData which calls isConnected() before fetching data
+  const isConnected = homeData.isRingConnected;
 
   const activeTab = tabIndexMap[activeIndex];
+
+  const collapseRange = 120;
+
+  const onVerticalScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: headerAnim } } }],
+    {
+      useNativeDriver: false,
+      listener: (event) => {
+        const y = event?.nativeEvent?.contentOffset?.y ?? 0;
+        if (!hasScrolled && y > 1) {
+          setHasScrolled(true);
+        } else if (hasScrolled && y <= 1) {
+          setHasScrolled(false);
+        }
+      },
+    },
+  );
 
   const handleTabPress = (index: number) => {
     setActiveIndex(index);
@@ -130,74 +81,170 @@ export function NewHomeScreen() {
     }
   };
 
+  const handleReconnect = useCallback(async () => {
+    if (isReconnecting || isAutoConnecting) return;
+    setIsReconnecting(true);
+    try {
+      await autoConnect();
+    } catch (error) {
+      console.log('Reconnect failed:', error);
+    } finally {
+      setIsReconnecting(false);
+    }
+  }, [autoConnect, isReconnecting, isAutoConnecting]);
+
+  const iconScale = 1;
+  const iconOpacity = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const tabBarHeight = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [86, 44],
+    extrapolate: 'clamp',
+  });
+
+  const tabBarPaddingTop = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [8, 4],
+    extrapolate: 'clamp',
+  });
+
+  const tabBarPaddingBottom = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [8, 4],
+    extrapolate: 'clamp',
+  });
+
+  const tabBarTranslateY = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [0, -50],
+    extrapolate: 'clamp',
+  });
+
+  const labelTranslateY = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [0, -6],
+    extrapolate: 'clamp',
+  });
+
+  const backgroundFade = headerAnim.interpolate({
+    inputRange: [0, collapseRange],
+    outputRange: [0, 0.6],
+    extrapolate: 'clamp',
+  });
+
   return (
     <AnimatedGradientBackground activeTab={activeTab}>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, { backgroundColor: 'black', opacity: backgroundFade }]}
+      />
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
+        {/* Header (pinned) */}
         <HomeHeader
-          userName="there"
+          userName={homeData.userName || 'there'}
           streakDays={homeData.streakDays}
           ringBattery={homeData.ringBattery}
+          isConnected={isConnected}
+          isReconnecting={isReconnecting || isAutoConnecting}
+          onReconnect={handleReconnect}
+          isSyncing={homeData.isSyncing}
         />
 
-        {/* Custom Tab Bar - Circular Frosted Glass Design */}
-        <View style={styles.tabBarContainer}>
-          <View style={styles.tabBar}>
-            {tabs.map((tab, index) => {
-              const focused = index === activeIndex;
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={styles.tabItem}
-                  onPress={() => handleTabPress(index)}
-                  activeOpacity={0.7}
-                >
-                  {/* Circular Icon Container */}
-                  <View style={[
-                    styles.iconCircle,
-                    focused && styles.iconCircleFocused,
-                  ]}>
-                    <tab.Icon focused={focused} />
-                  </View>
-                  
-                  {/* Label with underline for active */}
-                  <View style={styles.labelContainer}>
-                    <Text style={[styles.tabLabel, focused && styles.tabLabelFocused]}>
-                      {tab.title}
-                    </Text>
-                    {focused && <View style={styles.underline} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+        <Animated.View style={styles.contentWrapper}>
+          {/* Custom Tab Bar - collapses to text on scroll */}
+          <Animated.View
+            style={[
+              styles.tabBarContainer,
+              {
+                height: tabBarHeight,
+                paddingTop: tabBarPaddingTop,
+                paddingBottom: 0,
+                transform: [{ translateY: tabBarTranslateY }],
+              },
+            ]}
+          >
+            <View style={styles.tabBar}>
+              {tabs.map((tab, index) => {
+                const focused = index === activeIndex;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    style={styles.tabItem}
+                    onPress={() => handleTabPress(index)}
+                    activeOpacity={0.5}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.iconCircle,
+                        focused && styles.iconCircleFocused,
+                        { transform: [{ scale: iconScale }], opacity: iconOpacity },
+                      ]}
+                    >
+                      <tab.Icon focused={focused} />
+                    </Animated.View>
+                    
+                    <Animated.View
+                      style={[
+                        styles.labelContainer,
+                        { transform: [{ translateY: labelTranslateY }] },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.tabLabel,
+                          focused && styles.tabLabelFocused,
+                          focused && hasScrolled && styles.tabLabelFocusedScrolled,
+                        ]}
+                      >
+                        {tab.title}
+                      </Text>
+                      {focused && <View style={styles.underline} />}
+                    </Animated.View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Animated.View>
 
-        {/* Swipeable Content */}
-        <ScrollView
-          ref={scrollViewRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleScroll}
-          scrollEventThrottle={16}
-          style={styles.contentScroll}
-        >
-          <View style={styles.page}>
-            <OverviewTab />
-          </View>
-          <View style={styles.page}>
-            <SleepTab />
-          </View>
-          <View style={styles.page}>
-            <NutritionTab />
-          </View>
-          <View style={styles.page}>
-            <ActivityTab />
-          </View>
-        </ScrollView>
+          {/* Swipeable Content */}
+          <Animated.ScrollView
+            ref={scrollViewRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleScroll}
+            scrollEventThrottle={16}
+            style={styles.contentScroll}
+          >
+            <View style={styles.page}>
+              <OverviewTab onScroll={onVerticalScroll} />
+            </View>
+            <View style={styles.page}>
+              <SleepTab onScroll={onVerticalScroll} />
+            </View>
+            <View style={styles.page}>
+              <NutritionTab />
+            </View>
+            <View style={styles.page}>
+              <ActivityTab onScroll={onVerticalScroll} />
+            </View>
+          </Animated.ScrollView>
+        </Animated.View>
       </View>
     </AnimatedGradientBackground>
+  );
+}
+
+// Wrap with provider so all child tabs share the same data
+export function NewHomeScreen() {
+  return (
+    <HomeDataProvider>
+      <NewHomeScreenContent />
+    </HomeDataProvider>
   );
 }
 
@@ -205,9 +252,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  contentWrapper: {
+    flex: 1,
+  },
   tabBarContainer: {
     marginHorizontal: spacing.sm,
-    marginBottom: spacing.md,
+    // marginBottom: spacing.md,
     marginTop: spacing.sm,
   },
   tabBar: {
@@ -236,23 +286,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
+  headerWrapper: {
+    overflow: 'hidden',
+  },
   labelContainer: {
     alignItems: 'center',
   },
   tabLabel: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0.3,
+    fontFamily: fontFamily.regular,
+    // letterSpacing: 0.3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   tabLabelFocused: {
     color: 'rgba(255, 255, 255, 0.95)',
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
+  },
+  tabLabelFocusedScrolled: {
+    borderWidth: 1,
+    borderColor: 'white',
+    borderRadius: 10,
   },
   underline: {
-    marginTop: 4,
+    // marginTop: 4,
     width: '100%',
-    height: 1.5,
+    // height: 1.5,
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 1,
   },
@@ -262,6 +322,7 @@ const styles = StyleSheet.create({
   page: {
     width: SCREEN_WIDTH,
     flex: 1,
+    // paddingTop: 30,
   },
 });
 

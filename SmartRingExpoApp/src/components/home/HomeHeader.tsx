@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import { spacing, fontSize } from '../../theme/colors';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import Svg, { Path, Circle } from 'react-native-svg';
+import { spacing, fontSize, fontFamily } from '../../theme/colors';
+import { RingIcon, BandIcon, DeviceType } from '../../assets/icons';
 
 interface HomeHeaderProps {
   userName?: string;
@@ -9,21 +10,26 @@ interface HomeHeaderProps {
   ringBattery?: number;
   avatarUrl?: string;
   onAvatarPress?: () => void;
+  deviceType?: DeviceType;
+  isConnected?: boolean;
+  isReconnecting?: boolean;
+  onReconnect?: () => void;
+  isSyncing?: boolean;
 }
 
-// Battery icon component
-function BatteryIcon({ level }: { level: number }) {
-  const fillWidth = Math.max(0, Math.min(100, level)) / 100 * 18;
-  const fillColor = level > 20 ? '#4ADE80' : '#EF4444';
+// // Battery icon component
+// function BatteryIcon({ level }: { level: number }) {
+//   const fillWidth = Math.max(0, Math.min(100, level)) / 100 * 18;
+//   const fillColor = level > 20 ? '#4ADE80' : '#EF4444';
   
-  return (
-    <Svg width={28} height={14} viewBox="0 0 28 14">
-      <Rect x={0} y={1} width={24} height={12} rx={2} stroke="rgba(255,255,255,0.6)" strokeWidth={1.5} fill="none" />
-      <Rect x={3} y={4} width={fillWidth} height={6} rx={1} fill={fillColor} />
-      <Rect x={24} y={4} width={3} height={6} rx={1} fill="rgba(255,255,255,0.6)" />
-    </Svg>
-  );
-}
+//   return (
+//     <Svg width={28} height={14} viewBox="0 0 28 14">
+//       <Rect x={0} y={1} width={24} height={12} rx={2} stroke="rgba(255,255,255,0.6)" strokeWidth={1.5} fill="none" />
+//       <Rect x={3} y={4} width={fillWidth} height={6} rx={1} fill={fillColor} />
+//       <Rect x={24} y={4} width={3} height={6} rx={1} fill="rgba(255,255,255,0.6)" />
+//     </Svg>
+//   );
+// }
 
 // Fire/Streak icon
 function StreakIcon() {
@@ -45,7 +51,7 @@ function StreakIcon() {
 function DefaultAvatar() {
   return (
     <View style={styles.defaultAvatar}>
-      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
         <Circle cx={12} cy={8} r={4} fill="rgba(255,255,255,0.8)" />
         <Path
           d="M4 20C4 16 8 14 12 14C16 14 20 16 20 20"
@@ -58,12 +64,37 @@ function DefaultAvatar() {
   );
 }
 
+// Device icon component - switches between ring and band
+function DeviceIcon({ deviceType }: { deviceType: DeviceType }) {
+  if (deviceType === 'band') {
+    return <BandIcon width={16} height={16} fill="rgba(255,255,255,0.7)" />;
+  }
+  return <RingIcon width={16} height={16} fill="rgba(255,255,255,0.7)" />;
+}
+
+// Reconnect icon
+function ReconnectIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 12C4 7.58172 7.58172 4 12 4C14.5 4 16.75 5.1 18.25 6.85L20 5V11H14L16.1 8.9C15 7.7 13.55 7 12 7C9.24 7 7 9.24 7 12C7 14.76 9.24 17 12 17C14.06 17 15.84 15.68 16.56 13.8H19.72C18.86 17.38 15.69 20 12 20C7.58172 20 4 16.4183 4 12Z"
+        fill="rgba(255,255,255,0.9)"
+      />
+    </Svg>
+  );
+}
+
 export function HomeHeader({
   userName = 'there',
   streakDays = 0,
   ringBattery = 100,
   avatarUrl,
   onAvatarPress,
+  deviceType = 'ring',
+  isConnected = true,
+  isReconnecting = false,
+  onReconnect,
+  isSyncing = false,
 }: HomeHeaderProps) {
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -83,26 +114,51 @@ export function HomeHeader({
             <DefaultAvatar />
           )}
         </TouchableOpacity>
-        
+
         <View style={styles.greetingContainer}>
           <Text style={styles.greeting}>{getGreeting()},</Text>
           <Text style={styles.userName}>{userName}</Text>
         </View>
       </View>
 
-      {/* Right side: Streak + Battery */}
+      {/* Right side: Reconnect button (when disconnected and not syncing) or Streak + Battery */}
       <View style={styles.rightSection}>
-        {streakDays > 0 && (
-          <View style={styles.streakContainer}>
-            <StreakIcon />
-            <Text style={styles.streakText}>{streakDays}</Text>
-          </View>
+        {!isConnected && !isSyncing && !isReconnecting && onReconnect ? (
+          <TouchableOpacity
+            style={styles.reconnectButton}
+            onPress={onReconnect}
+            disabled={isReconnecting}
+          >
+            <ReconnectIcon />
+            <Text style={styles.reconnectText}>Reconnect</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            {streakDays > 0 && (
+              <View style={styles.streakContainer}>
+                <StreakIcon />
+                <Text style={styles.streakText}>{streakDays}</Text>
+              </View>
+            )}
+
+            <View style={styles.batteryContainer}>
+              <DeviceIcon deviceType={deviceType} />
+              {isReconnecting ? (
+                <View style={styles.syncingContainer}>
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
+                  <Text style={styles.syncingText}>Connecting</Text>
+                </View>
+              ) : isSyncing ? (
+                <View style={styles.syncingContainer}>
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
+                  <Text style={styles.syncingText}>Syncing</Text>
+                </View>
+              ) : (
+                <Text style={styles.batteryText}>{ringBattery}%</Text>
+              )}
+            </View>
+          </>
         )}
-        
-        <View style={styles.batteryContainer}>
-          <BatteryIcon level={ringBattery} />
-          <Text style={styles.batteryText}>{ringBattery}%</Text>
-        </View>
       </View>
     </View>
   );
@@ -122,23 +178,23 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   avatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
   },
   defaultAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -149,11 +205,12 @@ const styles = StyleSheet.create({
   greeting: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
   },
   userName: {
     color: '#FFFFFF',
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
   rightSection: {
     flexDirection: 'row',
@@ -172,7 +229,7 @@ const styles = StyleSheet.create({
   streakText: {
     color: '#FFD700',
     fontSize: fontSize.md,
-    fontWeight: '700',
+    fontFamily: fontFamily.demiBold,
   },
   batteryContainer: {
     flexDirection: 'row',
@@ -182,6 +239,36 @@ const styles = StyleSheet.create({
   batteryText: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  syncingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncingSpinner: {
+    marginRight: 4,
+    transform: [{ scale: 0.7 }],
+  },
+  syncingText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  reconnectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 107, 53, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.5)',
+  },
+  reconnectText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
   },
 });
 

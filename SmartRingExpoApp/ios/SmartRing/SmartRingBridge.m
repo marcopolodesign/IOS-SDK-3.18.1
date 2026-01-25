@@ -37,8 +37,9 @@ RCT_EXPORT_MODULE();
         _currentBluetoothState = CRPBluetoothStateUnknown;
         _currentState = CRPStateDisconnected;
         
-        // Set delegate on init
-        CRPSmartBandSDK.sharedInstance.delegate = self;
+        // DO NOT set delegate on init - this triggers auto-reconnect behavior
+        // The delegate will be set when initialize() is called from JavaScript
+        // This prevents automatic pairing prompts on app launch
     }
     return self;
 }
@@ -592,27 +593,60 @@ RCT_EXPORT_METHOD(connect:(NSString *)mac
         // ONLY trust manager state == Connected (code 2), not just any state
         // Do NOT match on empty MAC addresses - that's a false positive
         if (managerState == CRPStateConnected) {
-            [self debugLog:@"✅ Polling detected CONNECTED state (2) from SDK manager!"];
+            // #region agent log - Hypothesis A: Polling detected connected
+            NSString *logPathPoll = @"/Users/mataldao/Local/Focus/.cursor/debug.log";
+            NSString *logEntryPoll = [NSString stringWithFormat:@"{\"hypothesisId\":\"A\",\"location\":\"SmartRingBridge.m:polling:connected\",\"message\":\"Polling detected CONNECTED - starting setTime verification\",\"data\":{\"pollCount\":%d},\"timestamp\":%lld}\n", pollCount, (long long)([[NSDate date] timeIntervalSince1970] * 1000)];
+            NSFileHandle *fhPoll = [NSFileHandle fileHandleForWritingAtPath:logPathPoll];
+            if (!fhPoll) { [[NSFileManager defaultManager] createFileAtPath:logPathPoll contents:nil attributes:nil]; fhPoll = [NSFileHandle fileHandleForWritingAtPath:logPathPoll]; }
+            [fhPoll seekToEndOfFile]; [fhPoll writeData:[logEntryPoll dataUsingEncoding:NSUTF8StringEncoding]]; [fhPoll closeFile];
+            // #endregion
+            
+            [self debugLog:@"🔄 Polling detected CONNECTED state - verifying with setTime..."];
             
             // Update our state
             self.currentState = CRPStateConnected;
             
-            if (self.connectionResolve) {
-                self.connectionResolve(@{@"success": @YES, @"message": @"Connected"});
-                self.connectionResolve = nil;
-                self.connectionReject = nil;
-            }
-            
-            // Send connection event
-            if (self.hasListeners) {
-                [self sendEventWithName:@"onConnectionStateChanged" body:@{
-                    @"state": @"connected",
-                    @"deviceId": currentDevice.mac ?: targetMAC,
-                    @"deviceName": [self displayNameForDevice:currentDevice.localName]
-                }];
-            }
+            // Store and clear the promise before verification
+            RCTPromiseResolveBlock pendingResolve = self.connectionResolve;
+            RCTPromiseRejectBlock pendingReject = self.connectionReject;
+            self.connectionResolve = nil;
+            self.connectionReject = nil;
             
             dispatch_source_cancel(timer);
+            
+            // Verify with setTime (ensures pairing is complete)
+            [[CRPSmartBandSDK sharedInstance] setDeviceTimeWithSuccess:^(NSDictionary * _Nonnull info) {
+                [self debugLog:@"✅ Polling: setTime succeeded - connection fully verified!"];
+                
+                if (pendingResolve) {
+                    pendingResolve(@{@"success": @YES, @"message": @"Connected and verified"});
+                }
+                
+                if (self.hasListeners) {
+                    [self sendEventWithName:@"onConnectionStateChanged" body:@{
+                        @"state": @"connected",
+                        @"deviceId": currentDevice.mac ?: targetMAC,
+                        @"deviceName": [self displayNameForDevice:currentDevice.localName],
+                        @"verified": @YES
+                    }];
+                }
+            } failed:^{
+                [self debugLog:@"⚠️ Polling: setTime failed, retrying in 2s..."];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [[CRPSmartBandSDK sharedInstance] setDeviceTimeWithSuccess:^(NSDictionary * _Nonnull info) {
+                        [self debugLog:@"✅ Polling: setTime retry succeeded!"];
+                        if (pendingResolve) {
+                            pendingResolve(@{@"success": @YES, @"message": @"Connected and verified"});
+                        }
+                    } failed:^{
+                        [self debugLog:@"❌ Polling: setTime retry failed"];
+                        if (pendingReject) {
+                            pendingReject(@"PAIRING_FAILED", @"Pairing was not completed.", nil);
+                        }
+                    }];
+                });
+            }];
+            
             return;
         }
         
@@ -1085,7 +1119,7 @@ RCT_EXPORT_METHOD(stopBloodPressureMonitoring:(RCTPromiseResolveBlock)resolve
     [self debugLog:[NSString stringWithFormat:@"🔔 Connection state changed: %@ (code: %ld)", [self connectionStateToString:state], (long)state]];
     
     // #region agent log - Hypothesis C: Log all state changes with full context
-    NSString *logPath = @"/Users/mataldao/Downloads/7203d09b5b0c4f3e7a47d6c24ff44fae/IOS-SDK-3.18.1/.cursor/debug.log";
+    NSString *logPath = @"/Users/mataldao/Local/Focus/.cursor/debug.log";
     CRPDiscovery *currentDev = [CRPSmartBandSDK sharedInstance].currentCRPDiscovery;
     NSString *logEntry = [NSString stringWithFormat:@"{\"hypothesisId\":\"C\",\"location\":\"SmartRingBridge.m:didState\",\"message\":\"State change delegate fired\",\"data\":{\"newState\":%ld,\"previousState\":%ld,\"currentDeviceName\":\"%@\",\"hasConnectionPromise\":%@},\"timestamp\":%lld}\n",
         (long)state,
@@ -1103,11 +1137,80 @@ RCT_EXPORT_METHOD(stopBloodPressureMonitoring:(RCTPromiseResolveBlock)resolve
     self.currentState = state;
     
     // Handle connection promise resolution
+    // IMPORTANT: CRPStateConnected fires BEFORE iOS pairing dialog is dismissed!
+    // We need to verify the connection by sending a command that requires pairing.
     if (state == CRPStateConnected && self.connectionResolve) {
-        [self debugLog:@"✅ Device connected successfully!"];
-        self.connectionResolve(@{@"success": @YES, @"message": @"Connected"});
+        [self debugLog:@"🔄 SDK reports Connected - verifying with setTime command..."];
+        
+        // Store resolve/reject for later
+        RCTPromiseResolveBlock pendingResolve = self.connectionResolve;
+        RCTPromiseRejectBlock pendingReject = self.connectionReject;
         self.connectionResolve = nil;
         self.connectionReject = nil;
+        
+        // #region agent log - Hypothesis B: Before setTime call
+        NSString *logPath2 = @"/Users/mataldao/Local/Focus/.cursor/debug.log";
+        NSString *logEntry2 = [NSString stringWithFormat:@"{\"hypothesisId\":\"B\",\"location\":\"SmartRingBridge.m:didState:setTime\",\"message\":\"Calling setTime to verify connection\",\"data\":{},\"timestamp\":%lld}\n", (long long)([[NSDate date] timeIntervalSince1970] * 1000)];
+        NSFileHandle *fh2 = [NSFileHandle fileHandleForWritingAtPath:logPath2];
+        if (!fh2) { [[NSFileManager defaultManager] createFileAtPath:logPath2 contents:nil attributes:nil]; fh2 = [NSFileHandle fileHandleForWritingAtPath:logPath2]; }
+        [fh2 seekToEndOfFile]; [fh2 writeData:[logEntry2 dataUsingEncoding:NSUTF8StringEncoding]]; [fh2 closeFile];
+        // #endregion
+        
+        // Call setTime to verify connection (this fails if pairing isn't complete)
+        [[CRPSmartBandSDK sharedInstance] setDeviceTimeWithSuccess:^(NSDictionary * _Nonnull info) {
+            // #region agent log - Hypothesis B: setTime succeeded
+            NSString *logPath3 = @"/Users/mataldao/Local/Focus/.cursor/debug.log";
+            NSString *logEntry3 = [NSString stringWithFormat:@"{\"hypothesisId\":\"B\",\"location\":\"SmartRingBridge.m:didState:setTimeSuccess\",\"message\":\"setTime SUCCESS - resolving promise\",\"data\":{},\"timestamp\":%lld}\n", (long long)([[NSDate date] timeIntervalSince1970] * 1000)];
+            NSFileHandle *fh3 = [NSFileHandle fileHandleForWritingAtPath:logPath3];
+            if (!fh3) { [[NSFileManager defaultManager] createFileAtPath:logPath3 contents:nil attributes:nil]; fh3 = [NSFileHandle fileHandleForWritingAtPath:logPath3]; }
+            [fh3 seekToEndOfFile]; [fh3 writeData:[logEntry3 dataUsingEncoding:NSUTF8StringEncoding]]; [fh3 closeFile];
+            // #endregion
+            
+            [self debugLog:@"✅ setTime succeeded - connection fully verified!"];
+            
+            // NOW the connection is truly complete
+            if (pendingResolve) {
+                pendingResolve(@{@"success": @YES, @"message": @"Connected and verified"});
+            }
+            
+            // Send connection event
+            if (self.hasListeners) {
+                CRPDiscovery *currentDevice = [CRPSmartBandSDK sharedInstance].currentCRPDiscovery;
+                [self sendEventWithName:@"onConnectionStateChanged" body:@{
+                    @"state": @"connected",
+                    @"deviceId": currentDevice.mac ?: @"",
+                    @"deviceName": [self displayNameForDevice:currentDevice.localName],
+                    @"verified": @YES
+                }];
+            }
+        } failed:^{
+            [self debugLog:@"⚠️ setTime failed - waiting for pairing to complete..."];
+            
+            // Try again after a delay (user might still be dismissing pairing dialog)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [[CRPSmartBandSDK sharedInstance] setDeviceTimeWithSuccess:^(NSDictionary * _Nonnull info) {
+                    [self debugLog:@"✅ setTime retry succeeded - connection verified!"];
+                    if (pendingResolve) {
+                        pendingResolve(@{@"success": @YES, @"message": @"Connected and verified"});
+                    }
+                    
+                    if (self.hasListeners) {
+                        CRPDiscovery *currentDevice = [CRPSmartBandSDK sharedInstance].currentCRPDiscovery;
+                        [self sendEventWithName:@"onConnectionStateChanged" body:@{
+                            @"state": @"connected",
+                            @"deviceId": currentDevice.mac ?: @"",
+                            @"deviceName": [self displayNameForDevice:currentDevice.localName],
+                            @"verified": @YES
+                        }];
+                    }
+                } failed:^{
+                    [self debugLog:@"❌ setTime retry failed - connection may have been rejected"];
+                    if (pendingReject) {
+                        pendingReject(@"PAIRING_FAILED", @"Pairing was not completed. Please accept the Bluetooth pairing request.", nil);
+                    }
+                }];
+            });
+        }];
     } else if (state == CRPStateDisconnected && previousState == CRPStateConnecting && self.connectionReject) {
         // Only reject if we were actively connecting (not if already disconnected)
         [self debugLog:@"❌ Connection failed - state went from Connecting to Disconnected"];

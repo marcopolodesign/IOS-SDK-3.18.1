@@ -105,28 +105,73 @@ class QCBandService {
     return QCBandBridge !== null && Platform.OS === 'ios';
   }
 
+  // ========== Initialization ==========
+
+  async initialize(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.initialize();
+  }
+
   // ========== Connection Methods ==========
 
-  async scan(duration: number = 10): Promise<DeviceInfo[]> {
+  async scan(duration: number = 30): Promise<{ success: boolean; message: string }> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
     return await QCBandBridge.scan(duration);
   }
 
-  stopScan(): void {
-    if (QCBandBridge) {
-      QCBandBridge.stopScan();
-    }
-  }
-
-  async connect(mac: string): Promise<{ success: boolean; message: string }> {
+  async stopScan(): Promise<{ success: boolean; message: string }> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.connect(mac);
+    return await QCBandBridge.stopScan();
   }
 
-  disconnect(): void {
-    if (QCBandBridge) {
-      QCBandBridge.disconnect();
-    }
+  async getDiscoveredDevices(): Promise<DeviceInfo[]> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getDiscoveredDevices();
+  }
+
+  async connect(peripheralId: string): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.connect(peripheralId);
+  }
+
+  async disconnect(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.disconnect();
+  }
+
+  async isConnected(): Promise<{
+    connected: boolean;
+    state: string;
+    deviceName: string | null;
+    deviceId: string | null;
+  }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.isConnected();
+  }
+
+  // ========== Paired Device Management ==========
+
+  async hasPairedDevice(): Promise<{ hasPairedDevice: boolean }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.hasPairedDevice();
+  }
+
+  async getPairedDevice(): Promise<{
+    hasPairedDevice: boolean;
+    device: DeviceInfo | null;
+  }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getPairedDevice();
+  }
+
+  async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.autoReconnect();
+  }
+
+  async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.forgetPairedDevice();
   }
 
   // ========== Time & Settings ==========
@@ -148,6 +193,38 @@ class QCBandService {
     return await QCBandBridge.setProfile(profile);
   }
 
+  async getProfile(): Promise<{
+    is24Hour: boolean;
+    isMetric: boolean;
+    gender: 'male' | 'female';
+    age: number;
+    height: number;
+    weight: number;
+  }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getProfile();
+  }
+
+  async getGoal(): Promise<{ goal: number }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getGoal();
+  }
+
+  async setGoal(goal: number): Promise<{ success: boolean }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.setGoal(goal);
+  }
+
+  async setTimeFormat(is24Hour: boolean): Promise<{ success: boolean }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.setTimeFormat(is24Hour);
+  }
+
+  async setUnit(isMetric: boolean): Promise<{ success: boolean }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.setUnit(isMetric);
+  }
+
   // ========== Battery & Firmware ==========
 
   async getBattery(): Promise<BatteryData> {
@@ -155,21 +232,58 @@ class QCBandService {
     return await QCBandBridge.getBattery();
   }
 
-  async getVersion(): Promise<{ hardwareVersion: string; softwareVersion: string }> {
+  async getFirmwareInfo(): Promise<{ hardwareVersion: string; softwareVersion: string }> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.getVersion();
+    return await QCBandBridge.getFirmwareInfo();
+  }
+
+  async getVersion(): Promise<{ hardwareVersion: string; softwareVersion: string }> {
+    // Alias for getFirmwareInfo
+    return await this.getFirmwareInfo();
+  }
+
+  async getConnectionState(): Promise<{ state: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getConnectionState();
+  }
+
+  async getConnectionStatus(): Promise<{
+    connected: boolean;
+    state: string;
+    stateCode: number;
+    deviceName: string | null;
+    deviceMac: string | null;
+  }> {
+    const result = await this.isConnected();
+    return {
+      connected: result.connected,
+      state: result.state,
+      stateCode: result.connected ? 3 : 0, // QCStateConnected = 3
+      deviceName: result.deviceName,
+      deviceMac: result.deviceId,
+    };
+  }
+
+  async alertBinding(): Promise<{ success: boolean }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.alertBinding();
   }
 
   // ========== Steps & Sport ==========
 
-  async getSteps(dayIndex: number = 0): Promise<StepsData> {
+  async getSteps(): Promise<StepsData> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.getSteps(dayIndex);
+    return await QCBandBridge.getSteps();
+  }
+
+  async getStepsDetail(dayIndex: number = 0): Promise<StepsData[]> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getStepsDetail(dayIndex);
   }
 
   async getCurrentSteps(): Promise<StepsData> {
-    if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.getCurrentSteps();
+    // Alias for getSteps
+    return await this.getSteps();
   }
 
   async getSportRecords(lastTimestamp: number = 0): Promise<QCSportInfo[]> {
@@ -179,9 +293,66 @@ class QCBandService {
 
   // ========== Sleep ==========
 
-  async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
+  async getSleepData(dayIndex: number = 0): Promise<{
+    totalSleepMinutes: number;
+    totalNapMinutes: number;
+    fallAsleepDuration: number;
+    sleepSegments: Array<{
+      startTime: string;
+      endTime: string;
+      duration: number;
+      type: number;
+    }>;
+    napSegments: Array<{
+      startTime: string;
+      endTime: string;
+      duration: number;
+      type: number;
+    }>;
+    timestamp: number;
+  }> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.getSleepByDay(dayIndex);
+    return await QCBandBridge.getSleepData(dayIndex);
+  }
+
+  async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
+    /**
+     * SDK SLEEPTYPE enum:
+     * 0 = SLEEPTYPENONE (no data)
+     * 1 = SLEEPTYPESOBER (awake/sober)
+     * 2 = SLEEPTYPELIGHT (light sleep)
+     * 3 = SLEEPTYPEDEEP (deep sleep)
+     * 4 = SLEEPTYPEREM (REM)
+     * 5 = SLEEPTYPEUNWEARED (not wearing)
+     */
+    const data = await this.getSleepData(dayIndex);
+    
+    // Log raw data for debugging
+    console.log('😴 [QCBandService] RAW sleep data from ring:', JSON.stringify(data, null, 2));
+    console.log('😴 [QCBandService] Sleep segments breakdown:');
+    data.sleepSegments.forEach((s, i) => {
+      const typeNames = ['None', 'Awake', 'Light', 'Deep', 'REM', 'Unweared'];
+      console.log(`  Segment ${i}: type=${s.type} (${typeNames[s.type] || 'Unknown'}), duration=${s.duration}min, ${s.startTime} → ${s.endTime}`);
+    });
+    
+    // Correct mapping based on SDK SLEEPTYPE enum
+    const awake = data.sleepSegments.filter(s => s.type === 1).reduce((acc, s) => acc + s.duration, 0);
+    const light = data.sleepSegments.filter(s => s.type === 2).reduce((acc, s) => acc + s.duration, 0);
+    const deep = data.sleepSegments.filter(s => s.type === 3).reduce((acc, s) => acc + s.duration, 0);
+    const rem = data.sleepSegments.filter(s => s.type === 4).reduce((acc, s) => acc + s.duration, 0);
+    
+    console.log(`😴 [QCBandService] Processed: Deep=${deep}min, Light=${light}min, REM=${rem}min, Awake=${awake}min`);
+    console.log(`😴 [QCBandService] SDK totalSleepMinutes=${data.totalSleepMinutes}, fallAsleepDuration=${data.fallAsleepDuration}`);
+    
+    return {
+      deep,
+      light,
+      rem,
+      awake,
+      detail: `Deep: ${deep}min, Light: ${light}min, REM: ${rem}min, Awake: ${awake}min`,
+      startTime: data.sleepSegments[0]?.startTime ? new Date(data.sleepSegments[0].startTime).getTime() : undefined,
+      endTime: data.sleepSegments[data.sleepSegments.length - 1]?.endTime ? new Date(data.sleepSegments[data.sleepSegments.length - 1].endTime).getTime() : undefined,
+    };
   }
 
   async getSleepFromDay(startDayIndex: number): Promise<Record<string, SleepData>> {
@@ -192,24 +363,41 @@ class QCBandService {
   // ========== Heart Rate ==========
 
   /**
-   * Start real-time heart rate monitoring
-   * Note: You must call holdRealtimeHeartRate() every 20 seconds to keep the session alive
+   * Start a single heart rate measurement
+   * Results come via onHeartRateData event
    */
+  async startHeartRateMeasuring(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.startHeartRateMeasuring();
+  }
+
+  async stopHeartRateMeasuring(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.stopHeartRateMeasuring();
+  }
+
+  /**
+   * Start real-time heart rate monitoring
+   * The native module handles the hold timer automatically
+   * Results come via onHeartRateData event with isRealTime: true
+   */
+  async startRealTimeHeartRate(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.startRealTimeHeartRate();
+  }
+
+  async stopRealTimeHeartRate(): Promise<{ success: boolean; message: string }> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.stopRealTimeHeartRate();
+  }
+
+  // Legacy methods for compatibility
   startRealtimeHeartRate(): void {
-    if (QCBandBridge) {
-      QCBandBridge.startRealtimeHeartRate();
-      
-      // Automatically hold the session every 18 seconds
-      this.holdHRInterval = setInterval(() => {
-        this.holdRealtimeHeartRate();
-      }, 18000);
-    }
+    this.startRealTimeHeartRate();
   }
 
   holdRealtimeHeartRate(): void {
-    if (QCBandBridge) {
-      QCBandBridge.holdRealtimeHeartRate();
-    }
+    // No longer needed - native module handles this automatically
   }
 
   stopRealtimeHeartRate(): void {
@@ -217,9 +405,7 @@ class QCBandService {
       clearInterval(this.holdHRInterval);
       this.holdHRInterval = null;
     }
-    if (QCBandBridge) {
-      QCBandBridge.stopRealtimeHeartRate();
-    }
+    this.stopRealTimeHeartRate();
   }
 
   async getScheduledHeartRate(dayIndexes: number[]): Promise<HeartRateData[]> {
@@ -230,6 +416,23 @@ class QCBandService {
   async getManualHeartRate(dayIndex: number = 0): Promise<HeartRateData[]> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
     return await QCBandBridge.getManualHeartRate(dayIndex);
+  }
+
+  async getManualBloodOxygen(dayIndex: number = 0): Promise<SpO2Data[]> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getManualBloodOxygen(dayIndex);
+  }
+
+  async getBloodGlucose(dayIndex: number = 0): Promise<Array<{
+    glucose: number;
+    minGlucose?: number;
+    maxGlucose?: number;
+    type?: number; // 0=scheduled, 1=manual
+    gluType?: number; // 0=before meals, 1=normal, 2=after meals
+    timestamp: number;
+  }>> {
+    if (!QCBandBridge) throw new Error('QCBandSDK not available');
+    return await QCBandBridge.getBloodGlucose(dayIndex);
   }
 
   // ========== Single Measurements ==========
@@ -281,13 +484,6 @@ class QCBandService {
   async getManualTemperature(dayIndex: number = 0): Promise<TemperatureData[]> {
     if (!QCBandBridge) throw new Error('QCBandSDK not available');
     return await QCBandBridge.getManualTemperature(dayIndex);
-  }
-
-  // ========== Blood Glucose ==========
-
-  async getBloodGlucose(dayIndex: number = 0): Promise<any[]> {
-    if (!QCBandBridge) throw new Error('QCBandSDK not available');
-    return await QCBandBridge.getBloodGlucose(dayIndex);
   }
 
   // ========== Firmware Update ==========
@@ -381,10 +577,20 @@ class QCBandService {
     return () => subscription.remove();
   }
 
+  onHeartRateData(callback: (data: { heartRate: number; timestamp: number; isRealTime?: boolean; isMeasuring?: boolean; isFinal?: boolean }) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onHeartRateData', (data) => {
+      callback(data);
+    });
+    return () => subscription.remove();
+  }
+
   onRealtimeHeartRate(callback: (heartRate: number) => void): () => void {
     if (!eventEmitter) return () => {};
-    const subscription = eventEmitter.addListener('onRealtimeHeartRate', (event) => {
-      callback(event.heartRate);
+    const subscription = eventEmitter.addListener('onHeartRateData', (event) => {
+      if (event.isRealTime) {
+        callback(event.heartRate);
+      }
     });
     return () => subscription.remove();
   }
@@ -408,6 +614,14 @@ class QCBandService {
   onBatteryChanged(callback: (data: BatteryData) => void): () => void {
     if (!eventEmitter) return () => {};
     const subscription = eventEmitter.addListener('onBatteryReceived', (data) => {
+      callback(data);
+    });
+    return () => subscription.remove();
+  }
+
+  onSpO2Received(callback: (data: SpO2Data) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onSpO2Received', (data) => {
       callback(data);
     });
     return () => subscription.remove();
@@ -444,10 +658,49 @@ class QCBandService {
     });
     return () => subscription.remove();
   }
+
+  onScanFinished(callback: (devices: DeviceInfo[]) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onScanFinished', (event) => {
+      callback(event.devices);
+    });
+    return () => subscription.remove();
+  }
+
+  onDebugLog(callback: (message: string, timestamp: number) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onDebugLog', (event) => {
+      callback(event.message, event.timestamp);
+    });
+    return () => subscription.remove();
+  }
+
+  onTemperatureData(callback: (data: { temperature: number; timestamp: number }) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onTemperatureData', (data) => {
+      callback(data);
+    });
+    return () => subscription.remove();
+  }
+
+  onStepsData(callback: (data: StepsData) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onStepsData', (data) => {
+      callback(data);
+    });
+    return () => subscription.remove();
+  }
+
+  onBatteryData(callback: (data: BatteryData) => void): () => void {
+    if (!eventEmitter) return () => {};
+    const subscription = eventEmitter.addListener('onBatteryData', (data) => {
+      callback(data);
+    });
+    return () => subscription.remove();
+  }
 }
 
 export default new QCBandService();
-
 
 
 

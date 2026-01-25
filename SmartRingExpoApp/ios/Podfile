@@ -69,18 +69,5 @@ target 'SmartRing' do
         end
       end
     end
-    
-    # Also add framework search paths to the main SmartRing target
-    main_project_path = File.join(__dir__, 'SmartRing.xcodeproj', 'project.pbxproj')
-    if File.exist?(main_project_path) && File.directory?(frameworks_path)
-      installer.generated_projects.each do |project|
-        project.targets.each do |target|
-          target.build_configurations.each do |build_config|
-            build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] ||= ['$(inherited)']
-            build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] << '"$(PROJECT_DIR)/Frameworks"'
-          end
-        end
-      end
-    end
   end
 end

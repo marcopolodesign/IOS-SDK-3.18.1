@@ -29,10 +29,10 @@ if (Platform.OS === 'ios') {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/222d9e95-a481-4991-af22-0fe5181f77fe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HealthKitService.ts:25',message:'AppleHealthKit assigned',data:{moduleType:typeof AppleHealthKit,hasIsAvailable:typeof AppleHealthKit?.isAvailable==='function',hasInitHealthKit:typeof AppleHealthKit?.initHealthKit==='function'},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'module-load'})}).catch(()=>{});
     // #endregion
-    console.log('✅ react-native-health module loaded successfully');
-    console.log('Module type:', typeof AppleHealthKit);
-    console.log('Module keys:', Object.keys(AppleHealthKit || {}).slice(0, 10));
-    console.log('Has isAvailable:', typeof AppleHealthKit?.isAvailable === 'function');
+    // HealthKit module loaded - silent
+    // console.log('Module type:', typeof AppleHealthKit);
+    // console.log('Module keys:', Object.keys(AppleHealthKit || {}).slice(0, 10));
+    // console.log('Has isAvailable:', typeof AppleHealthKit?.isAvailable === 'function');
   } catch (e) {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/222d9e95-a481-4991-af22-0fe5181f77fe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HealthKitService.ts:catch',message:'HealthKit library not available',data:{error:String(e),errorName:e?.name,errorMessage:e?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'module-load'})}).catch(()=>{});

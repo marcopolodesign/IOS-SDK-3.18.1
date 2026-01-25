@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { spacing, fontSize, borderRadius } from '../../theme/colors';
+import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 
 type InsightType = 'sleep' | 'activity' | 'nutrition' | 'general';
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#FFFFFF',
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.md,
     lineHeight: 24,
-    fontWeight: '400',
+    fontFamily: fontFamily.regular,
   },
   // Preview card styles
   previewContainer: {
@@ -198,11 +198,12 @@ const styles = StyleSheet.create({
   previewTitle: {
     color: '#FFFFFF',
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
   previewSubtitle: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
     marginTop: 2,
   },
   previewRight: {
@@ -211,11 +212,11 @@ const styles = StyleSheet.create({
   previewValue: {
     color: '#FFFFFF',
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontFamily: fontFamily.demiBold,
   },
   previewUnit: {
     fontSize: fontSize.sm,
-    fontWeight: '400',
+    fontFamily: fontFamily.regular,
     color: 'rgba(255, 255, 255, 0.7)',
   },
 });
