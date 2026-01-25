@@ -24,6 +24,8 @@ export interface ActivityData {
   score: number;
   steps: number;
   calories: number;
+  distance: number; // meters
+  adjustedActiveCalories: number;
   activeMinutes: number;
   workouts: Workout[];
 }
@@ -55,7 +57,7 @@ export interface HomeData {
   isRingConnected: boolean;
 }
 
-// Data that we cache (subset of HomeData that makes sense to persist)
+  // Data that we cache (subset of HomeData that makes sense to persist)
 interface CachedData {
   sleepScore: number;
   lastNightSleep: {
@@ -74,6 +76,45 @@ interface CachedData {
   readiness: number;
   cachedAt: number;
 }
+
+// Basal + adjusted active calorie estimation using static profile (to be made dynamic later)
+const PROFILE = {
+  age: 33,
+  heightCm: 175,
+  weightKg: 72,
+};
+
+const hoursSinceMidnight = () => {
+  const now = new Date();
+  return now.getHours() + now.getMinutes() / 60;
+};
+
+const estimateBMRPerHour = () => {
+  // Mifflin-St Jeor (male assumption for now)
+  const { weightKg, heightCm, age } = PROFILE;
+  const bmrPerDay = 10 * weightKg + 6.25 * heightCm - 5 * age + 5; // kcal/day
+  return bmrPerDay / 24;
+};
+
+const sanitizeActivity = (activity?: Partial<ActivityData>): ActivityData => {
+  const rawCalories = Math.round(activity?.calories ?? 0);
+  const distanceMeters = (activity as any)?.distance ?? 0;
+  const distanceKm = distanceMeters / 1000;
+  const distanceActiveEstimate = Math.max(0, distanceKm * PROFILE.weightKg); // ~1 kcal/kg/km
+
+  // For now, lean toward the higher of ring calories and distance-derived active estimate to closer match Apple
+  const adjustedActive = Math.max(rawCalories, distanceActiveEstimate);
+
+  return {
+    score: Math.round(activity?.score ?? 0),
+    steps: Math.round(activity?.steps ?? 0),
+    calories: rawCalories,
+    distance: Math.round(distanceMeters),
+    adjustedActiveCalories: Math.round(adjustedActive),
+    activeMinutes: Math.round(activity?.activeMinutes ?? 0),
+    workouts: activity?.workouts ?? [],
+  };
+};
 
 /**
  * Save data to cache for instant loading on next app open
@@ -138,7 +179,7 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
         bedTime: new Date(data.lastNightSleep.bedTime),
         wakeTime: new Date(data.lastNightSleep.wakeTime),
       },
-      activity: data.activity,
+      activity: sanitizeActivity(data.activity),
       ringBattery: data.ringBattery,
       overallScore: data.overallScore,
       strain: data.strain,
@@ -347,6 +388,8 @@ const getEmptyData = (): HomeData => ({
     score: 0,
     steps: 0,
     calories: 0,
+    distance: 0,
+    adjustedActiveCalories: 0,
     activeMinutes: 0,
     workouts: [],
   },
@@ -371,6 +414,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   const MIN_FETCH_INTERVAL = 3000; // Minimum 3 seconds between fetches
   const hasLoadedRealData = useRef(false); // Track if we've successfully loaded real data
   const hasLoadedCache = useRef(false); // Track if we've loaded cached data
+  const isFetchingData = useRef(false); // Track if we're currently fetching to prevent concurrent fetches
 
   // Load cached data immediately on mount for instant display
   useEffect(() => {
@@ -419,23 +463,21 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   const fetchData = useCallback(async (forceRefresh = false) => {
     const fetchStartTime = Date.now();
     console.log('⏱️ [useHomeData] fetchData() STARTED at', new Date().toLocaleTimeString(), '| forceRefresh:', forceRefresh);
-    // #region agent log - Hypothesis B: fetchData entry with source tracking
-    const callStack = new Error().stack || '';
-    const isFromPullToRefresh = callStack.includes('OverviewTab') || callStack.includes('onRefresh');
-    const isFromInitialConnection = callStack.includes('useEffect') || callStack.includes('onConnectionStateChanged');
-    fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useHomeData.ts:419',message:'fetchData called',data:{forceRefresh,isFromPullToRefresh,isFromInitialConnection,timeSinceLastFetch:Date.now()-lastFetchTime.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
+
+    // Prevent concurrent fetches - only allow one fetch at a time
+    if (isFetchingData.current) {
+      console.log('😴 [useHomeData] Skipping fetch - already fetching data');
+      return;
+    }
 
     // Debounce rapid fetches (unless forcing refresh after connection)
     const now = Date.now();
     if (!forceRefresh && now - lastFetchTime.current < MIN_FETCH_INTERVAL) {
       console.log('😴 [useHomeData] Skipping fetch - too soon since last fetch');
-      // #region agent log - Hypothesis C: Fetch skipped due to debounce
-      fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useHomeData.ts:427',message:'Fetch skipped - debounced',data:{timeSinceLastFetch:now-lastFetchTime.current,minInterval:MIN_FETCH_INTERVAL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       return;
     }
     lastFetchTime.current = now;
+    isFetchingData.current = true;
 
     // Get user's display name from user_metadata
     const { data: { user } } = await supabase.auth.getUser();
@@ -443,74 +485,139 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     console.log('⏱️ [useHomeData] Auth check done +' + (Date.now() - fetchStartTime) + 'ms');
 
     // Check if ring is connected first
-    const connectionStatus = await UnifiedSmartRingService.isConnected();
+    let connectionStatus = await UnifiedSmartRingService.isConnected();
     console.log('⏱️ [useHomeData] Connection check done +' + (Date.now() - fetchStartTime) + 'ms | connected:', connectionStatus.connected);
 
     if (!connectionStatus.connected) {
-      console.log('😴 [useHomeData] Ring not connected - preserving cached data');
-      // DON'T overwrite cached data with zeros
-      // Keep isSyncing TRUE if we haven't loaded real data yet (still waiting for auto-reconnect)
-      const keepSyncing = !hasLoadedRealData.current;
-      setData(prev => {
-        // Avoid unnecessary updates if nothing changed
-        if (prev.userName === userName && prev.isLoading === false && prev.isSyncing === keepSyncing) {
-          return prev;
+      // For pull-to-refresh (forceRefresh=true), attempt reconnection first
+      if (forceRefresh) {
+        console.log('🔄 [useHomeData] PTR: Ring not connected - attempting auto-reconnect...');
+        setData(prev => ({ ...prev, isSyncing: true, error: null }));
+
+        try {
+          const reconnectResult = await UnifiedSmartRingService.autoReconnect();
+
+          if (reconnectResult.success) {
+            console.log('🔄 [useHomeData] PTR: Auto-reconnect succeeded, proceeding to fetch data...');
+            // TRUST the auto-reconnect success - don't re-check isConnected() as it may
+            // return stale state due to SDK timing. The connection event already fired,
+            // proving the connection is real. Proceed directly to fetching data.
+            await new Promise(resolve => setTimeout(resolve, 500));
+            connectionStatus = {
+              connected: true,
+              state: 'connected',
+              deviceName: reconnectResult.deviceName || null,
+              deviceMac: reconnectResult.deviceId || null,
+            }; // Trust the reconnect success
+          } else {
+            // Reconnect failed - might be because iOS already has connection but SDK doesn't know yet
+            console.log('🔄 [useHomeData] PTR: Auto-reconnect failed:', reconnectResult.message);
+
+            // Wait 1s and check again - SDK might just be syncing with iOS
+            console.log('🔄 [useHomeData] Waiting 1s for SDK to sync with iOS BLE state...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const recheckStatus = await UnifiedSmartRingService.isConnected();
+            if (recheckStatus.connected) {
+              console.log('🔄 [useHomeData] SDK synced! Connection detected on recheck.');
+              connectionStatus = recheckStatus;
+              // Continue to fetch data below
+            } else {
+              // Still not connected after recheck
+              console.log('🔄 [useHomeData] Still not connected after recheck');
+              setData(prev => ({
+                ...prev,
+                userName,
+                isLoading: false,
+                isSyncing: false,
+                isRingConnected: false,
+                error: 'Ring not connected. Tap the ring to wake it and pull to refresh again.',
+              }));
+              return;
+            }
+          }
+        } catch (reconnectError) {
+          console.log('🔄 [useHomeData] PTR: Auto-reconnect error:', reconnectError);
+
+          // Wait and recheck - might be iOS sync issue
+          console.log('🔄 [useHomeData] Rechecking connection after error...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          const recheckStatus = await UnifiedSmartRingService.isConnected();
+          if (recheckStatus.connected) {
+            console.log('🔄 [useHomeData] Connection detected on recheck after error!');
+            connectionStatus = recheckStatus;
+            // Continue to fetch data below
+          } else {
+            setData(prev => ({
+              ...prev,
+              userName,
+              isLoading: false,
+              isSyncing: false,
+              isRingConnected: false,
+              error: 'Failed to connect to ring.',
+            }));
+            return;
+          }
         }
-        return {
-          ...prev,
-          userName,
-          isLoading: false,
-          isSyncing: keepSyncing, // Keep syncing true while waiting for initial connection
-          isRingConnected: false,
-          error: null,
-        };
-      });
-      return;
+      } else {
+        // Initial load (non-PTR) - OK to show cached data while waiting for connection
+        console.log('😴 [useHomeData] Ring not connected - preserving cached data for initial load');
+        const keepSyncing = !hasLoadedRealData.current;
+        setData(prev => {
+          if (prev.userName === userName && prev.isLoading === false && prev.isSyncing === keepSyncing) {
+            return prev;
+          }
+          return {
+            ...prev,
+            userName,
+            isLoading: false,
+            isSyncing: keepSyncing,
+            isRingConnected: false,
+            error: null,
+          };
+        });
+        return;
+      }
     }
 
     setData(prev => ({ ...prev, isLoading: prev.isLoading, isSyncing: true, error: null, isRingConnected: true }));
 
     try {
-      console.log('⏱️ [useHomeData] Starting SDK data fetches +' + (Date.now() - fetchStartTime) + 'ms');
+      console.log('⏱️ [useHomeData] Starting SDK data fetches (in parallel) +' + (Date.now() - fetchStartTime) + 'ms');
 
-      // Fetch real sleep data from ring
-      const sleepStartTime = Date.now();
-      const sleepData = await fetchRealSleepData();
-      console.log('⏱️ [useHomeData] Sleep fetch done +' + (Date.now() - fetchStartTime) + 'ms (took ' + (Date.now() - sleepStartTime) + 'ms)');
+      // Fetch all data in parallel for faster loading
+      const parallelStartTime = Date.now();
+      const [sleepResult, stepsResult, batteryResult] = await Promise.allSettled([
+        fetchRealSleepData(),
+        withRetry(() => UnifiedSmartRingService.getSteps(), 2, 1500, 'steps fetch'),
+        withRetry(() => UnifiedSmartRingService.getBattery(), 2, 1500, 'battery fetch'),
+      ]);
+      console.log('⏱️ [useHomeData] All parallel fetches done +' + (Date.now() - fetchStartTime) + 'ms (took ' + (Date.now() - parallelStartTime) + 'ms total)');
 
+      // Extract sleep data
+      const sleepData = sleepResult.status === 'fulfilled' ? sleepResult.value : null;
       if (!sleepData) {
         console.log('😴 [useHomeData] No sleep data available from ring');
       } else {
         hasLoadedRealData.current = true;
       }
 
-      // Fetch real activity data from ring
-      let activity: ActivityData = {
-        score: 0,
-        steps: 0,
-        calories: 0,
-        activeMinutes: 0,
-        workouts: [],
-      };
+      // Extract activity data
+      let activity: ActivityData = sanitizeActivity();
 
-      try {
-        const stepsStartTime = Date.now();
-        const stepsData = await withRetry(
-          () => UnifiedSmartRingService.getSteps(),
-          2,
-          1500,
-          'steps fetch'
-        );
-        console.log('⏱️ [useHomeData] Steps fetch done +' + (Date.now() - fetchStartTime) + 'ms (took ' + (Date.now() - stepsStartTime) + 'ms)');
-        activity = {
+      if (stepsResult.status === 'fulfilled') {
+        const stepsData = stepsResult.value;
+        activity = sanitizeActivity({
           score: Math.min(100, Math.round((stepsData.steps / 10000) * 100)), // Score based on 10k step goal
           steps: stepsData.steps,
           calories: stepsData.calories,
-          activeMinutes: Math.round(stepsData.time / 60), // Convert seconds to minutes
+          activeMinutes: stepsData.time ? stepsData.time / 60 : 0, // seconds -> minutes
+          distance: (stepsData as any)?.distance ?? 0,
           workouts: [],
-        };
-      } catch (e) {
-        console.log('😴 [useHomeData] Could not fetch steps after retries:', e);
+        });
+      } else {
+        console.log('😴 [useHomeData] Could not fetch steps after retries:', stepsResult.reason);
       }
 
       const sleep = sleepData || {
@@ -531,20 +638,12 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const strain = Math.min(100, Math.round(activity.score * 1.1));
       const readiness = Math.max(0, 100 - strain);
 
-      // Get real battery from ring
+      // Extract battery data
       let ringBattery = 0;
-      try {
-        const batteryStartTime = Date.now();
-        const batteryData = await withRetry(
-          () => UnifiedSmartRingService.getBattery(),
-          2,
-          1500,
-          'battery fetch'
-        );
-        console.log('⏱️ [useHomeData] Battery fetch done +' + (Date.now() - fetchStartTime) + 'ms (took ' + (Date.now() - batteryStartTime) + 'ms)');
-        ringBattery = batteryData.battery;
-      } catch (e) {
-        console.log('😴 [useHomeData] Could not fetch battery after retries:', e);
+      if (batteryResult.status === 'fulfilled') {
+        ringBattery = batteryResult.value.battery;
+      } else {
+        console.log('😴 [useHomeData] Could not fetch battery after retries:', batteryResult.reason);
       }
 
       const newData: HomeData = {
@@ -580,19 +679,23 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         error: 'Failed to load health data',
         isRingConnected: connectionStatus.connected,
       }));
+    } finally {
+      // Reset fetching flag so subsequent fetches can proceed
+      isFetchingData.current = false;
     }
   }, []);
 
   // Initial fetch - wait for SDK to detect iOS-maintained connections
-  // CRITICAL: Don't check connection immediately - iOS maintains BLE connections but SDK needs
-  // ~1.5-2s to detect them. Checking too early causes false negatives and unnecessary auto-reconnect.
+  // CRITICAL: iOS maintains BLE connections in background, but SDK needs 1.5-2s to sync
+  // If we check too early, SDK says "not connected" even though iOS has the connection
+  // Then autoReconnect() tries to connect to an already-connected device → timeout
   useEffect(() => {
     const mountTime = Date.now();
     let checkTimeout: ReturnType<typeof setTimeout> | null = null;
     console.log('🚀 [useHomeData] HOOK MOUNTED at', new Date().toLocaleTimeString());
 
-    // Wait 1.8s before first connection check to give SDK time to detect iOS-maintained connections
-    // This matches the timing that makes pull-to-refresh work instantly (SDK is stable by then)
+    // Wait 2s before first connection check to give SDK time to sync with iOS BLE state
+    // This prevents "connection timeout" errors when iOS already has the connection
     checkTimeout = setTimeout(async () => {
       const status = await UnifiedSmartRingService.isConnected();
       const elapsed = Date.now() - mountTime;
@@ -600,14 +703,14 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
 
       if (status.connected && !hasLoadedRealData.current) {
         console.log('🚀 [useHomeData] Connection detected - fetching data immediately');
-        // SDK is stable, fetch immediately (same as pull-to-refresh)
+        // SDK detected iOS connection, fetch data
         fetchData(true);
       } else if (!status.connected) {
-        console.log('🚀 [useHomeData] Not connected after SDK stabilization - waiting for auto-reconnect');
-        // Not connected - TabLayout's auto-reconnect will handle connection
-        // When it succeeds, the connection event listener will trigger fetch
+        console.log('🚀 [useHomeData] Not connected after 2s wait - attempting reconnect');
+        // SDK still doesn't see connection after 2s, safe to reconnect
+        fetchData(true); // fetchData with forceRefresh=true will auto-reconnect if needed
       }
-    }, 1800); // 1.8s matches SDK detection timing
+    }, 2000); // 2000ms gives SDK enough time to detect iOS-maintained connections
 
     return () => {
       if (checkTimeout) {
@@ -617,47 +720,24 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   }, [fetchData]);
 
   // Listen for ring connection state changes
-  // Re-fetch with real data when ring connects, clear data when disconnected
+  // ONLY update UI state - mount effect handles initial data fetch
   useEffect(() => {
-    let connectionEventTime: number | null = null;
-    let lastConnectionEventTime = 0;
-    let pendingFetchTimeout: ReturnType<typeof setTimeout> | null = null;
-
     const unsubscribe = UnifiedSmartRingService.onConnectionStateChanged((state) => {
-      const now = Date.now();
-      connectionEventTime = now;
       console.log('📡 [useHomeData] Connection state changed:', state, 'at', new Date().toLocaleTimeString());
 
       if (state === 'connected') {
-        // Debounce: ignore connection events within 3 seconds of the last one
-        // The native SDK sometimes fires multiple 'connected' events rapidly
-        if (now - lastConnectionEventTime < 3000) {
-          console.log('📡 [useHomeData] Ignoring duplicate connection event (debounced)');
-          return;
-        }
-        lastConnectionEventTime = now;
+        // IMPORTANT: Don't auto-fetch here - mount effect already handles connection + fetch
+        // This listener only updates connection status for UI display
+        // If user manually reconnects, they'll pull-to-refresh to get fresh data
+        console.log('📡 [useHomeData] Connected - UI will update. Mount/PTR handles data fetching.');
 
-        // Clear any pending fetch
-        if (pendingFetchTimeout) {
-          clearTimeout(pendingFetchTimeout);
-        }
-
-        // When ring becomes connected, fetch real data with SHORT delay
-        // Connection event fires AFTER SDK has stabilized (unlike mount where SDK needs time)
-        console.log('📡 [useHomeData] Ring connected! Scheduling fetch in 800ms...');
-        hasLoadedRealData.current = false;
-        // Reduced delay (800ms) - connection event means SDK is already stable
-        // This is much faster than the 2500ms we had before
-        pendingFetchTimeout = setTimeout(() => {
-          console.log('📡 [useHomeData] Executing fetch +' + (Date.now() - connectionEventTime!) + 'ms from connection event');
-          fetchData(true); // Force refresh
-        }, 800);
+        // Just update the connection flag so UI shows "connected" state
+        setData(prev => ({
+          ...prev,
+          isRingConnected: true,
+          error: null,
+        }));
       } else if (state === 'disconnected') {
-        // Clear any pending fetch timeout
-        if (pendingFetchTimeout) {
-          clearTimeout(pendingFetchTimeout);
-          pendingFetchTimeout = null;
-        }
         // When ring disconnects, clear data and mark as disconnected
         console.log('😴 [useHomeData] Ring disconnected - clearing data');
         hasLoadedRealData.current = false;
@@ -675,11 +755,8 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
 
     return () => {
       unsubscribe();
-      if (pendingFetchTimeout) {
-        clearTimeout(pendingFetchTimeout);
-      }
     };
-  }, [fetchData]);
+  }, []);
 
   // Listen for app state changes (foreground/background)
   useEffect(() => {
@@ -731,5 +808,3 @@ export function getActivityMessage(score: number): string {
 }
 
 export default useHomeData;
-
-
