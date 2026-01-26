@@ -255,6 +255,47 @@ sequenceDiagram
     Hook-->>UI: Connected status
 ```
 
+### iOS BLE Connection Synchronization (Important!)
+
+**Challenge**: iOS maintains Bluetooth Low Energy connections in the background even when the app is terminated. When the app relaunches, the SDK needs 1.5-2 seconds to detect this existing connection.
+
+**Issue**: If the app checks connection status too early (e.g., at 800ms), the SDK returns `false` even though iOS already has an active BLE connection. This causes:
+- Duplicate connection attempts to an already-connected device
+- "Connection timed out" errors
+- UI showing "Reconnect" when actually connected
+- Race conditions between multiple auto-reconnect attempts
+
+**Solution (Implemented)**:
+
+1. **Single Auto-Reconnect Source**: Removed duplicate auto-reconnect logic from TabLayout. Only `useHomeData` hook handles auto-reconnection on app launch.
+
+2. **Increased Initial Delay**: Wait 2 seconds before first connection check (increased from 800ms) to give SDK time to sync with iOS BLE state.
+
+3. **Retry Logic**: When `autoReconnect()` fails with timeout error, wait 1s and recheck connection status. Often the SDK just needed more time to sync.
+
+4. **Separated Concerns**:
+   - Connection state listener: Only updates UI state, doesn't trigger data fetching
+   - Mount effect: Handles initial connection check and data fetch
+   - Pull-to-refresh: Handles manual reconnection
+
+**Timing Flow**:
+```
+App Launch → useHomeData mounts
+           ↓
+      Wait 2000ms (iOS BLE sync)
+           ↓
+   Check SDK connection status
+           ↓
+   Connected? → Fetch data immediately
+           ↓
+   Not connected? → Auto-reconnect → Wait 500ms → Fetch data
+```
+
+**Code Locations**:
+- Connection logic: `src/hooks/useHomeData.ts` (lines 626-658)
+- Retry logic: `src/hooks/useHomeData.ts` (lines 477-527)
+- Route guard only: `app/(tabs)/_layout.tsx` (simplified, no reconnect)
+
 ### Data Retrieval Flow
 
 ```mermaid
