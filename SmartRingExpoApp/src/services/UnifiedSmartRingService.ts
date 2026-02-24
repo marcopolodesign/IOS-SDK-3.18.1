@@ -1,12 +1,17 @@
 /**
- * UnifiedSmartRingService - Smart Ring SDK Interface
+ * UnifiedSmartRingService - Dual SDK Smart Ring Interface
  *
- * This service provides the API for the QCBandSDK.
- * Requires a physical device connection - no mock data.
+ * Routes commands to the correct SDK based on which device is connected:
+ * - Focus R1 → QCBandSDK (QCBandService)
+ * - Focus X3 → Jstyle BleSDK (JstyleService)
+ *
+ * Scanning discovers devices from both SDKs simultaneously.
+ * Once connected, all data commands route to the appropriate SDK.
  */
 
 import { Platform } from 'react-native';
 import QCBandService from './QCBandService';
+import JstyleService from './JstyleService';
 import type {
   DeviceInfo,
   StepsData,
@@ -23,10 +28,12 @@ import type {
   BluetoothState,
 } from '../types/sdk.types';
 
-export type SDKType = 'qcband' | 'none';
+export type SDKType = 'qcband' | 'jstyle' | 'none';
 
 class UnifiedSmartRingService {
   private activeSDK: SDKType = 'none';
+  private connectedSDKType: SDKType = 'none';
+  private autoReconnectInFlight: Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> | null = null;
 
   // JavaScript-side connection state listeners (for manual state notifications)
   private jsConnectionListeners: Set<(state: ConnectionState) => void> = new Set();
@@ -51,11 +58,17 @@ class UnifiedSmartRingService {
   }
 
   /**
-   * Detect which SDK is available
+   * Detect which SDKs are available
    */
   private detectSDK(): void {
     if (Platform.OS !== 'ios') {
       this.activeSDK = 'none';
+      return;
+    }
+
+    // Prefer Jstyle (X3/BleSDK) as default active SDK; fall back to QCBand (R1) if not available
+    if (JstyleService.isAvailable()) {
+      this.activeSDK = 'jstyle';
       return;
     }
 
@@ -75,6 +88,22 @@ class UnifiedSmartRingService {
   }
 
   /**
+   * Get the SDK type of the currently connected device
+   */
+  getConnectedSDKType(): SDKType {
+    return this.connectedSDKType;
+  }
+
+  /**
+   * Set which SDK type is being used for the current connection
+   * Called by useSmartRing when connecting to a device with a known sdkType
+   */
+  setConnectedSDKType(type: SDKType): void {
+    console.log('📱 [UnifiedService] Setting connected SDK type:', type);
+    this.connectedSDKType = type;
+  }
+
+  /**
    * Check if using mock data (always false - mock data removed)
    */
   isUsingMockData(): boolean {
@@ -85,12 +114,18 @@ class UnifiedSmartRingService {
    * Check if any SDK is available
    */
   isSDKAvailable(): boolean {
-    return this.activeSDK === 'qcband';
+    return QCBandService.isAvailable() || JstyleService.isAvailable();
   }
 
   private ensureSDKAvailable(): void {
-    if (this.activeSDK === 'none') {
+    if (!this.isSDKAvailable()) {
       throw new Error('No Smart Ring SDK available - requires native iOS build with connected device');
+    }
+  }
+
+  private ensureConnected(): void {
+    if (this.connectedSDKType === 'none') {
+      throw new Error('No device connected');
     }
   }
 
@@ -98,26 +133,58 @@ class UnifiedSmartRingService {
 
   async scan(duration: number = 10): Promise<DeviceInfo[]> {
     this.ensureSDKAvailable();
-    // QCBandService.scan() initiates scanning and devices arrive via onDeviceDiscovered events
-    await QCBandService.scan(duration);
-    return []; // Devices will come through onDeviceDiscovered callback
+
+    // Start scanning on both SDKs in parallel
+    const promises: Promise<any>[] = [];
+
+    if (QCBandService.isAvailable()) {
+      promises.push(
+        QCBandService.scan(duration).catch(err => {
+          console.log('⚠️ QCBand scan error:', err.message);
+        })
+      );
+    }
+
+    if (JstyleService.isAvailable()) {
+      promises.push(
+        JstyleService.scan(duration).catch(err => {
+          console.log('⚠️ Jstyle scan error:', err.message);
+        })
+      );
+    }
+
+    await Promise.allSettled(promises);
+    return []; // Devices will come through onDeviceDiscovered callbacks
   }
 
   stopScan(): void {
-    if (this.activeSDK === 'qcband') {
+    if (QCBandService.isAvailable()) {
       QCBandService.stopScan();
+    }
+    if (JstyleService.isAvailable()) {
+      JstyleService.stopScan();
     }
   }
 
-  async connect(mac: string): Promise<{ success: boolean; message: string }> {
+  async connect(mac: string, sdkType?: SDKType): Promise<{ success: boolean; message: string }> {
     this.ensureSDKAvailable();
+
+    const type = sdkType || 'qcband';
+    this.connectedSDKType = type;
+
+    if (type === 'jstyle') {
+      return await JstyleService.connect(mac);
+    }
     return await QCBandService.connect(mac);
   }
 
   disconnect(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      JstyleService.disconnect();
+    } else if (this.connectedSDKType === 'qcband' || this.activeSDK === 'qcband') {
       QCBandService.disconnect();
     }
+    this.connectedSDKType = 'none';
   }
 
   async isConnected(): Promise<{
@@ -126,7 +193,16 @@ class UnifiedSmartRingService {
     deviceName: string | null;
     deviceMac: string | null;
   }> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      const status = await JstyleService.isConnected();
+      return {
+        connected: status.connected,
+        state: status.state,
+        deviceName: status.deviceName,
+        deviceMac: status.deviceId,
+      };
+    }
+    if (this.connectedSDKType === 'qcband' || this.activeSDK === 'qcband') {
       const status = await QCBandService.getConnectionStatus();
       return {
         connected: status.connected,
@@ -147,7 +223,19 @@ class UnifiedSmartRingService {
     deviceName: string | null;
     deviceMac: string | null;
   }> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      const status = await JstyleService.isConnected();
+      return {
+        managerState: status.state,
+        managerStateCode: status.connected ? 3 : 0,
+        cachedState: status.state,
+        cachedStateCode: status.connected ? 3 : 0,
+        isConnected: status.connected,
+        deviceName: status.deviceName,
+        deviceMac: status.deviceId,
+      };
+    }
+    if (this.connectedSDKType === 'qcband' || this.activeSDK === 'qcband') {
       const status = await QCBandService.getConnectionStatus();
       return {
         managerState: status.state,
@@ -174,47 +262,138 @@ class UnifiedSmartRingService {
     hasPairedDevice: boolean;
     device: DeviceInfo | null;
   }> {
-    if (this.activeSDK === 'qcband') {
-      return await QCBandService.getPairedDevice();
+    // Check Jstyle first, then QCBand
+    if (JstyleService.isAvailable()) {
+      const jResult = await JstyleService.getPairedDevice();
+      if (jResult.hasPairedDevice && jResult.device) {
+        return {
+          hasPairedDevice: true,
+          device: { ...jResult.device, sdkType: 'jstyle' },
+        };
+      }
     }
+
+    if (QCBandService.isAvailable()) {
+      const qcResult = await QCBandService.getPairedDevice();
+      if (qcResult.hasPairedDevice && qcResult.device) {
+        return {
+          hasPairedDevice: true,
+          device: { ...qcResult.device, sdkType: 'qcband' },
+        };
+      }
+    }
+
     return { hasPairedDevice: false, device: null };
   }
 
   async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.forgetPairedDevice();
+    }
+    if (this.connectedSDKType === 'qcband' || this.activeSDK === 'qcband') {
       return await QCBandService.forgetPairedDevice();
     }
     return { success: false, message: 'No SDK available' };
   }
 
   async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
-    if (this.activeSDK !== 'qcband') {
-      return { success: false, message: 'No SDK available' };
+    if (this.autoReconnectInFlight) {
+      return this.autoReconnectInFlight;
     }
 
-    const result = await QCBandService.autoReconnect();
+    this.autoReconnectInFlight = (async () => {
+      if (JstyleService.isAvailable()) {
+        try {
+          const jStatus = await JstyleService.isConnected();
+          if (jStatus.connected) {
+            this.connectedSDKType = 'jstyle';
+            return {
+              success: true,
+              message: 'Already connected',
+              deviceId: jStatus.deviceId ?? undefined,
+              deviceName: jStatus.deviceName ?? undefined,
+            };
+          }
+        } catch (e) {
+          console.log('⚠️ Jstyle isConnected check failed:', e);
+        }
+      }
 
-    // Manually emit connection state since native SDK may not emit events after autoReconnect
-    if (result.success) {
-      // Small delay to ensure native SDK is fully ready
-      setTimeout(() => {
-        this.emitConnectionState('connected');
-      }, 500);
+      if (QCBandService.isAvailable()) {
+        try {
+          const qcStatus = await QCBandService.getConnectionStatus();
+          if (qcStatus.connected) {
+            this.connectedSDKType = 'qcband';
+            return {
+              success: true,
+              message: 'Already connected',
+              deviceId: qcStatus.deviceMac ?? undefined,
+              deviceName: qcStatus.deviceName ?? undefined,
+            };
+          }
+        } catch (e) {
+          console.log('⚠️ QCBand isConnected check failed:', e);
+        }
+      }
+
+      // Try Jstyle first, then QCBand
+      if (JstyleService.isAvailable()) {
+        try {
+          const jPaired = await JstyleService.hasPairedDevice();
+          if (jPaired.hasPairedDevice) {
+            this.connectedSDKType = 'jstyle';
+            const result = await JstyleService.autoReconnect();
+            if (result.success) {
+              setTimeout(() => this.emitConnectionState('connected'), 500);
+              return result;
+            }
+            this.connectedSDKType = 'none';
+          }
+        } catch (e) {
+          console.log('⚠️ Jstyle autoReconnect failed:', e);
+        }
+      }
+
+      if (QCBandService.isAvailable()) {
+        try {
+          const qcPaired = await QCBandService.hasPairedDevice();
+          if (qcPaired.hasPairedDevice) {
+            this.connectedSDKType = 'qcband';
+            const result = await QCBandService.autoReconnect();
+            if (result.success) {
+              setTimeout(() => this.emitConnectionState('connected'), 500);
+              return result;
+            }
+            this.connectedSDKType = 'none';
+          }
+        } catch (e) {
+          console.log('⚠️ QCBand autoReconnect failed:', e);
+        }
+      }
+
+      return { success: false, message: 'No paired device found' };
+    })();
+
+    try {
+      return await this.autoReconnectInFlight;
+    } finally {
+      this.autoReconnectInFlight = null;
     }
-
-    return result;
   }
 
   // ========== Data Retrieval ==========
 
   async getSteps(): Promise<StepsData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.getSteps();
+    }
+
     const data = await QCBandService.getCurrentSteps();
     const rawCalories = (data as any)?.calories ?? 0;
-    // SDK reports calories scaled by 1000 (official provider format) -> convert to kcal.
     const normalizedCalories = Math.round(rawCalories / 1000);
 
-    // Normalize to whole numbers to avoid fractional calories/steps coming from SDK
     return {
       ...data,
       steps: Math.round((data as any)?.steps ?? 0),
@@ -225,70 +404,149 @@ class UnifiedSmartRingService {
   }
 
   async getSleepData(): Promise<SleepData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.getSleepByDay(0);
+    }
+
     return await QCBandService.getSleepByDay(0);
   }
 
   async getBattery(): Promise<BatteryData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.getBattery();
+    }
+
     return await QCBandService.getBattery();
   }
 
   async getVersion(): Promise<{ version: string }> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const info = await JstyleService.getVersion();
+      return { version: info.softwareVersion };
+    }
+
     const qcVersion = await QCBandService.getVersion();
     return { version: qcVersion.softwareVersion };
   }
 
   async get24HourHeartRate(): Promise<number[]> {
-    this.ensureSDKAvailable();
-    // QCBandSDK uses scheduled HR data
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getScheduledHeartRate([0]);
+      return data.map(d => d.heartRate);
+    }
+
     const data = await QCBandService.getScheduledHeartRate([0]);
     return data.map(d => d.heartRate);
   }
 
   async getScheduledHeartRateRaw(days: number[] = [0]) {
-    this.ensureSDKAvailable();
-    const data = await QCBandService.getScheduledHeartRate(days);
-    return data;
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      // X3 continuous HR records contain no timestamp fields, only raw HR arrays.
+      // HRV data includes per-record timestamps AND heartRate values (hourly cadence),
+      // making it the only reliable source for time-of-day HR charting on X3.
+      const hrvData = await JstyleService.getHRVDataNormalized();
+      return hrvData
+        .filter(h => (h.heartRate ?? 0) > 0 && h.timestamp)
+        .map(h => {
+          const d = new Date(h.timestamp!);
+          return {
+            heartRate: h.heartRate!,
+            timeMinutes: d.getHours() * 60 + d.getMinutes(),
+          };
+        });
+    }
+
+    return await QCBandService.getScheduledHeartRate(days);
   }
 
   async get24HourSteps(): Promise<number[]> {
-    this.ensureSDKAvailable();
-    // Not provided by QCBandSDK; return empty array for now
+    this.ensureConnected();
     return [];
   }
 
   async getHRVData(): Promise<HRVData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getHRVDataNormalized();
+      return data[0] || {};
+    }
+
     const hrvData = await QCBandService.getHRVData([0]);
     return hrvData[0] || {};
   }
 
   async getStressData(): Promise<StressData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      // X3 doesn't have a dedicated stress endpoint; derive from HRV if needed
+      return { level: 0 };
+    }
+
     const stressData = await QCBandService.getStressData([0]);
     return stressData[0] || { level: 0 };
   }
 
   async getTemperature(): Promise<TemperatureData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getTemperatureDataNormalized();
+      return data[0] || { temperature: 0 };
+    }
+
     const tempData = await QCBandService.getScheduledTemperature(0);
     return tempData[0] || { temperature: 0 };
   }
 
   async getHeartRate(): Promise<HeartRateData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getScheduledHeartRate([0]);
+      return data[0] || { heartRate: 0 };
+    }
+
     const data = await QCBandService.getScheduledHeartRate([0]);
-    const first = data[0];
-    return first || { heartRate: 0 };
+    return data[0] || { heartRate: 0 };
+  }
+
+  async getSleepByDay(dayIndex: number = 0): Promise<SleepData | null> {
+    try {
+      this.ensureConnected();
+
+      if (this.connectedSDKType === 'jstyle') {
+        return await JstyleService.getSleepByDay(dayIndex);
+      }
+
+      return await QCBandService.getSleepByDay(dayIndex);
+    } catch (e) {
+      console.log('getSleepByDay error', e);
+      return null;
+    }
   }
 
   async getSpO2(): Promise<SpO2Data> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getSpO2DataNormalized();
+      return data[0] || { spo2: 0 };
+    }
+
     const data = await QCBandService.getManualBloodOxygen(0);
-    const first = data[0];
-    return first || { spo2: 0 };
+    return data[0] || { spo2: 0 };
   }
 
   async getBloodGlucose(dayIndex: number = 0): Promise<Array<{
@@ -299,18 +557,21 @@ class UnifiedSmartRingService {
     gluType?: number;
     timestamp: number;
   }>> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.getBloodGlucose(dayIndex);
     }
+    // X3 doesn't support blood glucose
     return [];
   }
 
   async measureHeartRate(): Promise<{ success: boolean }> {
-    if (this.activeSDK !== 'qcband') {
-      return { success: false };
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const result = await JstyleService.startHeartRateMeasuring();
+      return { success: !!result?.success };
     }
-    // Use startHeartRateMeasuring for single measurement (more reliable)
-    // Results come via onHeartRateData event
+
     try {
       const result = await QCBandService.startHeartRateMeasuring();
       return { success: !!result?.success };
@@ -324,20 +585,27 @@ class UnifiedSmartRingService {
   // ========== Real-time Monitoring ==========
 
   startHeartRateMonitoring(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      JstyleService.startRealTimeHeartRate();
+    } else if (this.connectedSDKType === 'qcband') {
       QCBandService.startRealtimeHeartRate();
     }
   }
 
   stopHeartRateMonitoring(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      JstyleService.stopRealTimeHeartRate();
+    } else if (this.connectedSDKType === 'qcband') {
       QCBandService.stopRealtimeHeartRate();
     }
   }
 
   startSpO2Monitoring(): void {
-    if (this.activeSDK === 'qcband') {
-      // Start SpO2 measurement - results come via onSpO2Data event
+    if (this.connectedSDKType === 'jstyle') {
+      JstyleService.startSpO2Measuring().catch(err => {
+        console.log('⚠️ Jstyle startSpO2 error:', err.message);
+      });
+    } else if (this.connectedSDKType === 'qcband') {
       QCBandService.startMeasurement('spo2').catch(err => {
         console.log('⚠️ startMeasurement spo2 error:', err.message);
       });
@@ -345,7 +613,11 @@ class UnifiedSmartRingService {
   }
 
   stopSpO2Monitoring(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'jstyle') {
+      JstyleService.stopSpO2Measuring().catch(err => {
+        console.log('⚠️ Jstyle stopSpO2 error:', err.message);
+      });
+    } else if (this.connectedSDKType === 'qcband') {
       QCBandService.stopMeasurement('spo2').catch(err => {
         console.log('⚠️ stopMeasurement spo2 error:', err.message);
       });
@@ -353,15 +625,16 @@ class UnifiedSmartRingService {
   }
 
   startBloodPressureMonitoring(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       QCBandService.startMeasurement('bloodPressure').catch(err => {
         console.log('⚠️ startMeasurement bloodPressure error:', err.message);
       });
     }
+    // X3 doesn't have dedicated BP measurement; BP comes from HRV data
   }
 
   stopBloodPressureMonitoring(): void {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       QCBandService.stopMeasurement('bloodPressure').catch(err => {
         console.log('⚠️ stopMeasurement bloodPressure error:', err.message);
       });
@@ -371,7 +644,17 @@ class UnifiedSmartRingService {
   // ========== Settings ==========
 
   async setProfile(profile: ProfileData): Promise<{ success: boolean }> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.setProfile({
+        gender: profile.gender,
+        age: profile.age,
+        height: profile.height,
+        weight: profile.weight,
+      });
+    }
+
     return await QCBandService.setProfile({
       is24Hour: true,
       isMetric: true,
@@ -383,7 +666,18 @@ class UnifiedSmartRingService {
   }
 
   async getProfile(): Promise<ProfileData> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const profile = await JstyleService.getProfile();
+      return {
+        age: profile.age,
+        height: profile.height,
+        weight: profile.weight,
+        gender: profile.gender,
+      };
+    }
+
     const profile = await QCBandService.getProfile();
     return {
       age: profile.age,
@@ -394,23 +688,44 @@ class UnifiedSmartRingService {
   }
 
   async getGoal(): Promise<{ goal: number }> {
-    this.ensureSDKAvailable();
-    const data = await QCBandService.getGoal();
-    return { goal: data.goal };
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.getGoal();
+    }
+
+    return await QCBandService.getGoal();
   }
 
   async setGoal(goal: number): Promise<{ success: boolean }> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.setGoal(goal);
+    }
+
     return await QCBandService.setGoal(goal);
   }
 
   async setTimeFormat(is24Hour: boolean): Promise<{ success: boolean }> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      // X3 doesn't have a separate time format setting; time is set during sync
+      return { success: true };
+    }
+
     return await QCBandService.setTimeFormat(is24Hour);
   }
 
   async setUnit(isMetric: boolean): Promise<{ success: boolean }> {
-    this.ensureSDKAvailable();
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      // X3 doesn't have a separate unit setting
+      return { success: true };
+    }
+
     return await QCBandService.setUnit(isMetric);
   }
 
@@ -420,112 +735,185 @@ class UnifiedSmartRingService {
     console.log('🔔 Find device triggered');
   }
 
+  async factoryReset(): Promise<{ success: boolean }> {
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.factoryReset();
+    }
+
+    console.log('⚠️ factoryReset is not implemented for QCBandService');
+    return { success: false };
+  }
+
   // ========== Event Listeners ==========
 
   onConnectionStateChanged(callback: (state: ConnectionState) => void): () => void {
-    // Register for JS-side events (manual emissions from autoReconnect, etc.)
     this.jsConnectionListeners.add(callback);
 
-    // Also register for native SDK events
-    let nativeUnsubscribe: () => void = () => {};
-    if (this.activeSDK === 'qcband') {
-      nativeUnsubscribe = QCBandService.onConnectionStateChanged(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onConnectionStateChanged(callback));
+    }
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onConnectionStateChanged(callback));
     }
 
-    // Return cleanup function that removes both
     return () => {
       this.jsConnectionListeners.delete(callback);
-      nativeUnsubscribe();
+      unsubs.forEach(u => u());
     };
   }
 
   onBluetoothStateChanged(callback: (state: BluetoothState) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onBluetoothStateChanged(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onBluetoothStateChanged(callback));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onBluetoothStateChanged(callback));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onDeviceDiscovered(callback: (device: DeviceInfo) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onDeviceDiscovered(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onDeviceDiscovered((device) => {
+        callback({ ...device, sdkType: 'qcband' });
+      }));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onDeviceDiscovered((device) => {
+        callback({ ...device, sdkType: 'jstyle' });
+      }));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onHeartRateReceived(callback: (data: HeartRateData) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onRealtimeHeartRate((hr) => {
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onRealtimeHeartRate((hr) => {
         callback({ heartRate: hr });
-      });
+      }));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onHeartRateData((data) => {
+        callback({ heartRate: data.heartRate, timestamp: data.timestamp });
+      }));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onStepsReceived(callback: (data: StepsData) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onCurrentStepInfo((data) => {
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onCurrentStepInfo((data) => {
         callback({
           steps: data.steps,
           distance: data.distance,
           calories: data.calories,
           time: 0,
         });
-      });
+      }));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onCurrentStepInfo((data) => {
+        callback({
+          steps: data.steps,
+          distance: (data.distance || 0) * 1000, // km → m
+          calories: data.calories,
+          time: 0,
+        });
+      }));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onSleepDataReceived(callback: (data: SleepData) => void): () => void {
-    // QCBandSDK doesn't have real-time sleep data events
+    // Neither SDK has real-time sleep data events
     return () => {};
   }
 
   onBatteryReceived(callback: (data: BatteryData) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onBatteryChanged(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onBatteryChanged(callback));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onBatteryChanged(callback));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onSpO2Received(callback: (data: SpO2Data) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onSpO2Received(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onSpO2Received(callback));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onSpO2Received(callback));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
   onBloodPressureReceived(callback: (data: BloodPressureData) => void): () => void {
-    // QCBandSDK doesn't have blood pressure events in current implementation
     return () => {};
   }
 
   onError(callback: (error: any) => void): () => void {
-    if (this.activeSDK === 'qcband') {
-      return QCBandService.onError(callback);
+    const unsubs: (() => void)[] = [];
+
+    if (QCBandService.isAvailable()) {
+      unsubs.push(QCBandService.onError(callback));
     }
-    return () => {};
+    if (JstyleService.isAvailable()) {
+      unsubs.push(JstyleService.onError(callback));
+    }
+
+    return () => unsubs.forEach(u => u());
   }
 
-  // ========== QCBandSDK Specific Features ==========
+  // ========== SDK-Specific Feature Access ==========
 
   getQCBandService() {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband' || this.activeSDK === 'qcband') {
       return QCBandService;
     }
     return null;
   }
 
-  // Ring-specific features
+  getJstyleService() {
+    if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
+      return JstyleService;
+    }
+    return null;
+  }
+
+  // Ring-specific features (QCBand only)
   async startWearCalibration(timeout: number = 120): Promise<{ success: boolean } | null> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.startWearCalibration(timeout);
     }
     return null;
   }
 
   async getFlipWristInfo(): Promise<{ enable: boolean; hand: 'left' | 'right' } | null> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.getFlipWristInfo();
     }
     return null;
@@ -533,14 +921,14 @@ class UnifiedSmartRingService {
 
   // Sport mode
   async startSportMode(type: string): Promise<{ success: boolean } | null> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.startSportMode(type);
     }
     return null;
   }
 
   async stopSportMode(type: string): Promise<{ success: boolean } | null> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.stopSportMode(type);
     }
     return null;
@@ -548,7 +936,7 @@ class UnifiedSmartRingService {
 
   // Camera control
   async switchToPhotoMode(): Promise<{ success: boolean } | null> {
-    if (this.activeSDK === 'qcband') {
+    if (this.connectedSDKType === 'qcband') {
       return await QCBandService.switchToPhotoMode();
     }
     return null;

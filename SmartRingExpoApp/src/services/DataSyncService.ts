@@ -114,8 +114,10 @@ class DataSyncService {
       await Promise.all([
         this.syncHeartRateData(userId, smartRingService, syncId),
         this.syncStepsData(userId, smartRingService),
-        this.syncSleepData(userId, smartRingService),
-        this.syncVitalsData(userId, smartRingService),
+        this.syncSleepData(userId, smartRingService), // Now includes segment detail
+        this.syncVitalsData(userId, smartRingService), // includes SpO2, HRV, Stress, Temp
+        this.syncBloodPressure(userId, smartRingService), // NEW
+        this.syncSportRecords(userId, smartRingService), // NEW
       ]);
 
       // Update daily summary
@@ -222,14 +224,31 @@ class DataSyncService {
   ) {
     try {
       const sleepData = await service.getSleepData();
-      
+
       if (sleepData && (sleepData.deep > 0 || sleepData.light > 0)) {
-        const now = new Date();
-        const endTime = new Date(now);
-        endTime.setHours(8, 0, 0, 0); // Assume wake at 8am
-        
+        // Use actual start/end times if available from SDK
+        const endTime = sleepData.endTime
+          ? new Date(sleepData.endTime)
+          : new Date(); // fallback to now
+
         const totalMinutes = sleepData.deep + sleepData.light + (sleepData.rem || 0) + (sleepData.awake || 0);
-        const startTime = new Date(endTime.getTime() - totalMinutes * 60 * 1000);
+        const startTime = sleepData.startTime
+          ? new Date(sleepData.startTime)
+          : new Date(endTime.getTime() - totalMinutes * 60 * 1000);
+
+        // Parse segment details from SDK
+        // The SDK provides segments in the "detail" field as JSON string
+        let detailJson = null;
+        if (sleepData.detail) {
+          try {
+            detailJson = JSON.parse(sleepData.detail);
+            // Expected format: array of segments with { type, startTime, endTime, duration }
+            // type: 0=None, 1=Awake, 2=Light, 3=Deep, 4=REM, 5=Unweared
+            console.log('[Sync] Sleep detail parsed:', detailJson);
+          } catch (e) {
+            console.error('[Sync] Failed to parse sleep detail:', e);
+          }
+        }
 
         await supabaseService.insertSleepSession({
           user_id: userId,
@@ -240,7 +259,7 @@ class DataSyncService {
           rem_min: sleepData.rem || null,
           awake_min: sleepData.awake || null,
           sleep_score: null,
-          detail_json: sleepData.detail ? JSON.parse(sleepData.detail) : null,
+          detail_json: detailJson, // Segment-by-segment breakdown
         });
       }
     } catch (e) {
@@ -256,14 +275,14 @@ class DataSyncService {
       const now = new Date().toISOString();
 
       // SpO2
-      // const spo2Data = await service.getSpO2Data?.();
-      // if (spo2Data) {
-      //   await supabaseService.insertSpO2Readings([{
-      //     user_id: userId,
-      //     spo2: spo2Data.spo2,
-      //     recorded_at: now,
-      //   }]);
-      // }
+      const spo2Data = await service.getSpO2();
+      if (spo2Data) {
+        await supabaseService.insertSpO2Readings([{
+          user_id: userId,
+          spo2: spo2Data.spo2,
+          recorded_at: now,
+        }]);
+      }
 
       // HRV
       const hrvData = await service.getHRVData();
@@ -304,6 +323,54 @@ class DataSyncService {
     }
   }
 
+  private async syncBloodPressure(
+    userId: string,
+    service: typeof UnifiedSmartRingService
+  ) {
+    try {
+      const bpData = await service.getBloodPressure();
+      if (bpData) {
+        console.log('[Sync] BP data:', bpData);
+        await supabaseService.insertBloodPressureReadings([{
+          user_id: userId,
+          systolic: bpData.systolic,
+          diastolic: bpData.diastolic,
+          heart_rate: bpData.heartRate,
+          recorded_at: new Date().toISOString(),
+        }]);
+      }
+    } catch (e) {
+      console.error('Error syncing blood pressure data:', e);
+    }
+  }
+
+  private async syncSportRecords(
+    userId: string,
+    service: typeof UnifiedSmartRingService
+  ) {
+    try {
+      const sportRecords = await service.getSportData();
+      if (sportRecords && sportRecords.length > 0) {
+        console.log('[Sync] Sport records:', sportRecords.length, 'records');
+        const records = sportRecords.map(record => ({
+          user_id: userId,
+          sport_type: record.type.toString(),
+          start_time: new Date(record.startTime).toISOString(),
+          end_time: new Date(record.endTime).toISOString(),
+          duration_minutes: Math.round(record.duration / 60),
+          distance_m: record.distance,
+          calories: record.calories,
+          avg_heart_rate: record.heartRateAvg,
+          max_heart_rate: record.heartRateMax,
+          raw_data: record as any,
+        }));
+        await supabaseService.insertSportRecords(records);
+      }
+    } catch (e) {
+      console.error('Error syncing sport records:', e);
+    }
+  }
+
   // ============================================
   // SUMMARY UPDATES
   // ============================================
@@ -316,26 +383,71 @@ class DataSyncService {
 
     try {
       // Get all readings for the day
-      const [heartRates, steps, sleep, stravaActivities] = await Promise.all([
+      const [
+        heartRates,
+        steps,
+        sleep,
+        stravaActivities,
+        spo2Readings,
+        hrvReadings,
+        stressReadings,
+        bpReadings,
+        sportRecords,
+      ] = await Promise.all([
         supabaseService.getHeartRateReadings(userId, startOfDay, endOfDay),
         supabaseService.getStepsReadings(userId, startOfDay, endOfDay),
         supabaseService.getSleepSessions(userId, startOfDay, endOfDay),
         supabaseService.getStravaActivities(userId, startOfDay, endOfDay),
+        supabaseService.getSpO2Readings(userId, startOfDay, endOfDay),
+        supabaseService.getHRVReadings(userId, startOfDay, endOfDay),
+        supabaseService.getStressReadings(userId, startOfDay, endOfDay),
+        supabaseService.getBloodPressureReadings(userId, startOfDay, endOfDay),
+        supabaseService.getSportRecords(userId, startOfDay, endOfDay),
       ]);
 
-      // Calculate aggregates
+      // Calculate heart rate aggregates
       const hrValues = heartRates.map(r => r.heart_rate).filter(v => v > 0);
       const hrAvg = hrValues.length > 0 ? hrValues.reduce((a, b) => a + b, 0) / hrValues.length : null;
       const hrMin = hrValues.length > 0 ? Math.min(...hrValues) : null;
       const hrMax = hrValues.length > 0 ? Math.max(...hrValues) : null;
 
+      // Calculate steps/activity aggregates
       const totalSteps = steps.reduce((sum, r) => sum + r.steps, 0);
       const totalDistance = steps.reduce((sum, r) => sum + (r.distance_m || 0), 0);
       const totalCalories = steps.reduce((sum, r) => sum + (r.calories || 0), 0);
 
+      // Sleep data
       const latestSleep = sleep[0];
       const sleepTotalMin = latestSleep
         ? (latestSleep.deep_min || 0) + (latestSleep.light_min || 0) + (latestSleep.rem_min || 0)
+        : null;
+
+      // Calculate SpO2 average
+      const spo2Values = spo2Readings.map(r => r.spo2);
+      const spo2Avg = spo2Values.length > 0
+        ? spo2Values.reduce((a, b) => a + b, 0) / spo2Values.length
+        : null;
+
+      // Calculate HRV average (using SDNN as the primary metric)
+      const sdnnValues = hrvReadings.map(r => r.sdnn).filter(v => v != null) as number[];
+      const hrvAvg = sdnnValues.length > 0
+        ? sdnnValues.reduce((a, b) => a + b, 0) / sdnnValues.length
+        : null;
+
+      // Calculate Stress average
+      const stressValues = stressReadings.map(r => r.stress_level);
+      const stressAvg = stressValues.length > 0
+        ? stressValues.reduce((a, b) => a + b, 0) / stressValues.length
+        : null;
+
+      // Calculate Blood Pressure averages
+      const systolicValues = bpReadings.map(r => r.systolic);
+      const diastolicValues = bpReadings.map(r => r.diastolic);
+      const bpSystolicAvg = systolicValues.length > 0
+        ? systolicValues.reduce((a, b) => a + b, 0) / systolicValues.length
+        : null;
+      const bpDiastolicAvg = diastolicValues.length > 0
+        ? diastolicValues.reduce((a, b) => a + b, 0) / diastolicValues.length
         : null;
 
       await supabaseService.upsertDailySummary({
@@ -351,9 +463,12 @@ class DataSyncService {
         hr_avg: hrAvg,
         hr_min: hrMin,
         hr_max: hrMax,
-        spo2_avg: null, // Would need SpO2 readings
-        hrv_avg: null, // Would need HRV readings average
-        stress_avg: null, // Would need stress readings average
+        spo2_avg: spo2Avg,
+        hrv_avg: hrvAvg,
+        stress_avg: stressAvg,
+        bp_systolic_avg: bpSystolicAvg,
+        bp_diastolic_avg: bpDiastolicAvg,
+        sport_records_count: sportRecords.length,
         strava_activities_count: stravaActivities.length,
         updated_at: new Date().toISOString(),
       });

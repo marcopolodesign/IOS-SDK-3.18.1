@@ -14,7 +14,7 @@ import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
 import { OverviewTab, SleepTab, NutritionTab, ActivityTab } from './home';
 import { TabType } from '../theme/gradients';
-import { HomeDataProvider, useHomeDataContext } from '../context/HomeDataContext';
+import { useHomeDataContext } from '../context/HomeDataContext';
 import { useSmartRing } from '../hooks/useSmartRing';
 import { spacing, fontFamily } from '../theme/colors';
 import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
@@ -28,12 +28,12 @@ const ICON_STROKE_WIDTH = 1.5;
 const tabs = [
   { key: 'overview', title: 'Overview', Icon: OverviewIcon },
   { key: 'sleep', title: 'Sleep', Icon: SleepIcon },
-  { key: 'nutrition', title: 'Nutrition', Icon: NutritionIcon },
   { key: 'activity', title: 'Activity', Icon: ActivityIcon },
+  { key: 'nutrition', title: 'Nutrition', Icon: NutritionIcon },
 ] as const;
 
 // Map tab index to TabType
-const tabIndexMap: TabType[] = ['overview', 'sleep', 'nutrition', 'activity'];
+const tabIndexMap: TabType[] = ['overview', 'sleep', 'activity', 'nutrition'];
 
 function NewHomeScreenContent() {
   const insets = useSafeAreaInsets();
@@ -44,6 +44,7 @@ function NewHomeScreenContent() {
   const { autoConnect, isAutoConnecting } = useSmartRing();
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [tabScrollEnabled, setTabScrollEnabled] = useState(true);
 
   // Use homeData.isRingConnected as the source of truth for connection status
   // This is set by useHomeData which calls isConnected() before fetching data
@@ -57,7 +58,7 @@ function NewHomeScreenContent() {
     [{ nativeEvent: { contentOffset: { y: headerAnim } } }],
     {
       useNativeDriver: false,
-      listener: (event) => {
+      listener: (event: any) => {
         const y = event?.nativeEvent?.contentOffset?.y ?? 0;
         if (!hasScrolled && y > 1) {
           setHasScrolled(true);
@@ -80,6 +81,9 @@ function NewHomeScreenContent() {
       setActiveIndex(index);
     }
   };
+
+  const lockTabScroll   = useCallback(() => setTabScrollEnabled(false), []);
+  const unlockTabScroll = useCallback(() => setTabScrollEnabled(true), []);
 
   const handleReconnect = useCallback(async () => {
     if (isReconnecting || isAutoConnecting) return;
@@ -120,13 +124,13 @@ function NewHomeScreenContent() {
 
   const tabBarTranslateY = headerAnim.interpolate({
     inputRange: [0, collapseRange],
-    outputRange: [0, -50],
+    outputRange: [0, 0],
     extrapolate: 'clamp',
   });
 
   const labelTranslateY = headerAnim.interpolate({
     inputRange: [0, collapseRange],
-    outputRange: [0, -6],
+    outputRange: [0, -50],
     extrapolate: 'clamp',
   });
 
@@ -152,6 +156,7 @@ function NewHomeScreenContent() {
           isReconnecting={isReconnecting || isAutoConnecting}
           onReconnect={handleReconnect}
           isSyncing={homeData.isSyncing}
+          onRefresh={homeData.refresh}
         />
 
         <Animated.View style={styles.contentWrapper}>
@@ -163,6 +168,8 @@ function NewHomeScreenContent() {
                 height: tabBarHeight,
                 paddingTop: tabBarPaddingTop,
                 paddingBottom: 0,
+                borderBottomWidth: hasScrolled ? 1 : 0,
+                borderBottomColor: 'rgba(255, 255, 255, 0.4)',
                 transform: [{ translateY: tabBarTranslateY }],
               },
             ]}
@@ -215,6 +222,7 @@ function NewHomeScreenContent() {
             ref={scrollViewRef}
             horizontal
             pagingEnabled
+            scrollEnabled={tabScrollEnabled}
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={handleScroll}
             scrollEventThrottle={16}
@@ -224,13 +232,18 @@ function NewHomeScreenContent() {
               <OverviewTab onScroll={onVerticalScroll} />
             </View>
             <View style={styles.page}>
-              <SleepTab onScroll={onVerticalScroll} />
+              <SleepTab
+                onScroll={onVerticalScroll}
+                onHypnogramTouchStart={lockTabScroll}
+                onHypnogramTouchEnd={unlockTabScroll}
+                isActive={activeIndex === 1}
+              />
+            </View>
+            <View style={styles.page}>
+              <ActivityTab onScroll={onVerticalScroll} isActive={activeIndex === 2} />
             </View>
             <View style={styles.page}>
               <NutritionTab />
-            </View>
-            <View style={styles.page}>
-              <ActivityTab onScroll={onVerticalScroll} />
             </View>
           </Animated.ScrollView>
         </Animated.View>
@@ -239,13 +252,8 @@ function NewHomeScreenContent() {
   );
 }
 
-// Wrap with provider so all child tabs share the same data
 export function NewHomeScreen() {
-  return (
-    <HomeDataProvider>
-      <NewHomeScreenContent />
-    </HomeDataProvider>
-  );
+  return <NewHomeScreenContent />;
 }
 
 const styles = StyleSheet.create({
@@ -257,8 +265,7 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     marginHorizontal: spacing.sm,
-    // marginBottom: spacing.md,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
   tabBar: {
     flexDirection: 'row',
@@ -306,8 +313,9 @@ const styles = StyleSheet.create({
   },
   tabLabelFocusedScrolled: {
     borderWidth: 1,
-    borderColor: 'white',
-    borderRadius: 10,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 100,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   underline: {
     // marginTop: 4,

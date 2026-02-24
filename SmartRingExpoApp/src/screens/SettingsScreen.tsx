@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, borderRadius, fontSize, fontFamily, shadows } from '../theme/colors';
 import { BatteryIndicator } from '../components';
 import { useSmartRing, useAuth } from '../hooks';
@@ -39,14 +39,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const [isMetric, setIsMetric] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (isConnected) {
-      loadSettings();
-    }
-  }, [isConnected]);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
+      const connectedType = UnifiedSmartRingService.getConnectedSDKType();
+
+      // X3/Jstyle does not support getProfile; avoid background unsupported calls.
+      if (connectedType === 'jstyle' || connectedType === 'none') {
+        const goalData = await UnifiedSmartRingService.getGoal();
+        setGoal(goalData.goal);
+        return;
+      }
+
       const [profileData, goalData] = await Promise.all([
         UnifiedSmartRingService.getProfile(),
         UnifiedSmartRingService.getGoal(),
@@ -56,7 +59,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     } catch (error) {
       console.log('Failed to load settings');
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isConnected) return;
+      void loadSettings();
+    }, [isConnected, loadSettings])
+  );
 
   const handleSaveProfile = async () => {
     setIsLoading(true);
@@ -842,6 +852,5 @@ const styles = StyleSheet.create({
 });
 
 export default SettingsScreen;
-
 
 

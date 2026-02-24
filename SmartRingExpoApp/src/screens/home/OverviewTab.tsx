@@ -1,11 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, RefreshControl, Animated } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
-import { OverviewStatsRow } from '../../components/home/StatsRow';
-import { InsightCard, PreviewCard, MoonIcon } from '../../components/home/InsightCard';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
+import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
+import { LiveHeartRateCard } from '../../components/home/LiveHeartRateCard';
+import DailySleepTrendCard from '../../components/home/DailySleepTrendCard';
+import CalorieDeficitCard from '../../components/home/CalorieDeficitCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getScoreMessage, getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
@@ -21,18 +24,8 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
-    const startTime = Date.now();
-    console.log('🔄 [OverviewTab] PULL-TO-REFRESH started at', new Date().toLocaleTimeString());
-    // #region agent log - Hypothesis A: Pull-to-refresh entry point
-    fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OverviewTab.tsx:14',message:'Pull-to-refresh started',data:{timestamp:Date.now(),source:'pull-to-refresh'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     setRefreshing(true);
     await homeData.refresh();
-    const elapsed = Date.now() - startTime;
-    console.log(`🔄 [OverviewTab] PULL-TO-REFRESH completed in ${elapsed}ms`);
-    // #region agent log - Hypothesis A: Pull-to-refresh completion
-    fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OverviewTab.tsx:21',message:'Pull-to-refresh completed',data:{elapsed,source:'pull-to-refresh'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     setRefreshing(false);
   }, [homeData.refresh]);
 
@@ -76,7 +69,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
       </View>
 
       {/* Metrics + Insight Card */}
-      <View style={styles.metricsInsightSection}>
+      <TouchableOpacity style={styles.metricsInsightSection} activeOpacity={0.85} onPress={() => router.push('/detail/recovery-detail')}>
         <MetricInsightCard
           metrics={[
             { label: 'Strain', value: homeData.strain },
@@ -86,9 +79,9 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           insight={homeData.insight}
           backgroundImage={require('../../assets/backgrounds/insights/blue-insight.jpg')}
         />
-      </View>
+      </TouchableOpacity>
 
-      {/* Sleep Preview */}
+      {/* Sleep Preview
       <View style={styles.previewSection}>
         <PreviewCard
           title="Last Night"
@@ -97,17 +90,23 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           unit="%"
           icon={<MoonIcon size={24} />}
         />
-      </View>
+      </View> */}
 
       {/* Reusable gradient info card example */}
       <View style={styles.gradientCardSection}>
         <GradientInfoCard
           icon={<SleepScoreIcon />}
           title="Sleep Score"
-          // gradientColors={['#7100C2', 'rgba(113, 0, 194, 0.2)']}
           headerValue={sleep.score || 0}
           headerSubtitle={sleepMessage}
           showArrow
+          onHeaderPress={() => router.push('/detail/sleep-detail')}
+          gradientStops={[
+            { offset: 0, color: '#7100C2', opacity: 1 },
+            { offset: 0.55, color: '#7100C2', opacity: 0.2 },
+          ]}
+          gradientCenter={{ x: 0.51, y: -0.86 }}
+          gradientRadii={{ rx: '80%', ry: '300%' }}
         >
           <View style={styles.sleepTimeline}>
             <View style={styles.sleepTimeItem}>
@@ -126,6 +125,26 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
             <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} BPM` : '—'}</Text>
           </View>
         </GradientInfoCard>
+      </View>
+
+      {/* Live HR measurement */}
+      <View style={styles.gradientCardSection}>
+        <LiveHeartRateCard />
+      </View>
+
+      {/* Heart rate through the day */}
+      <View style={styles.gradientCardSection}>
+        <DailyHeartRateCard preloadedData={homeData.hrChartData} />
+      </View>
+
+      {/* Caloric deficit */}
+      <View style={styles.gradientCardSection}>
+        <CalorieDeficitCard activeCalories={homeData.activity.adjustedActiveCalories} />
+      </View>
+
+      {/* Sleep trend (7 days) */}
+      <View style={styles.gradientCardSection}>
+        <DailySleepTrendCard />
       </View>
 
       {/* Spacer for bottom padding */}

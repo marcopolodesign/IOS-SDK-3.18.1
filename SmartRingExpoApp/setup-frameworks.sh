@@ -3,12 +3,12 @@
 # Script to copy SDK frameworks to iOS project
 # Run this from the SmartRingExpoApp directory after running 'expo prebuild'
 #
-# This script supports TWO SDKs:
-# 1. CRPSmartBand SDK - From the IOS-SDK-3.18.1 package
-# 2. QCBandSDK - From QC Wireless (ring-specific features)
+# This script copies:
+#   - QCBandSDK framework (Focus R1)
+#   - Jstyle BleSDK_X3 files (Focus X3)
 
-CRP_SDK_DIR="../OC-SDKDemo"
 QC_SDK_DIR="../Demo Files"
+X3_SDK_DIR="../IOS (X3)"
 IOS_DIR="ios"
 
 if [ ! -d "$IOS_DIR" ]; then
@@ -21,25 +21,8 @@ echo "Smart Ring SDK Framework Setup"
 echo "========================================="
 echo ""
 
-# === CRPSmartBand SDK ===
-echo "--- CRPSmartBand SDK ---"
-if [ -d "$CRP_SDK_DIR" ]; then
-    echo "Copying frameworks from $CRP_SDK_DIR..."
-    mkdir -p "$IOS_DIR/Frameworks"
-    cp -R "$CRP_SDK_DIR/CRPSmartBand.framework" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ CRPSmartBand.framework" || echo "✗ CRPSmartBand.framework not found"
-    cp -R "$CRP_SDK_DIR/RTKLEFoundation.framework" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ RTKLEFoundation.framework" || echo "✗ RTKLEFoundation.framework not found"
-    cp -R "$CRP_SDK_DIR/RTKOTASDK.framework" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ RTKOTASDK.framework" || echo "✗ RTKOTASDK.framework not found"
-    cp -R "$CRP_SDK_DIR/OTAFramework.framework" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ OTAFramework.framework" || echo "✗ OTAFramework.framework not found"
-    cp -R "$CRP_SDK_DIR/SpeexKit.framework" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ SpeexKit.framework" || echo "✗ SpeexKit.framework not found"
-    cp "$CRP_SDK_DIR/libopus.a" "$IOS_DIR/Frameworks/" 2>/dev/null && echo "✓ libopus.a" || echo "✗ libopus.a not found"
-else
-    echo "⚠ CRPSmartBand SDK directory not found at $CRP_SDK_DIR"
-    echo "  Adjust CRP_SDK_DIR in this script if needed"
-fi
-echo ""
-
-# === QCBandSDK ===
-echo "--- QCBandSDK ---"
+# === QCBandSDK (Focus R1) ===
+echo "--- QCBandSDK (Focus R1) ---"
 if [ -d "$QC_SDK_DIR" ]; then
     echo "Copying framework from $QC_SDK_DIR..."
     mkdir -p "$IOS_DIR/Frameworks"
@@ -47,6 +30,38 @@ if [ -d "$QC_SDK_DIR" ]; then
 else
     echo "⚠ QCBandSDK directory not found at $QC_SDK_DIR"
     echo "  Adjust QC_SDK_DIR in this script if needed"
+fi
+echo ""
+
+# === Jstyle BleSDK_X3 (Focus X3) ===
+echo "--- Jstyle BleSDK_X3 (Focus X3) ---"
+JSTYLE_DIR="$IOS_DIR/JstyleBridge"
+if [ -d "$X3_SDK_DIR" ]; then
+    echo "Copying X3 SDK files from $X3_SDK_DIR..."
+    mkdir -p "$JSTYLE_DIR"
+
+    # Copy static library
+    cp "$X3_SDK_DIR/BleSDK/libBleSDK.a" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ libBleSDK.a" || echo "✗ libBleSDK.a not found"
+
+    # Copy SDK headers
+    cp "$X3_SDK_DIR/BleSDK/BleSDK_X3.h" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ BleSDK_X3.h" || echo "✗ BleSDK_X3.h not found"
+    cp "$X3_SDK_DIR/BleSDK/BleSDK_Header_X3.h" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ BleSDK_Header_X3.h" || echo "✗ BleSDK_Header_X3.h not found"
+    cp "$X3_SDK_DIR/BleSDK/DeviceData_X3.h" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ DeviceData_X3.h" || echo "✗ DeviceData_X3.h not found"
+
+    # Copy BLE connection manager (if not already adapted)
+    if [ ! -f "$JSTYLE_DIR/NewBle.h" ]; then
+        cp "$X3_SDK_DIR/Ble SDK Demo/NewBle.h" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ NewBle.h" || echo "✗ NewBle.h not found"
+    else
+        echo "✓ NewBle.h (already exists)"
+    fi
+    if [ ! -f "$JSTYLE_DIR/NewBle.m" ]; then
+        cp "$X3_SDK_DIR/Ble SDK Demo/NewBle.m" "$JSTYLE_DIR/" 2>/dev/null && echo "✓ NewBle.m (raw — needs adaptation)" || echo "✗ NewBle.m not found"
+    else
+        echo "✓ NewBle.m (already exists, adapted)"
+    fi
+else
+    echo "⚠ X3 SDK directory not found at $X3_SDK_DIR"
+    echo "  Adjust X3_SDK_DIR in this script if needed"
 fi
 echo ""
 
@@ -58,19 +73,23 @@ ls -la "$IOS_DIR"/Frameworks/*.framework 2>/dev/null | awk '{print "  " $NF}' ||
 echo ""
 
 echo "========================================="
+echo "JstyleBridge files:"
+echo "========================================="
+ls -la "$JSTYLE_DIR"/ 2>/dev/null | awk '{print "  " $NF}' || echo "  No files found"
+echo ""
+
+echo "========================================="
 echo "Next Steps:"
 echo "========================================="
 echo ""
 echo "1. Open ios/SmartRing.xcworkspace in Xcode"
 echo ""
-echo "2. Add frameworks to 'Frameworks, Libraries, and Embedded Content':"
-echo "   - CRPSmartBand.framework (Embed & Sign)"
-echo "   - QCBandSDK.framework (Embed & Sign)"
-echo "   - RTKLEFoundation.framework (Embed & Sign) - if using CRP SDK"
-echo "   - RTKOTASDK.framework (Embed & Sign) - for firmware updates"
+echo "2. Add QCBandSDK.framework to 'Frameworks, Libraries, and Embedded Content' (Embed & Sign)"
 echo ""
-echo "3. (Optional) Add libopus.a to 'Link Binary With Libraries' if you use the CRP SDK"
+echo "3. Add JstyleBridge/ group to the Xcode project:"
+echo "   - Add libBleSDK.a to 'Link Binary With Libraries'"
+echo "   - Add JstyleBridge.m and NewBle.m to 'Compile Sources'"
+echo "   - Add JstyleBridge/ to header search paths"
 echo ""
 echo "4. Build and run the project"
 echo ""
-echo "See SETUP_GUIDE.md for detailed instructions."

@@ -368,6 +368,79 @@ export interface Database {
           created_at?: string;
         };
       };
+      blood_pressure_readings: {
+        Row: {
+          id: string;
+          user_id: string;
+          systolic: number;
+          diastolic: number;
+          heart_rate: number | null;
+          recorded_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          systolic: number;
+          diastolic: number;
+          heart_rate?: number | null;
+          recorded_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          systolic?: number;
+          diastolic?: number;
+          heart_rate?: number | null;
+          recorded_at?: string;
+          created_at?: string;
+        };
+      };
+      sport_records: {
+        Row: {
+          id: string;
+          user_id: string;
+          sport_type: string;
+          start_time: string;
+          end_time: string;
+          duration_minutes: number | null;
+          distance_m: number | null;
+          calories: number | null;
+          avg_heart_rate: number | null;
+          max_heart_rate: number | null;
+          raw_data: Record<string, unknown> | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          sport_type: string;
+          start_time: string;
+          end_time: string;
+          duration_minutes?: number | null;
+          distance_m?: number | null;
+          calories?: number | null;
+          avg_heart_rate?: number | null;
+          max_heart_rate?: number | null;
+          raw_data?: Record<string, unknown> | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          sport_type?: string;
+          start_time?: string;
+          end_time?: string;
+          duration_minutes?: number | null;
+          distance_m?: number | null;
+          calories?: number | null;
+          avg_heart_rate?: number | null;
+          max_heart_rate?: number | null;
+          raw_data?: Record<string, unknown> | null;
+          created_at?: string;
+        };
+      };
       daily_summaries: {
         Row: {
           id: string;
@@ -386,6 +459,9 @@ export interface Database {
           spo2_avg: number | null;
           hrv_avg: number | null;
           stress_avg: number | null;
+          bp_systolic_avg: number | null;
+          bp_diastolic_avg: number | null;
+          sport_records_count: number;
           strava_activities_count: number;
           created_at: string;
           updated_at: string;
@@ -407,6 +483,9 @@ export interface Database {
           spo2_avg?: number | null;
           hrv_avg?: number | null;
           stress_avg?: number | null;
+          bp_systolic_avg?: number | null;
+          bp_diastolic_avg?: number | null;
+          sport_records_count?: number;
           strava_activities_count?: number;
           created_at?: string;
           updated_at?: string;
@@ -428,6 +507,9 @@ export interface Database {
           spo2_avg?: number | null;
           hrv_avg?: number | null;
           stress_avg?: number | null;
+          bp_systolic_avg?: number | null;
+          bp_diastolic_avg?: number | null;
+          sport_records_count?: number;
           strava_activities_count?: number;
           created_at?: string;
           updated_at?: string;
@@ -533,6 +615,8 @@ export type SpO2Reading = Database['public']['Tables']['spo2_readings']['Row'];
 export type HRVReading = Database['public']['Tables']['hrv_readings']['Row'];
 export type StressReading = Database['public']['Tables']['stress_readings']['Row'];
 export type TemperatureReading = Database['public']['Tables']['temperature_readings']['Row'];
+export type BloodPressureReading = Database['public']['Tables']['blood_pressure_readings']['Row'];
+export type SportRecord = Database['public']['Tables']['sport_records']['Row'];
 export type StravaActivity = Database['public']['Tables']['strava_activities']['Row'];
 export type DailySummary = Database['public']['Tables']['daily_summaries']['Row'];
 export type WeeklySummary = Database['public']['Tables']['weekly_summaries']['Row'];

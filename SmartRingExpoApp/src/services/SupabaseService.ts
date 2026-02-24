@@ -81,8 +81,8 @@ class SupabaseService {
   async insertHeartRateReadings(readings: Omit<HeartRateReading, 'id' | 'created_at'>[]): Promise<boolean> {
     const { error } = await supabase
       .from('heart_rate_readings')
-      .insert(readings);
-    
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
+
     if (error) {
       console.error('Error inserting heart rate readings:', error);
       return false;
@@ -117,8 +117,8 @@ class SupabaseService {
   async insertStepsReadings(readings: Omit<StepsReading, 'id' | 'created_at'>[]): Promise<boolean> {
     const { error } = await supabase
       .from('steps_readings')
-      .insert(readings);
-    
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
+
     if (error) {
       console.error('Error inserting steps readings:', error);
       return false;
@@ -153,8 +153,8 @@ class SupabaseService {
   async insertSleepSession(session: Omit<SleepSession, 'id' | 'created_at'>): Promise<boolean> {
     const { error } = await supabase
       .from('sleep_sessions')
-      .insert(session);
-    
+      .upsert(session, { onConflict: 'user_id,start_time', ignoreDuplicates: false });
+
     if (error) {
       console.error('Error inserting sleep session:', error);
       return false;
@@ -351,7 +351,9 @@ class SupabaseService {
   async insertSpO2Readings(
     readings: { user_id: string; spo2: number; recorded_at: string }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('spo2_readings').insert(readings);
+    const { error } = await supabase
+      .from('spo2_readings')
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting SpO2 readings:', error);
       return false;
@@ -371,7 +373,9 @@ class SupabaseService {
       recorded_at: string;
     }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('hrv_readings').insert(readings);
+    const { error } = await supabase
+      .from('hrv_readings')
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: false });
     if (error) {
       console.error('Error inserting HRV readings:', error);
       return false;
@@ -382,7 +386,9 @@ class SupabaseService {
   async insertStressReadings(
     readings: { user_id: string; stress_level: number; recorded_at: string }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('stress_readings').insert(readings);
+    const { error } = await supabase
+      .from('stress_readings')
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting stress readings:', error);
       return false;
@@ -393,12 +399,188 @@ class SupabaseService {
   async insertTemperatureReadings(
     readings: { user_id: string; temperature_c: number; recorded_at: string }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('temperature_readings').insert(readings);
+    const { error } = await supabase
+      .from('temperature_readings')
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting temperature readings:', error);
       return false;
     }
     return true;
+  }
+
+  // ============================================
+  // BLOOD PRESSURE OPERATIONS
+  // ============================================
+
+  async insertBloodPressureReadings(
+    readings: {
+      user_id: string;
+      systolic: number;
+      diastolic: number;
+      heart_rate?: number;
+      recorded_at: string;
+    }[]
+  ): Promise<boolean> {
+    const { error } = await supabase.from('blood_pressure_readings').insert(readings);
+    if (error) {
+      console.error('Error inserting BP readings:', error);
+      return false;
+    }
+    return true;
+  }
+
+  async getBloodPressureReadings(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ systolic: number; diastolic: number; heart_rate: number | null; recorded_at: string }[]> {
+    const { data, error } = await supabase
+      .from('blood_pressure_readings')
+      .select('systolic, diastolic, heart_rate, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', startDate.toISOString())
+      .lte('recorded_at', endDate.toISOString())
+      .order('recorded_at', { ascending: true });
+    if (error) {
+      console.error('Error fetching BP readings:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // ============================================
+  // SPORT RECORDS OPERATIONS
+  // ============================================
+
+  async insertSportRecords(
+    records: {
+      user_id: string;
+      sport_type: string;
+      start_time: string;
+      end_time: string;
+      duration_minutes?: number;
+      distance_m?: number;
+      calories?: number;
+      avg_heart_rate?: number;
+      max_heart_rate?: number;
+      raw_data?: Record<string, unknown>;
+    }[]
+  ): Promise<boolean> {
+    const { error } = await supabase.from('sport_records').insert(records);
+    if (error) {
+      console.error('Error inserting sport records:', error);
+      return false;
+    }
+    return true;
+  }
+
+  async getSportRecords(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{
+    sport_type: string;
+    start_time: string;
+    end_time: string;
+    duration_minutes: number | null;
+    distance_m: number | null;
+    calories: number | null;
+    avg_heart_rate: number | null;
+    max_heart_rate: number | null;
+  }[]> {
+    const { data, error } = await supabase
+      .from('sport_records')
+      .select('sport_type, start_time, end_time, duration_minutes, distance_m, calories, avg_heart_rate, max_heart_rate')
+      .eq('user_id', userId)
+      .gte('start_time', startDate.toISOString())
+      .lte('start_time', endDate.toISOString())
+      .order('start_time', { ascending: false });
+    if (error) {
+      console.error('Error fetching sport records:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // ============================================
+  // VITALS GETTERS (for daily summary calculation)
+  // ============================================
+
+  async getSpO2Readings(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ spo2: number; recorded_at: string }[]> {
+    const { data, error } = await supabase
+      .from('spo2_readings')
+      .select('spo2, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', startDate.toISOString())
+      .lte('recorded_at', endDate.toISOString())
+      .order('recorded_at', { ascending: true });
+    if (error) {
+      console.error('Error fetching SpO2 readings:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  async getHRVReadings(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ sdnn: number | null; rmssd: number | null; pnn50: number | null; lf: number | null; hf: number | null; lf_hf_ratio: number | null; recorded_at: string }[]> {
+    const { data, error } = await supabase
+      .from('hrv_readings')
+      .select('sdnn, rmssd, pnn50, lf, hf, lf_hf_ratio, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', startDate.toISOString())
+      .lte('recorded_at', endDate.toISOString())
+      .order('recorded_at', { ascending: true });
+    if (error) {
+      console.error('Error fetching HRV readings:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  async getStressReadings(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ stress_level: number; recorded_at: string }[]> {
+    const { data, error } = await supabase
+      .from('stress_readings')
+      .select('stress_level, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', startDate.toISOString())
+      .lte('recorded_at', endDate.toISOString())
+      .order('recorded_at', { ascending: true });
+    if (error) {
+      console.error('Error fetching stress readings:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  async getTemperatureReadings(
+    userId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<{ temperature_c: number; recorded_at: string }[]> {
+    const { data, error } = await supabase
+      .from('temperature_readings')
+      .select('temperature_c, recorded_at')
+      .eq('user_id', userId)
+      .gte('recorded_at', startDate.toISOString())
+      .lte('recorded_at', endDate.toISOString())
+      .order('recorded_at', { ascending: true });
+    if (error) {
+      console.error('Error fetching temperature readings:', error);
+      return [];
+    }
+    return data || [];
   }
 }
 

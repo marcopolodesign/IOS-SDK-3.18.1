@@ -1,6 +1,6 @@
 /**
  * Sleep data utilities for Smart Ring
- * 
+ *
  * SDK SLEEPTYPE enum:
  * 0 = SLEEPTYPENONE    (no data)
  * 1 = SLEEPTYPESOBER   (awake)
@@ -10,7 +10,7 @@
  * 5 = SLEEPTYPEUNWEARED (not wearing)
  */
 
-import QCBandService from '../../services/QCBandService';
+import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 
 export interface SleepSegment {
   startTime: string;
@@ -65,11 +65,11 @@ const SLEEP_TYPE_NAMES = ['None', 'Awake', 'Light', 'Deep', 'REM', 'Unweared'];
  */
 export async function getSleep(dayIndex: number = 0): Promise<SleepInfo> {
   console.log(`😴 [RingData] Fetching sleep data for day ${dayIndex}...`);
-  
-  const rawData = await QCBandService.getSleepData(dayIndex);
-  
+
+  const rawData = await UnifiedSmartRingService.getSleepData();
+
   // Log raw data
-  console.log('😴 [RingData] Raw sleep segments:', rawData.sleepSegments.length);
+  console.log('😴 [RingData] Raw sleep segments:', rawData.sleepSegments?.length || 0);
   
   // Process segments with type names
   const segments: SleepSegment[] = rawData.sleepSegments.map(s => ({

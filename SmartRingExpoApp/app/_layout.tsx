@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { useFonts } from 'expo-font';
 import { OnboardingProvider } from '../src/context/OnboardingContext';
+import { HomeDataProvider } from '../src/context/HomeDataContext';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -23,13 +24,23 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <OnboardingProvider>
+        <HomeDataProvider>
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="testing" />
+          <Stack.Screen name="detail/sleep-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/heart-rate-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/hrv-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/spo2-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/temperature-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/activity-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/recovery-detail" options={{ animation: 'slide_from_right' }} />
         </Stack>
+        </HomeDataProvider>
       </OnboardingProvider>
     </GestureHandlerRootView>
   );

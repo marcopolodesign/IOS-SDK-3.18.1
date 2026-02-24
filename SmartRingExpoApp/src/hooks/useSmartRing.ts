@@ -14,19 +14,27 @@ import type {
 const isRingDevice = (device: DeviceInfo): boolean => {
   const name = device.name?.toLowerCase() || '';
   const id = device.id?.toLowerCase() || '';
-  
+
+  // Jstyle X3 devices (tagged by native bridge)
+  if (device.sdkType === 'jstyle') return true;
+
+  // Check for X3 patterns
+  if (name.includes('x3')) return true;
+  if (name.includes('jstyle')) return true;
+  if (name.includes('focus x3')) return true;
+
   // Check for R10_ pattern (ring devices)
   if (id.includes('r10_') || name.includes('r10_')) return true;
-  
+
   // Check for FOCUS R1 (already formatted)
   if (name.includes('focus r1')) return true;
-  
+
   // Check for SmartBand
   if (name.includes('smartband')) return true;
-  
+
   // Check for sdk_ prefix (cached ring)
   if (id.startsWith('sdk_r10_')) return true;
-  
+
   return false;
 };
 
@@ -34,18 +42,24 @@ const isRingDevice = (device: DeviceInfo): boolean => {
 const formatDeviceName = (device: DeviceInfo): string => {
   const name = device.name || '';
   const id = device.id || '';
-  
+  const lower = name.toLowerCase();
+
+  // Jstyle X3 devices
+  if (device.sdkType === 'jstyle') return 'FOCUS X3';
+  if (lower.includes('x3')) return 'FOCUS X3';
+  if (lower.includes('jstyle')) return 'FOCUS X3';
+
   // If it's already "FOCUS R1", return as-is
   if (name.includes('FOCUS R1')) return 'FOCUS R1';
-  
+
   // R10_* devices should be "FOCUS R1"
   if (name.startsWith('R10_') || id.includes('R10_') || id.startsWith('sdk_R10_')) {
     return 'FOCUS R1';
   }
-  
+
   // SmartBand stays as-is
-  if (name.toLowerCase().includes('smartband')) return name;
-  
+  if (lower.includes('smartband')) return name;
+
   return name || 'Smart Ring';
 };
 
@@ -320,19 +334,27 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
   const connect = useCallback(async (mac: string): Promise<boolean> => {
     console.log('🔗 [useSmartRing] connect() called with MAC:', mac);
-    
+
     const device = devices.find((d) => d.mac === mac);
     if (!device) {
       console.log('❌ [useSmartRing] Device not found in devices list');
       return false;
     }
 
+    // Determine SDK type from device and set it on the unified service
+    const sdkType = device.sdkType || 'qcband';
+    console.log('🔗 [useSmartRing] Device sdkType:', sdkType);
+    UnifiedSmartRingService.setConnectedSDKType(sdkType);
+
     try {
-      console.log('🔗 [useSmartRing] Calling UnifiedSmartRingService.connect()...');
+      // Jstyle native bridge expects the CoreBluetooth peripheral UUID (device.id),
+      // not the MAC address. QCBand uses MAC.
+      const connectId = sdkType === 'jstyle' ? device.id : mac;
+      console.log('🔗 [useSmartRing] Calling UnifiedSmartRingService.connect() with:', connectId);
       const startTime = Date.now();
-      
-      const result = await UnifiedSmartRingService.connect(mac);
-      
+
+      const result = await UnifiedSmartRingService.connect(connectId, sdkType);
+
       const elapsed = Date.now() - startTime;
       console.log(`🔗 [useSmartRing] connect() returned after ${elapsed}ms:`, result);
       

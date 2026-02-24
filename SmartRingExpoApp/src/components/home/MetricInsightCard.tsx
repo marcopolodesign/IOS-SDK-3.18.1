@@ -8,6 +8,17 @@ type Metric = {
   value: number | string;
 };
 
+const formatValue = (value: number | string) => {
+  if (typeof value === 'number') {
+    return Math.round(value).toLocaleString();
+  }
+  const num = Number(value);
+  if (!Number.isNaN(num)) {
+    return Math.round(num).toLocaleString();
+  }
+  return value;
+};
+
 interface MetricInsightCardProps {
   metrics: Metric[];
   insight: string;
@@ -45,7 +56,7 @@ export function MetricInsightCard({
           <React.Fragment key={`${metric.label}-${index}`}>
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>{metric.label}</Text>
-              <Text style={styles.metricValue}>{metric.value}</Text>
+              <Text style={styles.metricValue}>{formatValue(metric.value)}</Text>
             </View>
             {index < metrics.length - 1 && <View style={styles.divider} />}
           </React.Fragment>

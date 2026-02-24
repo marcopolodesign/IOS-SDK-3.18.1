@@ -3,7 +3,7 @@
  * Shows heart rate, SpO2, HRV, sleep, and other health data from the ring
  */
 
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Polyline } from 'react-native-svg';
 import { useSmartRing } from '../hooks';
 import { GlassCard } from '../components/home/GlassCard';
+import { useHomeDataContext } from '../context/HomeDataContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -159,22 +160,41 @@ function SmallMetricCard({
 
 export function StyledHealthScreen() {
   const insets = useSafeAreaInsets();
-  const { isConnected, connectedDevice } = useSmartRing();
+  const { isConnected, connectedDevice, refreshMetrics, metrics, battery } = useSmartRing();
+  const homeData = useHomeDataContext();
 
-  // Mock health data from the ring
-  const healthData = {
-    heartRate: isConnected ? 72 : '--',
-    heartRateStatus: 'Normal',
-    spo2: isConnected ? 98 : '--',
-    hrv: isConnected ? 45 : '--',
-    hrvStatus: 'Good variability',
-    sleepScore: isConnected ? 82 : '--',
-    sleepDuration: '7h 23m',
-    skinTemp: isConnected ? 36.4 : '--',
-    steps: isConnected ? 8432 : '--',
-    calories: isConnected ? 342 : '--',
-    respiratoryRate: isConnected ? 14 : '--',
-  };
+  // Refresh metrics on mount and whenever we become connected
+  useEffect(() => {
+    if (isConnected) {
+      refreshMetrics();
+    }
+  }, [isConnected, refreshMetrics]);
+
+  const healthData = useMemo(() => {
+    const hr = metrics.heartRate ?? '--';
+    const spo2 = metrics.spo2 ?? '--';
+    const steps = metrics.steps ?? '--';
+    const calories = metrics.calories ?? '--';
+    const distanceKm = metrics.distance ? (metrics.distance / 1000).toFixed(2) : '--';
+
+    return {
+      heartRate: isConnected ? hr : '--',
+      heartRateStatus: isConnected && hr !== '--' ? 'Live' : 'Unavailable',
+      spo2: isConnected ? spo2 : '--',
+      hrv: homeData.hrvSdnn > 0 ? String(homeData.hrvSdnn) : '--',
+      hrvStatus: homeData.hrvSdnn > 0 ? 'ms SDNN' : '—',
+      sleepScore: '--',
+      sleepDuration: '--',
+      skinTemp: '--',
+      steps: isConnected ? steps : '--',
+      calories: isConnected ? calories : '--',
+      respiratoryRate: '--',
+      distance: isConnected ? distanceKm : '--',
+      battery: battery ?? '--',
+    };
+  }, [isConnected, metrics, battery, homeData.hrvSdnn]);
+
+  // healthData now pulls from live metrics via useSmartRing
 
   return (
     <ImageBackground
@@ -474,4 +494,3 @@ const styles = StyleSheet.create({
 });
 
 export default StyledHealthScreen;
-

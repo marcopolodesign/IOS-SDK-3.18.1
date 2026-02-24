@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SleepSegment, SleepStage } from '../components/home/SleepStagesChart';
-import { getSleep, calculateSleepScore, type SleepInfo } from '../utils/ringData/sleep';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
+import JstyleService from '../services/JstyleService';
 import { supabase } from '../services/SupabaseService';
 
 const CACHE_KEY = 'home_data_cache';
@@ -55,6 +55,8 @@ export interface HomeData {
   error: string | null;
   userName: string;
   isRingConnected: boolean;
+  hrChartData: Array<{ timeMinutes: number; heartRate: number }>;
+  hrvSdnn: number;
 }
 
   // Data that we cache (subset of HomeData that makes sense to persist)
@@ -84,17 +86,6 @@ const PROFILE = {
   weightKg: 72,
 };
 
-const hoursSinceMidnight = () => {
-  const now = new Date();
-  return now.getHours() + now.getMinutes() / 60;
-};
-
-const estimateBMRPerHour = () => {
-  // Mifflin-St Jeor (male assumption for now)
-  const { weightKg, heightCm, age } = PROFILE;
-  const bmrPerDay = 10 * weightKg + 6.25 * heightCm - 5 * age + 5; // kcal/day
-  return bmrPerDay / 24;
-};
 
 const sanitizeActivity = (activity?: Partial<ActivityData>): ActivityData => {
   const rawCalories = Math.round(activity?.calories ?? 0);
@@ -191,30 +182,6 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
   }
 }
 
-/**
- * Helper to retry an async operation with delay
- */
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 2,
-  delayMs: number = 1500,
-  operationName: string = 'operation'
-): Promise<T> {
-  let lastError: any;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      if (attempt > 0) {
-        console.log(`😴 [useHomeData] Retrying ${operationName} (attempt ${attempt + 1})...`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      console.log(`😴 [useHomeData] ${operationName} failed (attempt ${attempt + 1}):`, error);
-    }
-  }
-  throw lastError;
-}
 
 /**
  * Map SDK sleep type to component SleepStage
@@ -222,111 +189,126 @@ async function withRetry<T>(
  * Component: 'awake', 'rem', 'core', 'deep'
  */
 function mapSleepType(type: number): SleepStage {
+  // SDK SLEEPTYPE per demo docs: 1=Deep, 2=Light, 3=REM, other=Awake/none
   switch (type) {
-    case 1: return 'awake';
-    case 2: return 'core';  // Light sleep = Core in UI
-    case 3: return 'deep';
-    case 4: return 'rem';
-    default: return 'core'; // Default to light/core
+    case 1: return 'deep';
+    case 2: return 'core';
+    case 3: return 'rem';
+    default: return 'awake';
   }
+}
+
+
+/**
+ * Parse "YYYY.MM.DD HH:MM:SS" string timestamps from raw SDK records.
+ */
+function parseStart(str?: string): number | undefined {
+  if (!str) return;
+  const [d, t] = str.split(' ');
+  if (!d || !t) return;
+  const [y, m, day] = d.split('.').map(Number);
+  const [hh, mm, ss] = t.split(':').map(Number);
+  if ([y, m, day, hh, mm, ss].some(n => Number.isNaN(n))) return;
+  return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
 }
 
 /**
- * Fetch real sleep data from the ring and transform to component format
- * Includes retry logic for when SDK isn't fully ready
+ * Build SleepData from raw JstyleService.getSleepData() records.
+ * Smarter than buildSleepSegments: handles multi-record gaps (up to 60min),
+ * builds a continuous 1-min timeline, and chooses the most recent sleep block.
+ * Ported from testing.tsx (the cheatsheet).
  */
-async function fetchRealSleepData(retryCount: number = 0): Promise<SleepData | null> {
-  const MAX_RETRIES = 2;
-  const RETRY_DELAY = 2000;
+function deriveFromRaw(rawRecords: any[]): SleepData | null {
+  if (!rawRecords || rawRecords.length === 0) return null;
 
-  try {
-    console.log(`😴 [useHomeData] Fetching real sleep data from ring... (attempt ${retryCount + 1})`);
+  const normalizedAll = rawRecords.map(r => {
+    const start = r.startTimestamp || parseStart(r.startTime_SleepData);
+    const unit = Number(r.sleepUnitLength) || 1;
+    const arr: number[] = r.arraySleepQuality || [];
+    const durationMin = Number(r.totalSleepTime) || arr.length * unit;
+    return { start, unit, arr, durationMin };
+  }).filter(r => typeof r.start === 'number' && r.start > 0);
 
-    // Check if ring is connected
-    const connectionStatus = await UnifiedSmartRingService.isConnected();
-    if (!connectionStatus.connected) {
-      console.log('😴 [useHomeData] Ring not connected, cannot fetch sleep data');
-      return null;
+  if (normalizedAll.length === 0) return null;
+
+  const sorted = [...normalizedAll].sort((a, b) => a.start! - b.start!);
+  const MAX_GAP_MS = 60 * 60 * 1000;
+  const blocks: { start: number; end: number; records: typeof normalizedAll }[] = [];
+  let block: { start: number; end: number; records: typeof normalizedAll } | null = null;
+
+  for (const rec of sorted) {
+    const recStart = rec.start!;
+    const recEnd = rec.start! + rec.durationMin * 60000;
+    if (!block) {
+      block = { start: recStart, end: recEnd, records: [rec] };
+      continue;
     }
-
-    // Get sleep data for today (dayIndex 0 = last night's sleep)
-    const sleepInfo: SleepInfo = await getSleep(0);
-
-    if (!sleepInfo || sleepInfo.totalSleepMinutes === 0) {
-      console.log('😴 [useHomeData] No sleep data available from ring');
-      return null;
+    if (recStart - block.end <= MAX_GAP_MS) {
+      block.end = Math.max(block.end, recEnd);
+      block.records.push(rec);
+    } else {
+      blocks.push(block);
+      block = { start: recStart, end: recEnd, records: [rec] };
     }
-
-    console.log('😴 [useHomeData] Raw sleep data:', {
-      total: sleepInfo.totalSleepMinutes,
-      deep: sleepInfo.deepMinutes,
-      light: sleepInfo.lightMinutes,
-      rem: sleepInfo.remMinutes,
-      awake: sleepInfo.awakeMinutes,
-      segments: sleepInfo.segments?.length || 0,
-    });
-
-    // Calculate sleep score
-    const scoreResult = calculateSleepScore(sleepInfo);
-
-    // Transform segments to component format
-    const segments: SleepSegment[] = (sleepInfo.segments || [])
-      .filter(s => s.type >= 1 && s.type <= 4) // Only valid sleep types
-      .map(s => ({
-        stage: mapSleepType(s.type),
-        startTime: new Date(s.startTime),
-        endTime: new Date(s.endTime),
-      }));
-
-    // Calculate times
-    const hours = Math.floor(sleepInfo.totalSleepMinutes / 60);
-    const minutes = sleepInfo.totalSleepMinutes % 60;
-
-    // Determine bed time and wake time
-    const bedTime = sleepInfo.bedTime
-      ? new Date(sleepInfo.bedTime)
-      : (segments[0]?.startTime || new Date());
-    const wakeTime = sleepInfo.wakeTime
-      ? new Date(sleepInfo.wakeTime)
-      : (segments[segments.length - 1]?.endTime || new Date());
-
-    // Calculate resting HR (would need separate fetch, use placeholder for now)
-    // TODO: Fetch actual resting HR from ring during sleep
-    const restingHR = 55; // Placeholder - ideally fetch from ring's sleep HR data
-
-    const sleepData: SleepData = {
-      score: scoreResult.score,
-      timeAsleep: `${hours}h ${minutes}m`,
-      timeAsleepMinutes: sleepInfo.totalSleepMinutes,
-      restingHR,
-      respiratoryRate: 14, // Placeholder - ring may not support this
-      segments,
-      bedTime,
-      wakeTime,
-    };
-
-    console.log('😴 [useHomeData] Transformed sleep data:', {
-      score: sleepData.score,
-      timeAsleep: sleepData.timeAsleep,
-      segments: sleepData.segments.length,
-      bedTime: sleepData.bedTime.toLocaleTimeString(),
-      wakeTime: sleepData.wakeTime.toLocaleTimeString(),
-    });
-
-    return sleepData;
-  } catch (error) {
-    // Retry if SDK might not be ready yet
-    if (retryCount < MAX_RETRIES) {
-      console.log(`😴 [useHomeData] Sleep fetch attempt ${retryCount + 1} failed, retrying...`);
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-      return fetchRealSleepData(retryCount + 1);
-    }
-
-    // Only log error after all retries exhausted
-    console.log('😴 [useHomeData] Could not fetch sleep data after retries');
-    return null;
   }
+  if (block) blocks.push(block);
+  if (blocks.length === 0) return null;
+
+  // Use the most recent sleep block
+  const chosen = blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
+  const earliestStart = chosen.start;
+  const latestEnd = chosen.end;
+  const totalMinutes = Math.max(0, Math.round((latestEnd - earliestStart) / 60000));
+  if (totalMinutes === 0) return null;
+
+  const timeline: number[] = new Array(totalMinutes).fill(0);
+  for (const rec of chosen.records) {
+    const startOffset = Math.round((rec.start! - earliestStart) / 60000);
+    const unit = Math.max(1, rec.unit);
+    rec.arr.forEach((val: number, idx: number) => {
+      const stage = mapSleepType(Number(val));
+      const stageVal = stage === 'deep' ? 3 : stage === 'rem' ? 2 : stage === 'core' ? 1 : 0;
+      for (let k = 0; k < unit; k++) {
+        const pos = startOffset + idx * unit + k;
+        if (pos >= 0 && pos < timeline.length) timeline[pos] = stageVal;
+      }
+    });
+  }
+
+  const segments: SleepSegment[] = [];
+  for (let i = 0; i < timeline.length; i++) {
+    const val = timeline[i];
+    const stage: SleepStage = val === 3 ? 'deep' : val === 2 ? 'rem' : val === 1 ? 'core' : 'awake';
+    const startMs = earliestStart + i * 60000;
+    const endMs = startMs + 60000;
+    if (segments.length && segments[segments.length - 1].stage === stage) {
+      segments[segments.length - 1].endTime = new Date(endMs);
+    } else {
+      segments.push({ stage, startTime: new Date(startMs), endTime: new Date(endMs) });
+    }
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const score = Math.min(100, Math.round(
+    (totalMinutes / 480) * 35 +
+    ((timeline.filter(v => v === 3).length / totalMinutes) * 25) +
+    ((timeline.filter(v => v === 2).length / totalMinutes) * 15) +
+    Math.max(5, 25 - Math.round((timeline.filter(v => v === 0).length / totalMinutes) * 50))
+  ));
+
+  return {
+    score,
+    timeAsleep: `${hours}h ${minutes}m`,
+    timeAsleepMinutes: totalMinutes,
+    restingHR: 0, // patched in after HR fetch
+    respiratoryRate: 0,
+    segments,
+    bedTime: new Date(earliestStart),
+    wakeTime: new Date(latestEnd),
+  };
 }
+
 
 function generateInsight(sleepScore: number, activityScore: number): { insight: string; type: 'sleep' | 'activity' | 'general' } {
   const insights = [
@@ -402,6 +384,8 @@ const getEmptyData = (): HomeData => ({
   error: null,
   userName: '',
   isRingConnected: false,
+  hrChartData: [],
+  hrvSdnn: 0,
 });
 
 // Hook
@@ -461,262 +445,233 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   }, []);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-    const fetchStartTime = Date.now();
-    console.log('⏱️ [useHomeData] fetchData() STARTED at', new Date().toLocaleTimeString(), '| forceRefresh:', forceRefresh);
+    // ─── EXACT testing.tsx pattern ───────────────────────────────────────────
+    // Sequential, one BLE call at a time, each step individually caught.
+    // Sleep uses getSleepData() raw (not getSleepByDay) + deriveFromRaw().
+    // On retry the native SDK already has the data → returns immediately.
 
-    // Prevent concurrent fetches - only allow one fetch at a time
-    if (isFetchingData.current) {
-      console.log('😴 [useHomeData] Skipping fetch - already fetching data');
-      return;
-    }
-
-    // Debounce rapid fetches (unless forcing refresh after connection)
-    const now = Date.now();
-    if (!forceRefresh && now - lastFetchTime.current < MIN_FETCH_INTERVAL) {
-      console.log('😴 [useHomeData] Skipping fetch - too soon since last fetch');
-      return;
-    }
-    lastFetchTime.current = now;
+    if (isFetchingData.current) return;
     isFetchingData.current = true;
-
-    // Get user's display name from user_metadata
-    const { data: { user } } = await supabase.auth.getUser();
-    const userName = user?.user_metadata?.display_name || '';
-    console.log('⏱️ [useHomeData] Auth check done +' + (Date.now() - fetchStartTime) + 'ms');
-
-    // Check if ring is connected first
-    let connectionStatus = await UnifiedSmartRingService.isConnected();
-    console.log('⏱️ [useHomeData] Connection check done +' + (Date.now() - fetchStartTime) + 'ms | connected:', connectionStatus.connected);
-
-    if (!connectionStatus.connected) {
-      // For pull-to-refresh (forceRefresh=true), attempt reconnection first
-      if (forceRefresh) {
-        console.log('🔄 [useHomeData] PTR: Ring not connected - attempting auto-reconnect...');
-        setData(prev => ({ ...prev, isSyncing: true, error: null }));
-
-        try {
-          const reconnectResult = await UnifiedSmartRingService.autoReconnect();
-
-          if (reconnectResult.success) {
-            console.log('🔄 [useHomeData] PTR: Auto-reconnect succeeded, proceeding to fetch data...');
-            // TRUST the auto-reconnect success - don't re-check isConnected() as it may
-            // return stale state due to SDK timing. The connection event already fired,
-            // proving the connection is real. Proceed directly to fetching data.
-            await new Promise(resolve => setTimeout(resolve, 500));
-            connectionStatus = {
-              connected: true,
-              state: 'connected',
-              deviceName: reconnectResult.deviceName || null,
-              deviceMac: reconnectResult.deviceId || null,
-            }; // Trust the reconnect success
-          } else {
-            // Reconnect failed - might be because iOS already has connection but SDK doesn't know yet
-            console.log('🔄 [useHomeData] PTR: Auto-reconnect failed:', reconnectResult.message);
-
-            // Wait 1s and check again - SDK might just be syncing with iOS
-            console.log('🔄 [useHomeData] Waiting 1s for SDK to sync with iOS BLE state...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            const recheckStatus = await UnifiedSmartRingService.isConnected();
-            if (recheckStatus.connected) {
-              console.log('🔄 [useHomeData] SDK synced! Connection detected on recheck.');
-              connectionStatus = recheckStatus;
-              // Continue to fetch data below
-            } else {
-              // Still not connected after recheck
-              console.log('🔄 [useHomeData] Still not connected after recheck');
-              setData(prev => ({
-                ...prev,
-                userName,
-                isLoading: false,
-                isSyncing: false,
-                isRingConnected: false,
-                error: 'Ring not connected. Tap the ring to wake it and pull to refresh again.',
-              }));
-              return;
-            }
-          }
-        } catch (reconnectError) {
-          console.log('🔄 [useHomeData] PTR: Auto-reconnect error:', reconnectError);
-
-          // Wait and recheck - might be iOS sync issue
-          console.log('🔄 [useHomeData] Rechecking connection after error...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          const recheckStatus = await UnifiedSmartRingService.isConnected();
-          if (recheckStatus.connected) {
-            console.log('🔄 [useHomeData] Connection detected on recheck after error!');
-            connectionStatus = recheckStatus;
-            // Continue to fetch data below
-          } else {
-            setData(prev => ({
-              ...prev,
-              userName,
-              isLoading: false,
-              isSyncing: false,
-              isRingConnected: false,
-              error: 'Failed to connect to ring.',
-            }));
-            return;
-          }
-        }
-      } else {
-        // Initial load (non-PTR) - OK to show cached data while waiting for connection
-        console.log('😴 [useHomeData] Ring not connected - preserving cached data for initial load');
-        const keepSyncing = !hasLoadedRealData.current;
-        setData(prev => {
-          if (prev.userName === userName && prev.isLoading === false && prev.isSyncing === keepSyncing) {
-            return prev;
-          }
-          return {
-            ...prev,
-            userName,
-            isLoading: false,
-            isSyncing: keepSyncing,
-            isRingConnected: false,
-            error: null,
-          };
-        });
+    try {
+      const now = Date.now();
+      if (!forceRefresh && now - lastFetchTime.current < MIN_FETCH_INTERVAL) {
         return;
       }
-    }
+      lastFetchTime.current = now;
 
-    setData(prev => ({ ...prev, isLoading: prev.isLoading, isSyncing: true, error: null, isRingConnected: true }));
+      setData(prev => ({ ...prev, isSyncing: true, error: null }));
 
-    try {
-      console.log('⏱️ [useHomeData] Starting SDK data fetches (in parallel) +' + (Date.now() - fetchStartTime) + 'ms');
+      // user display name
+      const { data: { user } } = await supabase.auth.getUser();
+      const userName = user?.user_metadata?.display_name || '';
 
-      // Fetch all data in parallel for faster loading
-      const parallelStartTime = Date.now();
-      const [sleepResult, stepsResult, batteryResult] = await Promise.allSettled([
-        fetchRealSleepData(),
-        withRetry(() => UnifiedSmartRingService.getSteps(), 2, 1500, 'steps fetch'),
-        withRetry(() => UnifiedSmartRingService.getBattery(), 2, 1500, 'battery fetch'),
-      ]);
-      console.log('⏱️ [useHomeData] All parallel fetches done +' + (Date.now() - fetchStartTime) + 'ms (took ' + (Date.now() - parallelStartTime) + 'ms total)');
-
-      // Extract sleep data
-      const sleepData = sleepResult.status === 'fulfilled' ? sleepResult.value : null;
-      if (!sleepData) {
-        console.log('😴 [useHomeData] No sleep data available from ring');
-      } else {
-        hasLoadedRealData.current = true;
+      let alreadyConnected = false;
+      try {
+        const status = await UnifiedSmartRingService.isConnected();
+        alreadyConnected = status.connected;
+      } catch {
+        alreadyConnected = false;
       }
 
-      // Extract activity data
-      let activity: ActivityData = sanitizeActivity();
+      // 1. autoReconnect only if not already connected.
+      if (!alreadyConnected) {
+        console.log('🔄 [useHomeData] autoReconnect...');
+        const reconnectResult = await UnifiedSmartRingService.autoReconnect();
+        if (!reconnectResult.success) {
+          setData(prev => ({ ...prev, userName, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.' }));
+          return;
+        }
+      } else {
+        console.log('✅ [useHomeData] already connected, skipping autoReconnect');
+      }
+      console.log('✅ [useHomeData] connected');
 
-      if (stepsResult.status === 'fulfilled') {
-        const stepsData = stepsResult.value;
-        activity = sanitizeActivity({
-          score: Math.min(100, Math.round((stepsData.steps / 10000) * 100)), // Score based on 10k step goal
-          steps: stepsData.steps,
-          calories: stepsData.calories,
-          activeMinutes: stepsData.time ? stepsData.time / 60 : 0, // seconds -> minutes
-          distance: (stepsData as any)?.distance ?? 0,
-          workouts: [],
+      // 2. Sleep — getSleepData() raw + deriveFromRaw() (EXACT testing.tsx pattern)
+      //    First call always times out (~10 s) while BLE transfers data from ring.
+      //    Second call returns immediately from native cache. We retry automatically.
+      let finalSleepData: SleepData | null = null;
+
+      for (let attempt = 1; attempt <= 3 && !finalSleepData; attempt++) {
+        try {
+          console.log(`😴 [useHomeData] getSleepData attempt ${attempt}...`);
+          const rawResult = await JstyleService.getSleepData();
+          const rawRecords: any[] = (rawResult as any).data || (rawResult as any).records || [];
+          console.log(`😴 [useHomeData] getSleepData attempt ${attempt} records:`, rawRecords.length);
+          finalSleepData = deriveFromRaw(rawRecords);
+          if (finalSleepData) console.log('✅ [useHomeData] sleep derived:', finalSleepData.score, finalSleepData.timeAsleep);
+        } catch (e: any) {
+          console.log(`😴 [useHomeData] getSleepData attempt ${attempt} failed:`, e?.message);
+          // Brief pause before retry so native SDK can settle (mirrors time between user taps in testing.tsx)
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      if (finalSleepData) hasLoadedRealData.current = true;
+
+      // 3. Battery (testing.tsx pattern)
+      let ringBattery = 0;
+      try {
+        const batt = await UnifiedSmartRingService.getBattery();
+        ringBattery = batt.battery;
+        console.log('✅ [useHomeData] battery:', ringBattery);
+      } catch (e) { console.log('⚠️ [useHomeData] battery failed:', e); }
+
+      // 4. Continuous HR → resting HR + hrChartData (testing.tsx pattern)
+      let restingHR = 0;
+      const hrChartData: Array<{ timeMinutes: number; heartRate: number }> = [];
+      try {
+      const hrRaw = await JstyleService.getContinuousHeartRate();
+      const firstRec = hrRaw.records?.[0];
+      console.log('RAW_HR records:', hrRaw.records?.length, 'first keys:', JSON.stringify(Object.keys(firstRec || {})), 'dynLen:', firstRec?.arrayDynamicHR?.length, 'contLen:', firstRec?.arrayContinuousHR?.length);
+      const samples: number[] = [];
+      const parseX3DateToMinutes = (value?: string): number | undefined => {
+        if (!value || typeof value !== 'string') return undefined;
+        const [datePart, timePart] = value.trim().split(/\s+/);
+        if (!datePart) return undefined;
+        const [y, m, d] = datePart.split('.').map(Number);
+        const [hh, mm, ss] = (timePart || '00:00:00').split(':').map(Number);
+        if ([y, m, d, hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
+        const ts = new Date(y, m - 1, d, hh, mm, ss).getTime();
+        if (!Number.isFinite(ts) || ts <= 0) return undefined;
+        return Math.round((ts % 86400000) / 60000);
+      };
+      for (const rec of hrRaw.records || []) {
+        const arr = Array.isArray(rec.arrayDynamicHR)
+          ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
+          : [];
+        // startTimestamp: if > 1e10 it's epoch ms, else treat as seconds-since-midnight
+        const ts = rec.startTimestamp;
+        const startMin = typeof ts === 'number'
+          ? (ts > 1e10 ? Math.round((ts % 86400000) / 60000) : Math.round(ts / 60))
+          : (parseX3DateToMinutes(rec.date) ?? 0);
+        arr.forEach((v: number, idx: number) => {
+          if (v > 0) {
+            samples.push(v);
+            hrChartData.push({ timeMinutes: startMin + idx, heartRate: v });
+          }
         });
-      } else {
-        console.log('😴 [useHomeData] Could not fetch steps after retries:', stepsResult.reason);
-      }
 
-      const sleep = sleepData || {
-        score: 0,
-        timeAsleep: '0h 0m',
-        timeAsleepMinutes: 0,
-        restingHR: 0,
-        respiratoryRate: 0,
-        segments: [],
-        bedTime: new Date(),
-        wakeTime: new Date(),
+        // Backward-compat fallback for raw arrayContinuousHR packets.
+        if (arr.length === 0 && Array.isArray(rec?.arrayContinuousHR)) {
+          for (const seg of rec.arrayContinuousHR) {
+            const segVals = Array.isArray(seg?.arrayHR)
+              ? seg.arrayHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
+              : [];
+            const segStart = parseX3DateToMinutes(seg?.date) ?? startMin;
+            segVals.forEach((v: number, idx: number) => {
+              if (v > 0) {
+                samples.push(v);
+                hrChartData.push({ timeMinutes: segStart + idx, heartRate: v });
+              }
+            });
+          }
+        }
+      }
+      if (samples.length > 0) restingHR = Math.min(...samples);
+      console.log(samples.length > 0
+        ? `✅ [useHomeData] restingHR: ${restingHR} (${samples.length} samples, ${hrChartData.length} chart pts)`
+        : `⚠️ [useHomeData] HR: ${hrRaw.records?.length} records but all empty - will use HRV fallback`);
+      } catch (e) { console.log('⚠️ [useHomeData] HR failed:', e); }
+
+      // 5. HRV (testing.tsx pattern)
+      let hrvSdnn = 0;
+      const hrvHrPoints: Array<{ timeMinutes: number; heartRate: number }> = [];
+      try {
+      const hrvNorm = await JstyleService.getHRVDataNormalized();
+      const valid = hrvNorm.filter(h => (h.sdnn ?? 0) > 0);
+      console.log('RAW_HRV count:', hrvNorm.length, 'valid:', valid.length, 'first:', JSON.stringify(hrvNorm[0]));
+      if (valid.length > 0) {
+        hrvSdnn = valid[valid.length - 1].sdnn || 0;
+        console.log('✅ [useHomeData] HRV sdnn:', hrvSdnn);
+        // Extract HR readings from HRV records as fallback for the daily HR chart
+        for (const h of hrvNorm) {
+          const hr = h.heartRate ?? 0;
+          if (hr > 0 && typeof h.timestamp === 'number' && h.timestamp > 0) {
+            const timeMinutes = Math.round((h.timestamp % 86400000) / 60000);
+            hrvHrPoints.push({ timeMinutes, heartRate: hr });
+          }
+        }
+        console.log('📊 [useHomeData] HRV-derived HR points:', hrvHrPoints.length, hrvHrPoints.slice(0,3));
+      }
+      } catch (e) { console.log('⚠️ [useHomeData] HRV failed:', e); }
+
+      // 6. Steps
+      let activity: ActivityData = sanitizeActivity();
+      try {
+      const stepsData = await UnifiedSmartRingService.getSteps();
+      activity = sanitizeActivity({
+        score: Math.min(100, Math.round((stepsData.steps / 10000) * 100)),
+        steps: stepsData.steps,
+        calories: stepsData.calories,
+        activeMinutes: stepsData.time ? stepsData.time / 60 : 0,
+        distance: (stepsData as any)?.distance ?? 0,
+        workouts: [],
+      });
+      console.log('✅ [useHomeData] steps:', stepsData.steps);
+      } catch (e) { console.log('⚠️ [useHomeData] steps failed:', e); }
+
+      // Build final state
+      if (finalSleepData && restingHR > 0) finalSleepData.restingHR = restingHR;
+
+      const sleep: SleepData = finalSleepData || {
+        score: 0, timeAsleep: '0h 0m', timeAsleepMinutes: 0,
+        restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
       };
 
       const { insight, type } = generateInsight(sleep.score, activity.score);
       const overallScore = calculateOverallScore(sleep.score, activity.score);
 
-      // Strain is inverse of readiness (high activity = high strain = lower recovery)
-      const strain = Math.min(100, Math.round(activity.score * 1.1));
-      const readiness = Math.max(0, 100 - strain);
+      const restingHRScore = restingHR > 0 ? Math.max(0, Math.min(100, Math.round(((90 - restingHR) / 50) * 100))) : 50;
+      const readiness = Math.max(0, Math.min(100, Math.round(sleep.score * 0.50 + restingHRScore * 0.30 + Math.max(0, 100 - activity.score) * 0.20)));
+      const calStrain = Math.max(0, Math.min(100, Math.round(((activity.adjustedActiveCalories - 300) / 900) * 100)));
+      const strain = Math.max(0, Math.min(100, Math.round(calStrain * 0.60 + activity.score * 0.40)));
 
-      // Extract battery data
-      let ringBattery = 0;
-      if (batteryResult.status === 'fulfilled') {
-        ringBattery = batteryResult.value.battery;
-      } else {
-        console.log('😴 [useHomeData] Could not fetch battery after retries:', batteryResult.reason);
-      }
+      setData(prev => {
+      // Keep previously fetched hrChartData if the new fetch returned nothing.
+      // Fall back to HRV-derived HR points if continuous HR is empty.
+        const finalHrChartData = hrChartData.length > 0
+          ? hrChartData
+          : hrvHrPoints.length > 0
+          ? hrvHrPoints
+          : prev.hrChartData;
 
-      const newData: HomeData = {
-        overallScore,
-        strain,
-        readiness,
-        sleepScore: sleep.score,
-        lastNightSleep: sleep,
-        activity,
-        ringBattery,
-        streakDays: 0, // TODO: Track actual streak from persistent storage
-        insight,
-        insightType: type,
-        isLoading: false,
-        isSyncing: false,
-        error: null,
-        userName,
-        isRingConnected: true,
-      };
+        const newData: HomeData = {
+          overallScore, strain, readiness,
+          sleepScore: sleep.score,
+          lastNightSleep: sleep,
+          activity,
+          ringBattery,
+          streakDays: 0,
+          insight, insightType: type,
+          isLoading: false, isSyncing: false, error: null,
+          userName,
+          isRingConnected: true,
+          hrChartData: finalHrChartData,
+          hrvSdnn,
+        };
 
-      setData(newData);
-
-      // Cache data for instant loading on next app open
-      saveToCache(newData);
-
-      console.log('⏱️ [useHomeData] fetchData() COMPLETED in ' + (Date.now() - fetchStartTime) + 'ms total');
-    } catch (error) {
-      console.error('Error fetching home data:', error);
+        console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: ringBattery, hrPts: finalHrChartData.length });
+        saveToCache(newData);
+        return newData;
+      });
+    } catch (error: any) {
+      const message = error?.message || 'Failed to sync ring data.';
+      console.log('⚠️ [useHomeData] fetchData fatal error:', message);
       setData(prev => ({
         ...prev,
         isLoading: false,
         isSyncing: false,
-        error: 'Failed to load health data',
-        isRingConnected: connectionStatus.connected,
+        error: message,
       }));
     } finally {
-      // Reset fetching flag so subsequent fetches can proceed
       isFetchingData.current = false;
     }
   }, []);
 
-  // Initial fetch - wait for SDK to detect iOS-maintained connections
-  // CRITICAL: iOS maintains BLE connections in background, but SDK needs 1.5-2s to sync
-  // If we check too early, SDK says "not connected" even though iOS has the connection
-  // Then autoReconnect() tries to connect to an already-connected device → timeout
+  // Initial fetch — call autoReconnect() immediately (same pattern as testing.tsx)
   useEffect(() => {
-    const mountTime = Date.now();
-    let checkTimeout: ReturnType<typeof setTimeout> | null = null;
     console.log('🚀 [useHomeData] HOOK MOUNTED at', new Date().toLocaleTimeString());
-
-    // Wait 2s before first connection check to give SDK time to sync with iOS BLE state
-    // This prevents "connection timeout" errors when iOS already has the connection
-    checkTimeout = setTimeout(async () => {
-      const status = await UnifiedSmartRingService.isConnected();
-      const elapsed = Date.now() - mountTime;
-      console.log('🚀 [useHomeData] Connection check at +' + elapsed + 'ms | connected:', status.connected);
-
-      if (status.connected && !hasLoadedRealData.current) {
-        console.log('🚀 [useHomeData] Connection detected - fetching data immediately');
-        // SDK detected iOS connection, fetch data
-        fetchData(true);
-      } else if (!status.connected) {
-        console.log('🚀 [useHomeData] Not connected after 2s wait - attempting reconnect');
-        // SDK still doesn't see connection after 2s, safe to reconnect
-        fetchData(true); // fetchData with forceRefresh=true will auto-reconnect if needed
-      }
-    }, 2000); // 2000ms gives SDK enough time to detect iOS-maintained connections
-
-    return () => {
-      if (checkTimeout) {
-        clearTimeout(checkTimeout);
-      }
-    };
+    fetchData(true);
   }, [fetchData]);
 
   // Listen for ring connection state changes
@@ -731,12 +686,17 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         // If user manually reconnects, they'll pull-to-refresh to get fresh data
         console.log('📡 [useHomeData] Connected - UI will update. Mount/PTR handles data fetching.');
 
-        // Just update the connection flag so UI shows "connected" state
-        setData(prev => ({
-          ...prev,
-          isRingConnected: true,
-          error: null,
-        }));
+        // Only update the connection flag if we're NOT mid-fetch.
+        // If we're mid-fetch, isRingConnected will be set true in the final newData update.
+        // Setting it here early would trigger DailySleepTrendCard's 7-day BLE loop
+        // concurrently with our sleep fetch, causing a race for the native sleep data.
+        if (!isFetchingData.current) {
+          setData(prev => ({
+            ...prev,
+            isRingConnected: true,
+            error: null,
+          }));
+        }
       } else if (state === 'disconnected') {
         // When ring disconnects, clear data and mark as disconnected
         console.log('😴 [useHomeData] Ring disconnected - clearing data');

@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   ImageBackground,
-  TouchableOpacity,
   ViewStyle,
   ImageSourcePropType,
 } from 'react-native';
+import { TouchableOpacity } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { spacing, fontFamily } from '../../theme/colors';
@@ -23,6 +23,7 @@ type GradientInfoCardProps = {
   gradientCenter?: { x: number; y: number }; // 0-1 range, can be negative for off-canvas centers
   gradientRadii?: { rx: string; ry: string };
   style?: ViewStyle;
+  onHeaderPress?: () => void;
   children: React.ReactNode;
 };
 
@@ -38,12 +39,13 @@ export function GradientInfoCard({
   showArrow = true,
   backgroundImage,
   gradientStops = [
-    { offset: 0, color: '#7100C2', opacity: 1 },
-    { offset: 0.55, color: '#7100C2', opacity: 0.2 },
+    // { offset: 0, color: '#7100C2', opacity: 1 },
+    // { offset: 0.55, color: '#7100C2', opacity: 0 },
   ],
   gradientCenter = { x: 0.51, y: -0.86 },
   gradientRadii = { rx: '80%', ry: '300%' },
   style,
+  onHeaderPress,
   children,
 }: GradientInfoCardProps) {
   return (
@@ -81,13 +83,23 @@ export function GradientInfoCard({
         )}
 
         <View style={styles.overlay}>
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View style={styles.iconWrapper}>{icon}</View>
-              <Text style={styles.title}>{title}</Text>
-              {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
+          {onHeaderPress ? (
+            <TouchableOpacity style={styles.header} onPress={onHeaderPress} activeOpacity={0.7}>
+              <View style={styles.headerLeft}>
+                <View style={styles.iconWrapper}>{icon}</View>
+                <Text style={styles.title}>{title}</Text>
+                {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <View style={styles.iconWrapper}>{icon}</View>
+                <Text style={styles.title}>{title}</Text>
+                {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
+              </View>
             </View>
-          </View>
+          )}
 
           {(headerValue !== undefined || headerSubtitle) && (
             <View style={styles.headerValueBlock}>
@@ -111,6 +123,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     overflow: 'hidden',
+    backgroundColor: '#000'
   },
   background: {
     borderRadius: 20,
@@ -147,8 +160,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: 'rgba(255, 255, 255, 0.9)',
-    fontFamily: fontFamily.demiBold,
+    fontFamily: fontFamily.regular,
     fontSize: 14,
+    textTransform: 'uppercase',
     letterSpacing: 0.3,
     
   },
@@ -166,16 +180,17 @@ const styles = StyleSheet.create({
   headerValueText: {
     color: 'white',
     fontFamily: fontFamily.regular,
-    fontSize: 34,
+    fontSize: 48,
+    fontWeight: '100',
   },
   headerSubtitle: {
     color: 'rgba(255,255,255,0.9)',
-    fontFamily: fontFamily.demiBold,
-    fontSize: 16,
+    fontFamily: fontFamily.regular,
+    fontSize: 18,
     // marginBottom: 0,
   },
   contentContainer: {
-    backgroundColor: 'rgba(34, 34, 34, 0.7)',
+    backgroundColor: '#222',
     borderRadius: 16,
     borderTopRightRadius: 0,
     borderTopLeftRadius: 0,

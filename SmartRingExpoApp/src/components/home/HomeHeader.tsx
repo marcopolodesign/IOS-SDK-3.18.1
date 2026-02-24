@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import { RingIcon, BandIcon, DeviceType } from '../../assets/icons';
@@ -15,6 +15,7 @@ interface HomeHeaderProps {
   isReconnecting?: boolean;
   onReconnect?: () => void;
   isSyncing?: boolean;
+  onRefresh?: () => void;
 }
 
 // // Battery icon component
@@ -84,6 +85,45 @@ function ReconnectIcon() {
   );
 }
 
+function RefreshIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+        fill="rgba(255,255,255,0.75)"
+      />
+    </Svg>
+  );
+}
+
+function RefreshButton({ onPress, spinning }: { onPress?: () => void; spinning: boolean }) {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (spinning) {
+      loopRef.current = Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 800, useNativeDriver: true })
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop();
+      spinAnim.setValue(0);
+    }
+    return () => { loopRef.current?.stop(); };
+  }, [spinning]);
+
+  const rotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <TouchableOpacity style={styles.refreshButton} onPress={onPress} disabled={spinning}>
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <RefreshIcon />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 export function HomeHeader({
   userName = 'there',
   streakDays = 0,
@@ -95,6 +135,7 @@ export function HomeHeader({
   isReconnecting = false,
   onReconnect,
   isSyncing = false,
+  onRefresh,
 }: HomeHeaderProps) {
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -155,6 +196,9 @@ export function HomeHeader({
                 </View>
               ) : (
                 <Text style={styles.batteryText}>{ringBattery}%</Text>
+              )}
+              {isConnected && !isReconnecting && onRefresh && (
+                <RefreshButton onPress={onRefresh} spinning={isSyncing} />
               )}
             </View>
           </>
@@ -253,6 +297,15 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: fontSize.sm,
     fontFamily: fontFamily.regular,
+  },
+  refreshButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
   reconnectButton: {
     flexDirection: 'row',

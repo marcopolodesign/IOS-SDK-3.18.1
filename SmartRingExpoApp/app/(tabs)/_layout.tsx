@@ -3,6 +3,7 @@ import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 import { router } from 'expo-router';
 import { DynamicColorIOS, Platform } from 'react-native';
 import { useOnboarding } from '../../src/context/OnboardingContext';
+import { AddOverlayProvider } from '../../src/context/AddOverlayContext';
 
 export default function TabLayout() {
   const { isAuthenticated, hasConnectedDevice, isLoading } = useOnboarding();
@@ -24,10 +25,11 @@ export default function TabLayout() {
   }
 
   return (
+    <AddOverlayProvider>
     <NativeTabs
       minimizeBehavior="onScrollDown"
       labelStyle={{
-        color: Platform.OS === 'ios' 
+        color: Platform.OS === 'ios'
           ? DynamicColorIOS({ dark: 'white', light: 'black' })
           : 'white',
       }}
@@ -40,24 +42,29 @@ export default function TabLayout() {
         <Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
         <Label>Today</Label>
       </NativeTabs.Trigger>
-      
+
       <NativeTabs.Trigger name="health">
         <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
         <Label>Health</Label>
       </NativeTabs.Trigger>
-      
+
       {/* <NativeTabs.Trigger name="ring">
         <Icon sf={{ default: 'circle.circle', selected: 'circle.circle.fill' }} />
         <Label>Ring</Label>
       </NativeTabs.Trigger> */}
-      
+
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
         <Label>Settings</Label>
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="add" role="search">
+        <Icon sf="plus" />
+      </NativeTabs.Trigger>
+
       {/* Hide the today folder from tab bar */}
       <NativeTabs.Trigger name="today" hidden />
     </NativeTabs>
+    </AddOverlayProvider>
   );
 }

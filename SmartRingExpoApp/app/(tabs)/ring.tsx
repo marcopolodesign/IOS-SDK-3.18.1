@@ -1,7 +1,5 @@
-// import { StyledRingScreen } from '../../src/screens/StyledRingScreen';
+import { View } from 'react-native';
 
-// export default function RingTab() {
-//   return <StyledRingScreen />;
-// }
-
-
+export default function RingTab() {
+  return null;
+}

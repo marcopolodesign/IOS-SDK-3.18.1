@@ -1,13 +1,15 @@
-import React from 'react';
-import { View, Text, StyleSheet, RefreshControl, Animated } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
-import { ActivityStatsRow } from '../../components/home/StatsRow';
+import { HeroLinearGauge } from '../../components/home/HeroLinearGauge';
 import { GlassCard } from '../../components/home/GlassCard';
-import { InsightCard } from '../../components/home/InsightCard';
+import { MetricInsightCard } from '../../components/home/MetricInsightCard';
+import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
+import JstyleService from '../../services/JstyleService';
 
 // Workout type icons
 function WorkoutIcon({ type }: { type: string }) {
@@ -82,12 +84,37 @@ function WorkoutCard({ workout }: { workout: Workout }) {
 }
 
 type ActivityTabProps = {
-  onScroll?: Animated.AnimatedEvent<any>;
+  onScroll?: (event: any) => void;
+  isActive?: boolean;
 };
 
-export function ActivityTab({ onScroll }: ActivityTabProps) {
+function ThermometerIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 13V5c0-1.66-1.34-3-3-3S9 3.34 9 5v8c-1.21.91-2 2.37-2 4 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.63-.79-3.09-2-4zm-3 7c-1.65 0-3-1.35-3-3 0-1.3.84-2.4 2-2.82V5c0-.55.45-1 1-1s1 .45 1 1v9.18c1.16.42 2 1.52 2 2.82 0 1.65-1.35 3-3 3z"
+        fill="rgba(255,255,255,0.85)"
+      />
+    </Svg>
+  );
+}
+
+function OxygenIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-4h2v2h-2zm0-10h2v8h-2z"
+        fill="rgba(255,255,255,0.85)"
+      />
+    </Svg>
+  );
+}
+
+export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [temperature, setTemperature] = useState<number | null>(null);
+  const [minSpo2, setMinSpo2] = useState<number | null>(null);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -95,8 +122,61 @@ export function ActivityTab({ onScroll }: ActivityTabProps) {
     setRefreshing(false);
   }, [homeData.refresh]);
 
+  // Fetch temperature and SpO2 only when Activity tab is visible and home sync is idle.
+  useEffect(() => {
+    if (!isActive || !homeData.isRingConnected || homeData.isSyncing) return;
+    let cancelled = false;
+    const fetchVitals = async () => {
+      try {
+        try {
+          const tempData = await JstyleService.getTemperatureDataNormalized();
+          if (!cancelled && tempData.length > 0) {
+            setTemperature(tempData[tempData.length - 1].temperature);
+          }
+        } catch (e) { console.log('[ActivityTab] temperature error:', e); }
+        try {
+          const rawSpo2 = await JstyleService.getSpO2Data();
+          console.log('[ActivityTab] RAW spo2:', JSON.stringify(rawSpo2));
+          if (!cancelled) {
+            // flatten arrayAutomaticSpo2Data entries from all packets
+            const allEntries: any[] = [];
+            for (const rec of rawSpo2.records || []) {
+              const arr: any[] = rec.arrayAutomaticSpo2Data || [];
+              allEntries.push(...arr);
+            }
+            console.log('[ActivityTab] spo2 flattened entries count:', allEntries.length);
+            console.log('[ActivityTab] spo2 first 3 entries:', JSON.stringify(allEntries.slice(0, 3)));
+            const values = allEntries.map((e: any) => Number(e.automaticSpo2Data ?? 0)).filter(v => v > 0);
+            if (values.length > 0) setMinSpo2(Math.min(...values));
+          }
+        } catch (e) { console.log('[ActivityTab] spo2 error:', e); }
+      } catch (e) { console.log('[ActivityTab] fetchVitals error:', e); }
+    };
+    fetchVitals();
+    return () => { cancelled = true; };
+  }, [isActive, homeData.isRingConnected, homeData.isSyncing]);
+
   const activityMessage = getActivityMessage(homeData.activity.score);
   const activity = homeData.activity;
+  const calorieGoal = 650;
+  const caloriesRounded = Math.round(activity.adjustedActiveCalories || activity.calories || 0);
+  const stepsRounded = Math.round(activity.steps || 0);
+  const distanceKm = Math.max(0, (activity.distance || 0) / 1000);
+  const distanceKmRounded = Math.round(distanceKm);
+
+  // Temperature status
+  const tempC = temperature ?? 0;
+  const tempF = tempC > 0 ? Math.round(tempC * 9 / 5 + 32) : null;
+  const tempStatus = tempC >= 36.1 && tempC <= 37.2 ? 'Normal' : tempC > 37.2 ? 'Elevated' : tempC > 0 ? 'Low' : null;
+  const tempColor = tempStatus === 'Normal' ? '#4ADE80' : tempStatus === 'Elevated' ? '#FF6B6B' : '#FFD700';
+
+  // SpO2 status
+  const spo2Status = minSpo2
+    ? minSpo2 >= 95 ? 'Normal' : minSpo2 >= 90 ? 'Low' : 'Very low'
+    : null;
+  const spo2Color = minSpo2
+    ? minSpo2 >= 95 ? '#4ADE80' : minSpo2 >= 90 ? '#FFD700' : '#FF6B6B'
+    : 'rgba(255,255,255,0.4)';
 
   return (
     <Animated.ScrollView
@@ -113,33 +193,28 @@ export function ActivityTab({ onScroll }: ActivityTabProps) {
         />
       }
     >
-      {/* Activity Score Gauge */}
+      {/* Activity Hero Gauge */}
       <View style={styles.gaugeSection}>
-        <SemiCircularGauge
-          score={activity.score}
-          label="ACTIVITY SCORE"
-          animated={!homeData.isLoading}
-        />
-        <Text style={styles.scoreMessage}>{activityMessage}</Text>
-      </View>
-
-      {/* Activity Stats */}
-      <View style={styles.statsSection}>
-        <ActivityStatsRow
-          steps={activity.steps}
-          calories={activity.calories}
-          activeMinutes={activity.activeMinutes}
+        <HeroLinearGauge
+          label="ACTIVE CALORIES"
+          value={caloriesRounded}
+          goal={calorieGoal}
+          message={activityMessage}
         />
       </View>
 
-      {/* Activity Insight */}
-      <View style={styles.insightSection}>
-        <InsightCard
-          insight="You're on track to hit your daily step goal! Keep moving to maintain your streak."
-          type="activity"
-          title="Activity Tip"
+      {/* Activity Insight/metrics card (shared component) */}
+      <TouchableOpacity style={styles.insightSection} activeOpacity={0.85} onPress={() => router.push('/detail/activity-detail')}>
+        <MetricInsightCard
+          metrics={[
+            { label: 'Steps', value: stepsRounded },
+            { label: 'Est. Km', value: distanceKmRounded },
+            { label: 'Active kcal', value: caloriesRounded },
+          ]}
+          insight={activityMessage}
+          backgroundImage={require('../../assets/backgrounds/insights/red-insight.jpg')}
         />
-      </View>
+      </TouchableOpacity>
 
       {/* Recent Workouts */}
       <View style={styles.workoutsSection}>
@@ -177,6 +252,73 @@ export function ActivityTab({ onScroll }: ActivityTabProps) {
             goal={600}
             color="#4ADE80"
           />
+        </View>
+      </View>
+
+      {/* Body Temperature Card */}
+      <View style={styles.vitalsSection}>
+        <Text style={styles.sectionTitle}>Body Vitals</Text>
+        <View style={styles.vitalsRow}>
+          <GradientInfoCard
+            icon={<ThermometerIcon />}
+            title="Temperature"
+            headerValue={tempC > 0 ? `${tempC.toFixed(1)}°` : '--'}
+            headerSubtitle={tempStatus ?? 'No data'}
+            gradientStops={[
+              { offset: 0, color: 'rgba(200, 80, 20, 0.99)' },
+              { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
+            ]}
+            gradientCenter={{ x: 0.51, y: -0.86 }}
+            gradientRadii={{ rx: '80%', ry: '300%' }}
+            showArrow
+            onHeaderPress={() => router.push('/detail/temperature-detail')}
+            style={{ flex: 1 }}
+          >
+            <View style={styles.vitalBody}>
+              {tempF && (
+                <Text style={styles.vitalAlt}>{tempF}°F</Text>
+              )}
+              {tempStatus && (
+                <View style={[styles.vitalBadge, { borderColor: `${tempColor}55`, backgroundColor: `${tempColor}22` }]}>
+                  <Text style={[styles.vitalBadgeText, { color: tempColor }]}>{tempStatus}</Text>
+                </View>
+              )}
+              <Text style={styles.vitalNote}>
+                {tempC > 0
+                  ? 'Normal range: 36.1–37.2°C'
+                  : 'Sync ring to see temperature'}
+              </Text>
+            </View>
+          </GradientInfoCard>
+
+          <GradientInfoCard
+            icon={<OxygenIcon />}
+            title="Min SpO2"
+            headerValue={minSpo2 ? `${minSpo2}%` : '--'}
+            headerSubtitle={spo2Status ?? 'No data'}
+            gradientStops={[
+              { offset: 0, color: 'rgba(23, 90, 190, 0.99)' },
+              { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
+            ]}
+            gradientCenter={{ x: 0.51, y: -0.86 }}
+            gradientRadii={{ rx: '80%', ry: '300%' }}
+            showArrow
+            onHeaderPress={() => router.push('/detail/spo2-detail')}
+            style={{ flex: 1 }}
+          >
+            <View style={styles.vitalBody}>
+              {minSpo2 && (
+                <View style={[styles.vitalBadge, { borderColor: `${spo2Color}55`, backgroundColor: `${spo2Color}22` }]}>
+                  <Text style={[styles.vitalBadgeText, { color: spo2Color }]}>{spo2Status}</Text>
+                </View>
+              )}
+              <Text style={styles.vitalNote}>
+                {minSpo2
+                  ? 'Lowest reading today'
+                  : 'Sync ring to see SpO2'}
+              </Text>
+            </View>
+          </GradientInfoCard>
         </View>
       </View>
 
@@ -229,6 +371,7 @@ const styles = StyleSheet.create({
   },
   gaugeSection: {
     alignItems: 'center',
+    paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   scoreMessage: {
@@ -244,6 +387,7 @@ const styles = StyleSheet.create({
   },
   insightSection: {
     marginBottom: spacing.lg,
+    marginHorizontal: spacing.md,
   },
   workoutsSection: {
     paddingHorizontal: spacing.lg,
@@ -349,6 +493,40 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 50,
+  },
+  vitalsSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  vitalsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  vitalBody: {
+    paddingVertical: spacing.sm,
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  vitalAlt: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  vitalBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  vitalBadgeText: {
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.demiBold,
+  },
+  vitalNote: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+    lineHeight: 16,
   },
 });
 

@@ -32,8 +32,8 @@ export function useAuth() {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[useAuth] Initial session:', !!session);
-      console.log('[useAuth] User in session:', session?.user);
+      // console.log('[useAuth] Initial session:', !!session);
+      // console.log('[useAuth] User in session:', session?.user);
       setSession(session);
       setIsLoading(false);
     });

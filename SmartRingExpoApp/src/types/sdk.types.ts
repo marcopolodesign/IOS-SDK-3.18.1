@@ -8,6 +8,7 @@ export interface DeviceInfo {
   rssi: number;
   ver?: string;
   isConnected?: boolean;
+  sdkType?: 'qcband' | 'jstyle'; // Which SDK this device uses
 }
 
 export interface StepsData {
@@ -15,6 +16,12 @@ export interface StepsData {
   distance: number; // in meters
   calories: number; // in kcal
   time: number; // duration in seconds
+}
+
+export interface SleepQualityRecord {
+  arraySleepQuality: number[]; // Array of sleep type values per time unit
+  sleepUnitLength: number; // Minutes per quality value (typically 1)
+  startTimestamp?: number; // Start time of this record (ms since epoch)
 }
 
 export interface SleepData {
@@ -25,6 +32,7 @@ export interface SleepData {
   detail: string;
   startTime?: number; // timestamp
   endTime?: number; // timestamp
+  rawQualityRecords?: SleepQualityRecord[]; // Raw per-minute quality data for building hypnogram
 }
 
 export interface HeartRateData {
@@ -52,6 +60,8 @@ export interface HRVData {
   lf?: number;
   hf?: number;
   lfHfRatio?: number;
+  heartRate?: number;
+  stress?: number;
   timestamp?: number;
 }
 
@@ -239,7 +249,6 @@ export interface ISmartRingService {
   // State
   isUsingMockData(): boolean;
 }
-
 
 
 
