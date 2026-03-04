@@ -66,11 +66,11 @@ function DefaultAvatar() {
 }
 
 // Device icon component - switches between ring and band
-function DeviceIcon({ deviceType }: { deviceType: DeviceType }) {
+function DeviceIcon({ deviceType, color }: { deviceType: DeviceType; color: string }) {
   if (deviceType === 'band') {
-    return <BandIcon width={16} height={16} fill="rgba(255,255,255,0.7)" />;
+    return <BandIcon width={16} height={16} fill={color} />;
   }
-  return <RingIcon width={16} height={16} fill="rgba(255,255,255,0.7)" />;
+  return <RingIcon width={16} height={16} fill={color} />;
 }
 
 // Reconnect icon
@@ -137,12 +137,21 @@ export function HomeHeader({
   isSyncing = false,
   onRefresh,
 }: HomeHeaderProps) {
+  const getBatteryColor = (level: number): string => {
+    if (level < 5) return '#EF4444';
+    if (level < 10) return '#FF6B6B';
+    if (level < 20) return '#F59E0B';
+    return 'rgba(255, 255, 255, 0.7)';
+  };
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   };
+
+  const batteryColor = getBatteryColor(ringBattery);
 
   return (
     <View style={styles.container}>
@@ -183,7 +192,7 @@ export function HomeHeader({
             )}
 
             <View style={styles.batteryContainer}>
-              <DeviceIcon deviceType={deviceType} />
+              <DeviceIcon deviceType={deviceType} color={batteryColor} />
               {isReconnecting ? (
                 <View style={styles.syncingContainer}>
                   <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
@@ -195,7 +204,7 @@ export function HomeHeader({
                   <Text style={styles.syncingText}>Syncing</Text>
                 </View>
               ) : (
-                <Text style={styles.batteryText}>{ringBattery}%</Text>
+                <Text style={[styles.batteryText, { color: batteryColor }]}>{ringBattery}%</Text>
               )}
               {isConnected && !isReconnecting && onRefresh && (
                 <RefreshButton onPress={onRefresh} spinning={isSyncing} />
@@ -326,5 +335,4 @@ const styles = StyleSheet.create({
 });
 
 export default HomeHeader;
-
 

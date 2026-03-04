@@ -222,48 +222,58 @@ class DataSyncService {
     userId: string,
     service: typeof UnifiedSmartRingService
   ) {
-    try {
-      const sleepData = await service.getSleepData();
+    // Sync up to 7 days of sleep history so detail screen can show past days
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      try {
+        const sleepData = await service.getSleepByDay(dayIndex);
+        console.log(`[DataSync] sleep day ${dayIndex}: deep=${sleepData?.deep} light=${sleepData?.light} rem=${sleepData?.rem} startTime=${sleepData?.startTime}`);
 
-      if (sleepData && (sleepData.deep > 0 || sleepData.light > 0)) {
-        // Use actual start/end times if available from SDK
-        const endTime = sleepData.endTime
-          ? new Date(sleepData.endTime)
-          : new Date(); // fallback to now
+        if (sleepData && (sleepData.deep > 0 || sleepData.light > 0)) {
+          // Compute the target calendar date for this dayIndex
+          const targetDate = new Date();
+          targetDate.setDate(targetDate.getDate() - dayIndex);
 
-        const totalMinutes = sleepData.deep + sleepData.light + (sleepData.rem || 0) + (sleepData.awake || 0);
-        const startTime = sleepData.startTime
-          ? new Date(sleepData.startTime)
-          : new Date(endTime.getTime() - totalMinutes * 60 * 1000);
+          // Use SDK timestamps if available, otherwise derive from target date
+          const endTime = sleepData.endTime
+            ? new Date(sleepData.endTime)
+            : new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0); // default 7am
 
-        // Parse segment details from SDK
-        // The SDK provides segments in the "detail" field as JSON string
-        let detailJson = null;
-        if (sleepData.detail) {
-          try {
-            detailJson = JSON.parse(sleepData.detail);
-            // Expected format: array of segments with { type, startTime, endTime, duration }
-            // type: 0=None, 1=Awake, 2=Light, 3=Deep, 4=REM, 5=Unweared
-            console.log('[Sync] Sleep detail parsed:', detailJson);
-          } catch (e) {
-            console.error('[Sync] Failed to parse sleep detail:', e);
+          const totalMinutes = sleepData.deep + sleepData.light + (sleepData.rem || 0) + (sleepData.awake || 0);
+          const startTime = sleepData.startTime
+            ? new Date(sleepData.startTime)
+            : new Date(endTime.getTime() - totalMinutes * 60 * 1000);
+
+          // Parse segment details from SDK
+          let detailJson = null;
+          if (sleepData.detail) {
+            try {
+              detailJson = JSON.parse(sleepData.detail);
+            } catch (e) {
+              console.error('[Sync] Failed to parse sleep detail:', e);
+            }
           }
-        }
 
-        await supabaseService.insertSleepSession({
-          user_id: userId,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          deep_min: sleepData.deep,
-          light_min: sleepData.light,
-          rem_min: sleepData.rem || null,
-          awake_min: sleepData.awake || null,
-          sleep_score: null,
-          detail_json: detailJson, // Segment-by-segment breakdown
-        });
+          // Include rawQualityRecords in detailJson for hypnogram rendering
+          if (!detailJson && sleepData.rawQualityRecords) {
+            detailJson = { rawQualityRecords: sleepData.rawQualityRecords };
+          }
+
+          await supabaseService.insertSleepSession({
+            user_id: userId,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            deep_min: sleepData.deep,
+            light_min: sleepData.light,
+            rem_min: sleepData.rem || null,
+            awake_min: sleepData.awake || null,
+            sleep_score: null,
+            detail_json: detailJson,
+          });
+          console.log(`[Sync] Sleep day ${dayIndex} synced (${startTime.toISOString().split('T')[0]})`);
+        }
+      } catch (e) {
+        console.error(`Error syncing sleep data for day ${dayIndex}:`, e);
       }
-    } catch (e) {
-      console.error('Error syncing sleep data:', e);
     }
   }
 

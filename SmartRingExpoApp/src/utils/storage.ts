@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   AUTH_COMPLETED: '@auth_completed',
   DEVICE_CONNECTED: '@device_connected',
   PAIRED_DEVICE_MAC: '@paired_device_mac',
+  BATTERY_ALERTS_SHOWN: '@battery_alerts_shown',
 } as const;
 
 export const OnboardingStorage = {
@@ -48,6 +49,22 @@ export const OnboardingStorage = {
       STORAGE_KEYS.DEVICE_CONNECTED,
       STORAGE_KEYS.PAIRED_DEVICE_MAC,
     ]);
+  },
+};
+
+export const BatteryAlertStorage = {
+  async getShownThresholds(): Promise<Set<number>> {
+    try {
+      const value = await AsyncStorage.getItem(STORAGE_KEYS.BATTERY_ALERTS_SHOWN);
+      if (value === null) return new Set();
+      return new Set(JSON.parse(value) as number[]);
+    } catch {
+      return new Set();
+    }
+  },
+
+  async saveShownThresholds(shown: Set<number>): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.BATTERY_ALERTS_SHOWN, JSON.stringify(Array.from(shown)));
   },
 };
 

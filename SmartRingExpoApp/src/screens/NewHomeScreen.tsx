@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,8 +7,10 @@ import {
   Text,
   ScrollView,
   Animated,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
 import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
@@ -18,6 +20,7 @@ import { useHomeDataContext } from '../context/HomeDataContext';
 import { useSmartRing } from '../hooks/useSmartRing';
 import { spacing, fontFamily } from '../theme/colors';
 import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
+import { BatteryAlertStorage } from '../utils/storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -45,6 +48,14 @@ function NewHomeScreenContent() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [tabScrollEnabled, setTabScrollEnabled] = useState(true);
+  const previousBatteryRef = useRef<number | null>(null);
+  const shownBatteryAlertsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    BatteryAlertStorage.getShownThresholds().then(stored => {
+      shownBatteryAlertsRef.current = stored;
+    });
+  }, []);
 
   // Use homeData.isRingConnected as the source of truth for connection status
   // This is set by useHomeData which calls isConnected() before fetching data
@@ -68,6 +79,10 @@ function NewHomeScreenContent() {
       },
     },
   );
+
+  useEffect(() => {
+    headerAnim.setValue(0);
+  }, [activeIndex]);
 
   const handleTabPress = (index: number) => {
     setActiveIndex(index);
@@ -96,6 +111,73 @@ function NewHomeScreenContent() {
       setIsReconnecting(false);
     }
   }, [autoConnect, isReconnecting, isAutoConnecting]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      previousBatteryRef.current = null;
+      return;
+    }
+
+    const battery = homeData.ringBattery;
+    if (!Number.isFinite(battery) || battery <= 0 || battery > 100) {
+      return;
+    }
+
+    const thresholds = [20, 10, 5];
+    const shown = shownBatteryAlertsRef.current;
+
+    // Re-arm alerts after recovery above a threshold.
+    for (const threshold of thresholds) {
+      if (battery >= threshold) {
+        shown.delete(threshold);
+      }
+    }
+    BatteryAlertStorage.saveShownThresholds(shown);
+
+    const previous = previousBatteryRef.current;
+    previousBatteryRef.current = battery;
+
+    const crossedThresholds = thresholds.filter(
+      threshold =>
+        previous !== null &&
+        previous >= threshold &&
+        battery < threshold &&
+        !shown.has(threshold)
+    );
+
+    const initialThresholds = thresholds.filter(
+      threshold =>
+        previous === null &&
+        battery < threshold &&
+        !shown.has(threshold)
+    );
+
+    const thresholdToAlert =
+      crossedThresholds.length > 0
+        ? Math.min(...crossedThresholds)
+        : initialThresholds.length > 0
+        ? Math.min(...initialThresholds)
+        : null;
+
+    if (thresholdToAlert === null) {
+      return;
+    }
+
+    shown.add(thresholdToAlert);
+    BatteryAlertStorage.saveShownThresholds(shown);
+
+    if (thresholdToAlert === 5) {
+      Alert.alert('Critical Battery', `Ring battery is ${battery}%. Charge immediately.`);
+      return;
+    }
+
+    if (thresholdToAlert === 10) {
+      Alert.alert('Low Battery', `Ring battery is ${battery}%. Please charge soon.`);
+      return;
+    }
+
+    Alert.alert('Low Battery', `Ring battery is ${battery}%. Consider charging your ring.`);
+  }, [isConnected, homeData.ringBattery]);
 
   const iconScale = 1;
   const iconOpacity = headerAnim.interpolate({
@@ -136,7 +218,7 @@ function NewHomeScreenContent() {
 
   const backgroundFade = headerAnim.interpolate({
     inputRange: [0, collapseRange],
-    outputRange: [0, 0.6],
+    outputRange: [0, 1],
     extrapolate: 'clamp',
   });
 
@@ -157,6 +239,7 @@ function NewHomeScreenContent() {
           onReconnect={handleReconnect}
           isSyncing={homeData.isSyncing}
           onRefresh={homeData.refresh}
+          onAvatarPress={() => router.push('/profile')}
         />
 
         <Animated.View style={styles.contentWrapper}>

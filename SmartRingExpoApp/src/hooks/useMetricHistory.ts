@@ -12,6 +12,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/SupabaseService';
+import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
+import JstyleService from '../services/JstyleService';
+import { calculateSleepScore } from '../utils/ringData/sleep';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +178,7 @@ function parseSegmentsFromJson(
 
 async function fetchSleepHistory(userId: string): Promise<Map<string, DaySleepData>> {
   const since = nDaysAgo(7);
+  console.log('[useMetricHistory] fetchSleepHistory: querying since', since.toISOString(), 'userId', userId);
   const { data, error } = await supabase
     .from('sleep_sessions')
     .select('*')
@@ -182,11 +186,13 @@ async function fetchSleepHistory(userId: string): Promise<Map<string, DaySleepDa
     .gte('start_time', since.toISOString())
     .order('start_time', { ascending: false });
 
+  console.log('[useMetricHistory] fetchSleepHistory: rows returned =', data?.length ?? 0, 'error =', error?.message ?? null);
   if (error || !data || data.length === 0) return new Map();
 
   const map = new Map<string, DaySleepData>();
   for (const row of data) {
     const dateKey = toDateStr(row.start_time);
+    console.log('[useMetricHistory] sleep row: start_time=', row.start_time, '→ dateKey=', dateKey, 'deep=', row.deep_min, 'light=', row.light_min);
     if (map.has(dateKey)) continue; // keep most recent per day
 
     const deepMin = row.deep_min || 0;
@@ -381,6 +387,200 @@ async function fetchActivityHistory(userId: string): Promise<Map<string, DayActi
   return map;
 }
 
+// ─── Ring SDK fallback helpers ────────────────────────────────────────────────
+// Used when Supabase returns 0 rows (first launch before any sync).
+
+function buildSegmentsFromRawQuality(
+  rawQualityRecords: any[] | undefined,
+  startTimeMs: number | undefined,
+  totalMin: number
+): DaySleepData['segments'] {
+  const STAGE_MAP: Record<number, string> = { 1: 'deep', 2: 'core', 3: 'rem' };
+  if (!rawQualityRecords?.length) return [];
+  const segments: DaySleepData['segments'] = [];
+  for (const rec of rawQualityRecords) {
+    const unitMs = (rec.sleepUnitLength || 1) * 60 * 1000;
+    let cursor: number = rec.startTimestamp ?? startTimeMs ?? Date.now() - totalMin * 60000;
+    for (const q of (rec.arraySleepQuality || [])) {
+      segments.push({
+        stage: STAGE_MAP[q] || 'awake',
+        startTime: new Date(cursor),
+        endTime: new Date(cursor + unitMs),
+      });
+      cursor += unitMs;
+    }
+  }
+  return segments;
+}
+
+async function fetchSleepFromRing(): Promise<Map<string, DaySleepData>> {
+  const map = new Map<string, DaySleepData>();
+  try {
+    for (let i = 0; i < 7; i++) {
+      const sleep = await UnifiedSmartRingService.getSleepByDay(i);
+      if (!sleep || (sleep.deep === 0 && sleep.light === 0)) continue;
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateKey = toDateStr(d);
+      const totalMin = sleep.deep + sleep.light + (sleep.rem || 0);
+      const hours = Math.floor(totalMin / 60);
+      const mins = totalMin % 60;
+      const segments = buildSegmentsFromRawQuality(sleep.rawQualityRecords, sleep.startTime, totalMin);
+      const { score } = calculateSleepScore({
+        totalSleepMinutes: totalMin,
+        deepMinutes: sleep.deep,
+        lightMinutes: sleep.light,
+        remMinutes: sleep.rem || 0,
+        awakeMinutes: sleep.awake || 0,
+        totalNapMinutes: 0,
+        fallAsleepDuration: 0,
+        segments: [], napSegments: [], timestamp: 0, dayIndex: i,
+      });
+      map.set(dateKey, {
+        date: dateKey,
+        score,
+        timeAsleep: totalMin > 0 ? `${hours}h ${mins}m` : '--',
+        timeAsleepMinutes: totalMin,
+        bedTime: sleep.startTime ? new Date(sleep.startTime) : null,
+        wakeTime: sleep.endTime ? new Date(sleep.endTime) : null,
+        deepMin: sleep.deep,
+        lightMin: sleep.light,
+        remMin: sleep.rem || 0,
+        awakeMin: sleep.awake || 0,
+        segments,
+        restingHR: 0,
+      });
+    }
+  } catch (e) {
+    console.log('[useMetricHistory] sleep ring fallback error', e);
+  }
+  return map;
+}
+
+async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
+  const map = new Map<string, DayHRData>();
+  try {
+    const result = await UnifiedSmartRingService.getScheduledHeartRateRaw([0, 1, 2, 3, 4, 5, 6]);
+    const byDate = new Map<string, Array<{ hour: number; heartRate: number }>>();
+    for (const r of result) {
+      const ts = (r as any).timestamp;
+      const dateKey = ts ? toDateStr(new Date(ts)) : toDateStr(new Date());
+      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+      byDate.get(dateKey)!.push({ hour: (r as any).hour ?? 0, heartRate: r.heartRate });
+    }
+    for (const [dateKey, pts] of byDate) {
+      const vals = pts.map(p => p.heartRate).filter(v => v > 0);
+      map.set(dateKey, {
+        date: dateKey,
+        hourlyPoints: pts,
+        restingHR: vals.length ? Math.min(...vals) : 0,
+        peakHR: vals.length ? Math.max(...vals) : 0,
+        avgHR: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
+      });
+    }
+  } catch (e) {
+    console.log('[useMetricHistory] HR ring fallback error', e);
+  }
+  return map;
+}
+
+async function fetchHRVFromRing(): Promise<Map<string, DayHRVData>> {
+  const map = new Map<string, DayHRVData>();
+  try {
+    const records = await JstyleService.getHRVDataNormalized();
+    for (const r of records) {
+      if (!r.timestamp) continue;
+      const dateKey = toDateStr(new Date(r.timestamp));
+      if (map.has(dateKey)) continue;
+      const sdnn = (r as any).sdnn ?? null;
+      map.set(dateKey, {
+        date: dateKey,
+        sdnn,
+        rmssd: null, pnn50: null, lf: null, hf: null, lfHfRatio: null,
+        heartRate: r.heartRate ?? null,
+        stressLabel: stressLabel(sdnn),
+        recoveryLabel: recoveryLabel(sdnn),
+      });
+    }
+  } catch (e) {
+    console.log('[useMetricHistory] HRV ring fallback error', e);
+  }
+  return map;
+}
+
+async function fetchSpO2FromRing(): Promise<Map<string, DaySpO2Data>> {
+  const map = new Map<string, DaySpO2Data>();
+  try {
+    const records = await JstyleService.getSpO2DataNormalized();
+    const byDate = new Map<string, Array<{ value: number; recordedAt: Date }>>();
+    for (const r of records) {
+      const dateKey = toDateStr(new Date(r.timestamp));
+      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+      byDate.get(dateKey)!.push({ value: r.spo2, recordedAt: new Date(r.timestamp) });
+    }
+    for (const [dateKey, readings] of byDate) {
+      const vals = readings.map(r => r.value).filter(v => v > 0);
+      map.set(dateKey, {
+        date: dateKey,
+        readings,
+        avg: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
+        min: vals.length ? Math.min(...vals) : 0,
+        max: vals.length ? Math.max(...vals) : 0,
+        timeBelowNormal: readings.filter(r => r.value < 95 && r.value > 0).length,
+      });
+    }
+  } catch (e) {
+    console.log('[useMetricHistory] SpO2 ring fallback error', e);
+  }
+  return map;
+}
+
+async function fetchTemperatureFromRing(): Promise<Map<string, DayTemperatureData>> {
+  const map = new Map<string, DayTemperatureData>();
+  try {
+    const records = await JstyleService.getTemperatureDataNormalized();
+    const byDate = new Map<string, Array<{ value: number; recordedAt: Date }>>();
+    for (const r of records) {
+      const dateKey = toDateStr(new Date(r.timestamp));
+      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+      byDate.get(dateKey)!.push({ value: r.temperature, recordedAt: new Date(r.timestamp) });
+    }
+    for (const [dateKey, readings] of byDate) {
+      const vals = readings.map(r => r.value).filter(v => v > 0);
+      map.set(dateKey, {
+        date: dateKey,
+        readings,
+        avg: vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0,
+        min: vals.length ? Math.min(...vals) : 0,
+        max: vals.length ? Math.max(...vals) : 0,
+        current: readings.length ? readings[readings.length - 1].value : 0,
+      });
+    }
+  } catch (e) {
+    console.log('[useMetricHistory] temperature ring fallback error', e);
+  }
+  return map;
+}
+
+async function fetchActivityFromRing(): Promise<Map<string, DayActivityData>> {
+  const map = new Map<string, DayActivityData>();
+  try {
+    const steps = await UnifiedSmartRingService.getSteps();
+    const dateKey = toDateStr(new Date());
+    map.set(dateKey, {
+      date: dateKey,
+      steps: (steps as any).steps || 0,
+      distanceM: (steps as any).distance || 0,
+      calories: (steps as any).calories || 0,
+      sleepTotalMin: null,
+      hrAvg: null,
+    });
+  } catch (e) {
+    console.log('[useMetricHistory] activity ring fallback error', e);
+  }
+  return map;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMetricHistory<T>(
@@ -410,21 +610,42 @@ export function useMetricHistory<T>(
 
         let result: Map<string, any>;
         switch (type) {
-          case 'sleep':    result = await fetchSleepHistory(user.id); break;
-          case 'heartRate': result = await fetchHRHistory(user.id); break;
-          case 'hrv':      result = await fetchHRVHistory(user.id); break;
-          case 'spo2':     result = await fetchSpO2History(user.id); break;
-          case 'temperature': result = await fetchTemperatureHistory(user.id); break;
-          case 'activity': result = await fetchActivityHistory(user.id); break;
-          default:         result = new Map();
+          case 'sleep':
+            result = await fetchSleepHistory(user.id);
+            if (result.size === 0) result = await fetchSleepFromRing();
+            break;
+          case 'heartRate':
+            result = await fetchHRHistory(user.id);
+            if (result.size === 0) result = await fetchHRFromRing();
+            break;
+          case 'hrv':
+            result = await fetchHRVHistory(user.id);
+            if (result.size === 0) result = await fetchHRVFromRing();
+            break;
+          case 'spo2':
+            result = await fetchSpO2History(user.id);
+            if (result.size === 0) result = await fetchSpO2FromRing();
+            break;
+          case 'temperature':
+            result = await fetchTemperatureHistory(user.id);
+            if (result.size === 0) result = await fetchTemperatureFromRing();
+            break;
+          case 'activity':
+            result = await fetchActivityHistory(user.id);
+            if (result.size === 0) result = await fetchActivityFromRing();
+            break;
+          default:
+            result = new Map();
         }
 
         if (!cancelled) {
+          console.log(`[useMetricHistory] (${type}) loaded ${result.size} days:`, Array.from(result.keys()));
           cacheRef.current = result as Map<string, T>;
           setData(result as Map<string, T>);
           setIsLoading(false);
         }
       } catch (e) {
+        console.log(`[useMetricHistory] (${type}) error:`, (e as Error).message);
         if (!cancelled) {
           setError((e as Error).message);
           setIsLoading(false);

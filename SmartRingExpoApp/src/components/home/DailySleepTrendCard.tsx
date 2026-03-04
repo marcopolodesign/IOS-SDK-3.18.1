@@ -5,14 +5,22 @@ import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { spacing, fontFamily, fontSize } from '../../theme/colors';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 
-type SleepDay = { dayIndex: number; minutes: number };
+// dayOfWeek index (0=Sun..6=Sat) → bar position in S M T W T F S layout
+type SleepDay = { barIndex: number; minutes: number };
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-export function DailySleepTrendCard() {
+type DailySleepTrendCardProps = {
+  headerRight?: React.ReactNode;
+};
+
+export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = {}) {
   const [sleepDays, setSleepDays] = useState<SleepDay[]>([]);
+  const [retryNonce, setRetryNonce] = useState(0);
   const homeData = useHomeDataContext();
-  const hasTriedLiveFetchRef = useRef(false);
+  const hasCompletedLiveFetchRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
 
   const toMinutes = (sleep: any): number => {
     if (!sleep) return 0;
@@ -27,37 +35,93 @@ export function DailySleepTrendCard() {
 
   useEffect(() => {
     let cancelled = false;
-    const lastNight: any = homeData.lastNightSleep as any;
 
     const fetchSleep = async () => {
-      const contextMinutes = toMinutes(lastNight);
-      if (contextMinutes > 0) {
-        hasTriedLiveFetchRef.current = false;
-        if (!cancelled) {
-          setSleepDays([{ dayIndex: 0, minutes: contextMinutes }]);
+      // No ring: use context-only today fallback and reset live fetch lifecycle.
+      if (!homeData.isRingConnected) {
+        hasCompletedLiveFetchRef.current = false;
+        retryCountRef.current = 0;
+
+        // Fallback: use context for today only, mapped to correct bar
+        const contextMinutes = toMinutes(homeData.lastNightSleep as any);
+        if (!cancelled && contextMinutes > 0) {
+          const todayBarIndex = new Date().getDay(); // 0=Sun..6=Sat
+          setSleepDays([{ barIndex: todayBarIndex, minutes: contextMinutes }]);
+        } else if (!cancelled) {
+          setSleepDays([]);
         }
         return;
       }
+
+      // Wait for home sync to finish so we don't race BLE calls and cache warm-up.
+      if (homeData.isSyncing) {
+        return;
+      }
+
+      // Already fetched reliable 7-day data in this mounted session.
+      if (hasCompletedLiveFetchRef.current) {
+        return;
+      }
+
+      const today = new Date();
+      const resultsByBar = new Map<number, number>();
+
+      for (let i = 0; i < 7; i++) {
+        try {
+          const data = await UnifiedSmartRingService.getSleepByDay(i);
+          const mins = toMinutes(data);
+          if (mins > 0) {
+            // Prefer SDK timestamp date if present; fallback to dayIndex-based date.
+            const startTs = Number((data as any)?.startTime ?? (data as any)?.endTime ?? 0);
+            const d = Number.isFinite(startTs) && startTs > 0
+              ? new Date(startTs)
+              : (() => {
+                  const fallback = new Date(today);
+                  fallback.setDate(fallback.getDate() - i);
+                  return fallback;
+                })();
+            const barIndex = d.getDay();
+            const prev = resultsByBar.get(barIndex) ?? 0;
+            if (mins > prev) {
+              resultsByBar.set(barIndex, mins);
+            }
+          }
+        } catch (e) {
+          console.log(`[DailySleepTrendCard] sleep fetch day ${i} error`, e);
+        }
+      }
+
+      const results: SleepDay[] = Array.from(resultsByBar.entries())
+        .map(([barIndex, minutes]) => ({ barIndex, minutes }))
+        .sort((a, b) => a.barIndex - b.barIndex);
 
       if (!cancelled) {
-        setSleepDays([]);
-      }
-
-      // Optional fallback: one native fetch for day 0 only.
-      if (!homeData.isRingConnected || hasTriedLiveFetchRef.current) {
-        return;
-      }
-      hasTriedLiveFetchRef.current = true;
-
-      try {
-        const data = await UnifiedSmartRingService.getSleepByDay(0);
-        console.log('[DailySleepTrendCard] sleep day 0 fallback', data);
-        const fallbackMinutes = toMinutes(data);
-        if (!cancelled && fallbackMinutes > 0) {
-          setSleepDays([{ dayIndex: 0, minutes: fallbackMinutes }]);
+        if (results.length > 0) {
+          setSleepDays(results);
+          // Mark complete when we have more than today; otherwise allow controlled retries.
+          if (results.length >= 2 || retryCountRef.current >= 2) {
+            hasCompletedLiveFetchRef.current = true;
+          } else if (retryCountRef.current < 2) {
+            retryCountRef.current += 1;
+            retryTimerRef.current = setTimeout(() => {
+              setRetryNonce(prev => prev + 1);
+            }, 8000);
+          }
+        } else {
+          // Final fallback: context data for today
+          const contextMinutes = toMinutes(homeData.lastNightSleep as any);
+          if (contextMinutes > 0) {
+            setSleepDays([{ barIndex: today.getDay(), minutes: contextMinutes }]);
+          }
+          if (retryCountRef.current < 2) {
+            retryCountRef.current += 1;
+            retryTimerRef.current = setTimeout(() => {
+              setRetryNonce(prev => prev + 1);
+            }, 8000);
+          } else {
+            hasCompletedLiveFetchRef.current = true;
+          }
         }
-      } catch (e) {
-        console.log('[DailySleepTrendCard] sleep fetch fallback error', e);
       }
     };
 
@@ -67,14 +131,20 @@ export function DailySleepTrendCard() {
 
     return () => {
       cancelled = true;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
     };
   }, [
     homeData.isRingConnected,
+    homeData.isSyncing,
     homeData.lastNightSleep,
     homeData.lastNightSleep?.timeAsleepMinutes,
     (homeData.lastNightSleep as any)?.deep,
     (homeData.lastNightSleep as any)?.light,
     (homeData.lastNightSleep as any)?.rem,
+    retryNonce,
   ]);
 
   const avgMinutes = useMemo(() => {
@@ -105,12 +175,13 @@ export function DailySleepTrendCard() {
       ]}
       gradientCenter={{ x: 0.51, y: -0.86 }}
       gradientRadii={{ rx: '80%', ry: '300%' }}
+      headerRight={headerRight}
     >
       <View style={styles.chart}>
         <View style={[styles.avgLine, { top: `${100 - (avgMinutes / maxMinutes) * 100}%` }]} />
         <View style={styles.barsRow}>
           {DAY_LABELS.map((label, idx) => {
-            const dayData = sleepDays.find(d => d.dayIndex === idx);
+            const dayData = sleepDays.find(d => d.barIndex === idx);
             const value = dayData?.minutes ?? 0;
             const heightPct = sleepDays.length ? Math.max(5, (value / maxMinutes) * 100) : 5;
             return (

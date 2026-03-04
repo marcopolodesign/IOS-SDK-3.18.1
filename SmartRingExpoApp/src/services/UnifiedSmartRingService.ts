@@ -26,6 +26,9 @@ import type {
   ProfileData,
   ConnectionState,
   BluetoothState,
+  SportData,
+  FeatureAvailability,
+  RecoveryContributors,
 } from '../types/sdk.types';
 
 export type SDKType = 'qcband' | 'jstyle' | 'none';
@@ -547,6 +550,118 @@ class UnifiedSmartRingService {
 
     const data = await QCBandService.getManualBloodOxygen(0);
     return data[0] || { spo2: 0 };
+  }
+
+  async getBloodPressure(): Promise<BloodPressureData> {
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      const data = await JstyleService.getBloodPressureFromHRV();
+      return data[0] || { systolic: 0, diastolic: 0, heartRate: 0 };
+    }
+
+    const [manual, scheduled] = await Promise.all([
+      QCBandService.getManualBloodPressure(0).catch(() => [] as BloodPressureData[]),
+      QCBandService.getScheduledBloodPressure().catch(() => [] as BloodPressureData[]),
+    ]);
+    return manual[0] || scheduled[0] || { systolic: 0, diastolic: 0, heartRate: 0 };
+  }
+
+  async getSportData(): Promise<SportData[]> {
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      return await JstyleService.getSportData();
+    }
+
+    const records = await QCBandService.getSportRecords(0);
+    return records.map((record) => {
+      const now = Date.now();
+      return {
+        type: 7,
+        startTime: now - Math.max(0, Math.round(record.duration)) * 1000,
+        endTime: now,
+        duration: Math.max(0, Math.round(record.duration)),
+        steps: Math.max(0, Math.round(record.steps || 0)),
+        distance: Math.max(0, Math.round(record.distance || 0)),
+        calories: Math.max(0, Math.round(record.calories || 0)),
+        heartRateAvg: record.heartRate > 0 ? Math.round(record.heartRate) : undefined,
+        heartRateMax: undefined,
+      };
+    });
+  }
+
+  async getRespiratoryRateNightly(dayIndex: number = 0): Promise<number | null> {
+    this.ensureConnected();
+
+    if (this.connectedSDKType === 'jstyle') {
+      try {
+        const sleepHrv = await JstyleService.getSleepHrvDataNormalized();
+        const values = sleepHrv
+          .map(item => Number(item.respiratoryRate))
+          .filter(v => Number.isFinite(v) && v >= 8 && v <= 40);
+        if (values.length > 0) {
+          return Math.round(values[values.length - 1]);
+        }
+      } catch (error) {
+        console.log('⚠️ getRespiratoryRateNightly sleepHRV failed:', error);
+      }
+
+      try {
+        const breathing = await JstyleService.getOsaEovDataNormalized();
+        const values = breathing
+          .map(item => Number(item.respiratoryRate))
+          .filter(v => Number.isFinite(v) && v >= 8 && v <= 40);
+        if (values.length > 0) {
+          return Math.round(values[values.length - 1]);
+        }
+      } catch (error) {
+        console.log('⚠️ getRespiratoryRateNightly OSA/EOV failed:', error);
+      }
+    }
+
+    try {
+      const sleep = await this.getSleepByDay(dayIndex);
+      const value = Number((sleep as any)?.respiratoryRate ?? 0);
+      return Number.isFinite(value) && value >= 8 && value <= 40 ? Math.round(value) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  getFeatureAvailability(): FeatureAvailability {
+    const isX3 = this.connectedSDKType === 'jstyle';
+    return {
+      respiratoryRate: isX3,
+      activitySessions: isX3 || this.connectedSDKType === 'qcband',
+      stressIndex: isX3 || this.connectedSDKType === 'qcband',
+      sleepHrv: isX3,
+      osaEov: isX3,
+      ppi: isX3,
+    };
+  }
+
+  async getRecoveryContributors(dayIndex: number = 0): Promise<RecoveryContributors> {
+    const [hrv, sleep, temp, spo2] = await Promise.all([
+      this.getHRVData().catch(() => ({} as HRVData)),
+      this.getSleepByDay(dayIndex).catch(() => null),
+      this.getTemperature().catch(() => ({ temperature: 0 } as TemperatureData)),
+      this.getSpO2().catch(() => ({ spo2: 0 } as SpO2Data)),
+    ]);
+
+    const restingHr = Number((sleep as any)?.restingHR ?? 0);
+    const sleepTotal =
+      sleep && typeof sleep === 'object'
+        ? Number((sleep.deep || 0) + (sleep.light || 0) + (sleep.rem || 0))
+        : 0;
+
+    return {
+      hrvBalance: hrv.sdnn && hrv.sdnn > 0 ? Math.max(0, Math.min(100, Math.round((hrv.sdnn / 80) * 100))) : null,
+      restingHrDelta: restingHr > 0 ? restingHr - 60 : null,
+      tempDeviation: temp.temperature && temp.temperature > 0 ? Number((temp.temperature - 36.5).toFixed(2)) : null,
+      overnightSpo2: spo2.spo2 && spo2.spo2 > 0 ? spo2.spo2 : null,
+      sleepImpact: sleepTotal > 0 ? Math.max(0, Math.min(100, Math.round((sleepTotal / 480) * 100))) : null,
+    };
   }
 
   async getBloodGlucose(dayIndex: number = 0): Promise<Array<{

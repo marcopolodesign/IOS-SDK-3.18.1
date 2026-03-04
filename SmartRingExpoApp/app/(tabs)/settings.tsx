@@ -1,7 +1,7 @@
-import { SettingsScreen } from '../../src/screens';
+import { AIChatScreen } from '../../src/screens/AIChatScreen';
 
 export default function SettingsTab() {
-  return <SettingsScreen />;
+  return <AIChatScreen />;
 }
 
 

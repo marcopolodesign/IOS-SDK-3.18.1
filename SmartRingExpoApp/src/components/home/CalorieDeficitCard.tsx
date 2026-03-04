@@ -10,9 +10,10 @@ const CONSUMED_PLACEHOLDER = 1800;
 type Props = {
   activeCalories: number;
   consumedCalories?: number;
+  headerRight?: React.ReactNode;
 };
 
-export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED_PLACEHOLDER }: Props) {
+export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED_PLACEHOLDER, headerRight }: Props) {
   const active = Math.round(activeCalories);
   const consumed = Math.round(consumedCalories);
 
@@ -58,6 +59,7 @@ export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED
       gradientCenter={{ x: 0.51, y: -0.86 }}
       gradientRadii={{ rx: '80%', ry: '300%' }}
       showArrow={false}
+      headerRight={headerRight}
     >
       <View style={styles.body}>
         {/* Donut chart */}

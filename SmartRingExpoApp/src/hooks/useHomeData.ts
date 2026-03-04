@@ -5,8 +5,49 @@ import { SleepSegment, SleepStage } from '../components/home/SleepStagesChart';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import JstyleService from '../services/JstyleService';
 import { supabase } from '../services/SupabaseService';
+import TodayCardVitalsService, {
+  CardDataStatus,
+  TodayCardHydrationReason,
+  TodayVitals,
+  getCardDataStatusFromVitals,
+  getMissingVitalKeys,
+} from '../services/TodayCardVitalsService';
+import dataSyncService from '../services/DataSyncService';
+import type { FeatureAvailability, RecoveryContributors, SportData, X3ActivitySession } from '../types/sdk.types';
 
 const CACHE_KEY = 'home_data_cache';
+const BASELINES_KEY = 'home_metric_baselines_v1';
+
+type ContributorTrend = 'up' | 'down' | 'flat';
+type ContributorConfidence = 'high' | 'medium' | 'low';
+
+export interface ContributorChip {
+  key: string;
+  label: string;
+  value: number | null;
+  display: string;
+  score: number | null;
+  trend: ContributorTrend;
+  confidence: ContributorConfidence;
+}
+
+export interface HomeContributors {
+  sleep: ContributorChip[];
+  activity: ContributorChip[];
+  recovery: ContributorChip[];
+  recommendations: string[];
+}
+
+interface MetricBaselines {
+  sleepMinutes: number[];
+  restingHR: number[];
+  hrvSdnn: number[];
+  temperature: number[];
+  spo2: number[];
+  steps: number[];
+  calories: number[];
+  activeMinutes: number[];
+}
 
 // Types
 export interface SleepData {
@@ -57,6 +98,13 @@ export interface HomeData {
   isRingConnected: boolean;
   hrChartData: Array<{ timeMinutes: number; heartRate: number }>;
   hrvSdnn: number;
+  todayVitals: TodayVitals;
+  cardDataStatus: CardDataStatus;
+  refreshMissingCardData: (reason?: TodayCardHydrationReason) => Promise<void>;
+  contributors: HomeContributors;
+  featureAvailability: FeatureAvailability;
+  activitySessions: X3ActivitySession[];
+  recoveryContributors: RecoveryContributors;
 }
 
   // Data that we cache (subset of HomeData that makes sense to persist)
@@ -85,6 +133,278 @@ const PROFILE = {
   heightCm: 175,
   weightKg: 72,
 };
+
+const NOOP_REFRESH_MISSING_CARD_DATA = async () => {};
+
+const getEmptyTodayVitals = (): TodayVitals => ({
+  temperatureC: null,
+  minSpo2: null,
+  lastSpo2: null,
+  updatedAt: null,
+});
+
+const getEmptyFeatureAvailability = (): FeatureAvailability => ({
+  respiratoryRate: false,
+  activitySessions: false,
+  stressIndex: false,
+  sleepHrv: false,
+  osaEov: false,
+  ppi: false,
+});
+
+const getEmptyRecoveryContributors = (): RecoveryContributors => ({
+  hrvBalance: null,
+  restingHrDelta: null,
+  tempDeviation: null,
+  overnightSpo2: null,
+  sleepImpact: null,
+});
+
+const getEmptyContributors = (): HomeContributors => ({
+  sleep: [],
+  activity: [],
+  recovery: [],
+  recommendations: [],
+});
+
+const getEmptyBaselines = (): MetricBaselines => ({
+  sleepMinutes: [],
+  restingHR: [],
+  hrvSdnn: [],
+  temperature: [],
+  spo2: [],
+  steps: [],
+  calories: [],
+  activeMinutes: [],
+});
+
+const median = (values: number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+};
+
+const pushRolling = (values: number[], value: number, max: number = 14): number[] => {
+  if (!Number.isFinite(value) || value <= 0) return values;
+  const next = [...values, value];
+  if (next.length <= max) return next;
+  return next.slice(next.length - max);
+};
+
+const trendFromBaseline = (
+  value: number | null,
+  baseline: number | null,
+  epsilon: number
+): ContributorTrend => {
+  if (value === null || baseline === null) return 'flat';
+  if (value > baseline + epsilon) return 'up';
+  if (value < baseline - epsilon) return 'down';
+  return 'flat';
+};
+
+const confidenceFromCoverage = (count: number): ContributorConfidence => {
+  if (count >= 7) return 'high';
+  if (count >= 3) return 'medium';
+  return 'low';
+};
+
+const clampScore = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
+
+const sportTypeLabel = (type: number): string => {
+  switch (type) {
+    case 0: return 'Walking';
+    case 1: return 'Running';
+    case 2: return 'Cycling';
+    case 3: return 'Hiking';
+    case 4: return 'Swimming';
+    case 5: return 'Yoga';
+    case 6: return 'Gym';
+    default: return 'Workout';
+  }
+};
+
+function buildContributors(
+  sleep: SleepData,
+  activity: ActivityData,
+  hrvSdnn: number,
+  vitals: TodayVitals,
+  baselines: MetricBaselines,
+  recoveryContributors: RecoveryContributors
+): HomeContributors {
+  const sleepMinutes = sleep.timeAsleepMinutes || 0;
+  const restingHR = sleep.restingHR || 0;
+  const tempC = vitals.temperatureC;
+  const spo2 = vitals.lastSpo2 ?? vitals.minSpo2;
+
+  const baselineSleep = median(baselines.sleepMinutes);
+  const baselineRestingHR = median(baselines.restingHR);
+  const baselineHrv = median(baselines.hrvSdnn);
+  const baselineTemp = median(baselines.temperature);
+  const baselineSpo2 = median(baselines.spo2);
+  const baselineSteps = median(baselines.steps);
+  const baselineCalories = median(baselines.calories);
+  const baselineActive = median(baselines.activeMinutes);
+  const baselineCount = Math.min(
+    baselines.sleepMinutes.length,
+    baselines.restingHR.length,
+    baselines.steps.length
+  );
+  const confidence = confidenceFromCoverage(baselineCount);
+
+  const sleepContributors: ContributorChip[] = [
+    {
+      key: 'duration',
+      label: 'Duration',
+      value: sleepMinutes > 0 ? sleepMinutes : null,
+      display: sleepMinutes > 0 ? `${Math.floor(sleepMinutes / 60)}h ${sleepMinutes % 60}m` : '--',
+      score: sleepMinutes > 0 ? clampScore((sleepMinutes / 480) * 100) : null,
+      trend: trendFromBaseline(sleepMinutes || null, baselineSleep, 20),
+      confidence,
+    },
+    {
+      key: 'resting-hr',
+      label: 'Rest HR',
+      value: restingHR > 0 ? restingHR : null,
+      display: restingHR > 0 ? `${restingHR} bpm` : '--',
+      score: restingHR > 0 ? clampScore(((90 - restingHR) / 50) * 100) : null,
+      trend: trendFromBaseline(
+        restingHR > 0 && baselineRestingHR !== null ? baselineRestingHR - restingHR : null,
+        0,
+        2
+      ),
+      confidence,
+    },
+    {
+      key: 'continuity',
+      label: 'Continuity',
+      value: sleep.segments.length > 0 ? sleep.segments.length : null,
+      display: sleep.segments.length > 0 ? `${sleep.segments.length} segments` : '--',
+      score: sleep.segments.length > 0 ? clampScore(100 - (sleep.segments.length - 4) * 7) : null,
+      trend: 'flat',
+      confidence,
+    },
+  ];
+
+  const activityContributors: ContributorChip[] = [
+    {
+      key: 'steps',
+      label: 'Steps',
+      value: activity.steps > 0 ? activity.steps : null,
+      display: activity.steps > 0 ? activity.steps.toLocaleString() : '--',
+      score: activity.steps > 0 ? clampScore((activity.steps / 10000) * 100) : null,
+      trend: trendFromBaseline(activity.steps || null, baselineSteps, 500),
+      confidence,
+    },
+    {
+      key: 'calories',
+      label: 'Calories',
+      value: activity.adjustedActiveCalories > 0 ? activity.adjustedActiveCalories : null,
+      display: activity.adjustedActiveCalories > 0 ? `${activity.adjustedActiveCalories} kcal` : '--',
+      score: activity.adjustedActiveCalories > 0 ? clampScore((activity.adjustedActiveCalories / 650) * 100) : null,
+      trend: trendFromBaseline(activity.adjustedActiveCalories || null, baselineCalories, 60),
+      confidence,
+    },
+    {
+      key: 'active-min',
+      label: 'Active Min',
+      value: activity.activeMinutes > 0 ? activity.activeMinutes : null,
+      display: activity.activeMinutes > 0 ? `${activity.activeMinutes} min` : '--',
+      score: activity.activeMinutes > 0 ? clampScore((activity.activeMinutes / 60) * 100) : null,
+      trend: trendFromBaseline(activity.activeMinutes || null, baselineActive, 8),
+      confidence,
+    },
+  ];
+
+  const recoveryChips: ContributorChip[] = [
+    {
+      key: 'hrv',
+      label: 'HRV',
+      value: hrvSdnn > 0 ? hrvSdnn : null,
+      display: hrvSdnn > 0 ? `${hrvSdnn} ms` : '--',
+      score: hrvSdnn > 0 ? clampScore((hrvSdnn / 80) * 100) : null,
+      trend: trendFromBaseline(hrvSdnn || null, baselineHrv, 3),
+      confidence,
+    },
+    {
+      key: 'temp',
+      label: 'Temp Dev',
+      value: recoveryContributors.tempDeviation,
+      display:
+        recoveryContributors.tempDeviation !== null
+          ? `${recoveryContributors.tempDeviation > 0 ? '+' : ''}${recoveryContributors.tempDeviation.toFixed(2)}°C`
+          : '--',
+      score:
+        tempC !== null
+          ? clampScore(100 - Math.abs((tempC - (baselineTemp ?? 36.5)) * 70))
+          : null,
+      trend: trendFromBaseline(tempC, baselineTemp, 0.15),
+      confidence,
+    },
+    {
+      key: 'spo2',
+      label: 'SpO2',
+      value: spo2 ?? null,
+      display: spo2 !== null ? `${spo2}%` : '--',
+      score: spo2 !== null ? clampScore(((spo2 - 90) / 10) * 100) : null,
+      trend: trendFromBaseline(spo2 ?? null, baselineSpo2, 1),
+      confidence,
+    },
+  ];
+
+  const recommendations: string[] = [];
+  if (sleepContributors[0].score !== null && sleepContributors[0].score < 65) {
+    recommendations.push('Prioritize a longer sleep window tonight.');
+  }
+  if (activityContributors[0].score !== null && activityContributors[0].score < 60) {
+    recommendations.push('Add a 20-minute walk to close your movement gap.');
+  }
+  if (recoveryChips[0].score !== null && recoveryChips[0].score < 45) {
+    recommendations.push('Keep intensity low and focus on recovery today.');
+  }
+  if (recommendations.length === 0) {
+    recommendations.push('Momentum is solid. Keep your routine consistent today.');
+  }
+
+  return {
+    sleep: sleepContributors,
+    activity: activityContributors,
+    recovery: recoveryChips,
+    recommendations,
+  };
+}
+
+async function loadMetricBaselines(): Promise<MetricBaselines> {
+  try {
+    const raw = await AsyncStorage.getItem(BASELINES_KEY);
+    if (!raw) return getEmptyBaselines();
+    const parsed = JSON.parse(raw) as Partial<MetricBaselines>;
+    return {
+      sleepMinutes: Array.isArray(parsed.sleepMinutes) ? parsed.sleepMinutes.filter(v => Number.isFinite(v) && v > 0) : [],
+      restingHR: Array.isArray(parsed.restingHR) ? parsed.restingHR.filter(v => Number.isFinite(v) && v > 0) : [],
+      hrvSdnn: Array.isArray(parsed.hrvSdnn) ? parsed.hrvSdnn.filter(v => Number.isFinite(v) && v > 0) : [],
+      temperature: Array.isArray(parsed.temperature) ? parsed.temperature.filter(v => Number.isFinite(v) && v >= 34 && v <= 42) : [],
+      spo2: Array.isArray(parsed.spo2) ? parsed.spo2.filter(v => Number.isFinite(v) && v >= 70 && v <= 100) : [],
+      steps: Array.isArray(parsed.steps) ? parsed.steps.filter(v => Number.isFinite(v) && v > 0) : [],
+      calories: Array.isArray(parsed.calories) ? parsed.calories.filter(v => Number.isFinite(v) && v > 0) : [],
+      activeMinutes: Array.isArray(parsed.activeMinutes) ? parsed.activeMinutes.filter(v => Number.isFinite(v) && v > 0) : [],
+    };
+  } catch (error) {
+    console.log('😴 [useHomeData] Failed to load baselines:', error);
+    return getEmptyBaselines();
+  }
+}
+
+async function saveMetricBaselines(baselines: MetricBaselines): Promise<void> {
+  try {
+    await AsyncStorage.setItem(BASELINES_KEY, JSON.stringify(baselines));
+  } catch (error) {
+    console.log('😴 [useHomeData] Failed to save baselines:', error);
+  }
+}
 
 
 const sanitizeActivity = (activity?: Partial<ActivityData>): ActivityData => {
@@ -212,6 +532,77 @@ function parseStart(str?: string): number | undefined {
   return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
 }
 
+function extractSleepVitalsFromRaw(rawRecords: any[]): { restingHR: number; respiratoryRate: number } {
+  if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
+    return { restingHR: 0, respiratoryRate: 0 };
+  }
+
+  const hrCandidates: number[] = [];
+  const respCandidates: number[] = [];
+  const visited = new Set<any>();
+
+  const pushIfValid = (target: number[], value: unknown, min: number, max: number) => {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= min && n <= max) {
+      target.push(n);
+    }
+  };
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object' || visited.has(node)) return;
+    visited.add(node);
+
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+
+    for (const [rawKey, value] of Object.entries(node as Record<string, unknown>)) {
+      const key = String(rawKey);
+      const lowerKey = key.toLowerCase();
+
+      if (
+        lowerKey === 'restinghr' ||
+        lowerKey === 'resthr' ||
+        lowerKey === 'restingheartrate' ||
+        lowerKey === 'sleeprestinghr' ||
+        lowerKey === 'minhr' ||
+        lowerKey === 'minheartrate' ||
+        lowerKey === 'lowestheartrate' ||
+        /rest.*hr/.test(lowerKey) ||
+        /resting.*heart/.test(lowerKey) ||
+        /lowest.*heart/.test(lowerKey)
+      ) {
+        pushIfValid(hrCandidates, value, 30, 130);
+      }
+
+      if (
+        lowerKey === 'respiratoryrate' ||
+        lowerKey === 'respiratory_rate' ||
+        lowerKey === 'resprate' ||
+        lowerKey === 'respr' ||
+        lowerKey === 'breathrate' ||
+        lowerKey === 'breathingrate' ||
+        /resp/.test(lowerKey) ||
+        /breath/.test(lowerKey)
+      ) {
+        pushIfValid(respCandidates, value, 8, 40);
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        visit(value);
+      }
+    }
+  };
+
+  visit(rawRecords);
+
+  return {
+    restingHR: hrCandidates.length > 0 ? Math.round(hrCandidates[hrCandidates.length - 1]) : 0,
+    respiratoryRate: respCandidates.length > 0 ? Math.round(respCandidates[respCandidates.length - 1]) : 0,
+  };
+}
+
 /**
  * Build SleepData from raw JstyleService.getSleepData() records.
  * Smarter than buildSleepSegments: handles multi-record gaps (up to 60min),
@@ -220,6 +611,7 @@ function parseStart(str?: string): number | undefined {
  */
 function deriveFromRaw(rawRecords: any[]): SleepData | null {
   if (!rawRecords || rawRecords.length === 0) return null;
+  const extractedVitals = extractSleepVitalsFromRaw(rawRecords);
 
   const normalizedAll = rawRecords.map(r => {
     const start = r.startTimestamp || parseStart(r.startTime_SleepData);
@@ -301,8 +693,8 @@ function deriveFromRaw(rawRecords: any[]): SleepData | null {
     score,
     timeAsleep: `${hours}h ${minutes}m`,
     timeAsleepMinutes: totalMinutes,
-    restingHR: 0, // patched in after HR fetch
-    respiratoryRate: 0,
+    restingHR: extractedVitals.restingHR, // overwritten by HR stream when available
+    respiratoryRate: extractedVitals.respiratoryRate,
     segments,
     bedTime: new Date(earliestStart),
     wakeTime: new Date(latestEnd),
@@ -386,6 +778,13 @@ const getEmptyData = (): HomeData => ({
   isRingConnected: false,
   hrChartData: [],
   hrvSdnn: 0,
+  todayVitals: getEmptyTodayVitals(),
+  cardDataStatus: 'idle',
+  refreshMissingCardData: NOOP_REFRESH_MISSING_CARD_DATA,
+  contributors: getEmptyContributors(),
+  featureAvailability: getEmptyFeatureAvailability(),
+  activitySessions: [],
+  recoveryContributors: getEmptyRecoveryContributors(),
 });
 
 // Hook
@@ -399,6 +798,98 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   const hasLoadedRealData = useRef(false); // Track if we've successfully loaded real data
   const hasLoadedCache = useRef(false); // Track if we've loaded cached data
   const isFetchingData = useRef(false); // Track if we're currently fetching to prevent concurrent fetches
+  const currentVitalsRef = useRef<TodayVitals>(getEmptyTodayVitals());
+  const baselinesRef = useRef<MetricBaselines>(getEmptyBaselines());
+  const delayedVitalsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    currentVitalsRef.current = data.todayVitals;
+  }, [data.todayVitals]);
+
+  const runRefreshMissingCardData = useCallback(
+    async (reason: TodayCardHydrationReason, allowDelayedRetry: boolean) => {
+      const missingBefore = getMissingVitalKeys(currentVitalsRef.current);
+      if (missingBefore.length === 0) {
+        setData(prev => ({ ...prev, cardDataStatus: 'ready' }));
+        return;
+      }
+
+      setData(prev => ({ ...prev, cardDataStatus: 'retrying' }));
+      const cachedVitals = await TodayCardVitalsService.loadCachedVitals();
+      const result = await TodayCardVitalsService.hydrateMissingVitals({
+        reason,
+        currentVitals: currentVitalsRef.current,
+        cachedVitals,
+      });
+
+      setData(prev => ({
+        ...prev,
+        todayVitals: result.vitals,
+        cardDataStatus: result.status,
+        recoveryContributors: {
+          ...prev.recoveryContributors,
+          tempDeviation:
+            result.vitals.temperatureC !== null
+              ? Number(
+                  (
+                    result.vitals.temperatureC -
+                    (median(baselinesRef.current.temperature) ?? 36.5)
+                  ).toFixed(2)
+                )
+              : prev.recoveryContributors.tempDeviation,
+          overnightSpo2: result.vitals.lastSpo2 ?? result.vitals.minSpo2 ?? prev.recoveryContributors.overnightSpo2,
+        },
+        contributors: buildContributors(
+          prev.lastNightSleep,
+          prev.activity,
+          prev.hrvSdnn,
+          result.vitals,
+          baselinesRef.current,
+          {
+            ...prev.recoveryContributors,
+            tempDeviation:
+              result.vitals.temperatureC !== null
+                ? Number(
+                    (
+                      result.vitals.temperatureC -
+                      (median(baselinesRef.current.temperature) ?? 36.5)
+                    ).toFixed(2)
+                  )
+                : prev.recoveryContributors.tempDeviation,
+            overnightSpo2: result.vitals.lastSpo2 ?? result.vitals.minSpo2 ?? prev.recoveryContributors.overnightSpo2,
+          }
+        ),
+      }));
+
+      if (allowDelayedRetry && result.shouldScheduleDelayedRetry) {
+        if (delayedVitalsRetryRef.current) {
+          clearTimeout(delayedVitalsRetryRef.current);
+        }
+        delayedVitalsRetryRef.current = setTimeout(() => {
+          delayedVitalsRetryRef.current = null;
+          UnifiedSmartRingService.isConnected()
+            .then(status => {
+              if (!status.connected) {
+                console.log('[useHomeData] Skipping delayed vitals retry (ring disconnected)');
+                return;
+              }
+              void runRefreshMissingCardData(reason, false);
+            })
+            .catch(error => {
+              console.log('[useHomeData] Delayed vitals retry connection check failed:', error);
+            });
+        }, 10000);
+      }
+    },
+    []
+  );
+
+  const refreshMissingCardData = useCallback(
+    async (reason: TodayCardHydrationReason = 'manual') => {
+      await runRefreshMissingCardData(reason, true);
+    },
+    [runRefreshMissingCardData]
+  );
 
   // Load cached data immediately on mount for instant display
   useEffect(() => {
@@ -415,6 +906,34 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           isSyncing: true, // Show syncing indicator
         }));
       }
+    });
+  }, []);
+
+  // Load cached today-card vitals immediately on mount.
+  useEffect(() => {
+    TodayCardVitalsService.loadCachedVitals().then(cachedVitals => {
+      if (!cachedVitals) return;
+      setData(prev => {
+        const mergedVitals: TodayVitals = {
+          temperatureC: prev.todayVitals.temperatureC ?? cachedVitals.temperatureC,
+          minSpo2: prev.todayVitals.minSpo2 ?? cachedVitals.minSpo2,
+          lastSpo2: prev.todayVitals.lastSpo2 ?? cachedVitals.lastSpo2,
+          updatedAt: prev.todayVitals.updatedAt ?? cachedVitals.updatedAt,
+        };
+        const nextStatus = getCardDataStatusFromVitals(mergedVitals);
+        console.log('[useHomeData] Applied cached today vitals');
+        return {
+          ...prev,
+          todayVitals: mergedVitals,
+          cardDataStatus: prev.cardDataStatus === 'retrying' ? prev.cardDataStatus : nextStatus,
+        };
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    loadMetricBaselines().then(baselines => {
+      baselinesRef.current = baselines;
     });
   }, []);
 
@@ -444,7 +963,10 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchData = useCallback(async (forceRefresh = false) => {
+  const fetchData = useCallback(async (
+    forceRefresh = false,
+    hydrationReason: TodayCardHydrationReason = 'manual'
+  ) => {
     // ─── EXACT testing.tsx pattern ───────────────────────────────────────────
     // Sequential, one BLE call at a time, each step individually caught.
     // Sleep uses getSleepData() raw (not getSleepByDay) + deriveFromRaw().
@@ -595,6 +1117,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       }
       } catch (e) { console.log('⚠️ [useHomeData] HRV failed:', e); }
 
+      if (restingHR === 0 && hrvHrPoints.length > 0) {
+        restingHR = Math.min(...hrvHrPoints.map(p => p.heartRate));
+        console.log(`✅ [useHomeData] restingHR fallback from HRV: ${restingHR}`);
+      }
+
       // 6. Steps
       let activity: ActivityData = sanitizeActivity();
       try {
@@ -610,13 +1137,53 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       console.log('✅ [useHomeData] steps:', stepsData.steps);
       } catch (e) { console.log('⚠️ [useHomeData] steps failed:', e); }
 
+      const featureAvailability = UnifiedSmartRingService.getFeatureAvailability();
+
+      let activitySessions: X3ActivitySession[] = [];
+      try {
+        const sportRecords: SportData[] = await UnifiedSmartRingService.getSportData();
+        activitySessions = sportRecords.map((record) => ({
+          type: record.type,
+          typeLabel: sportTypeLabel(record.type),
+          startTime: record.startTime,
+          endTime: record.endTime,
+          duration: record.duration,
+          steps: record.steps,
+          distance: record.distance,
+          calories: record.calories,
+          heartRateAvg: record.heartRateAvg,
+          heartRateMax: record.heartRateMax,
+        }));
+        if (activitySessions.length > 0) {
+          console.log(`✅ [useHomeData] activity sessions: ${activitySessions.length}`);
+        }
+      } catch (e) {
+        console.log('⚠️ [useHomeData] sport sessions failed:', e);
+      }
+
       // Build final state
+      if (restingHR === 0 && finalSleepData?.restingHR && finalSleepData.restingHR > 0) {
+        restingHR = finalSleepData.restingHR;
+        console.log(`✅ [useHomeData] restingHR fallback from sleep payload: ${restingHR}`);
+      }
       if (finalSleepData && restingHR > 0) finalSleepData.restingHR = restingHR;
 
       const sleep: SleepData = finalSleepData || {
         score: 0, timeAsleep: '0h 0m', timeAsleepMinutes: 0,
         restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
       };
+
+      if (!sleep.respiratoryRate || sleep.respiratoryRate <= 0) {
+        try {
+          const respiratoryRate = await UnifiedSmartRingService.getRespiratoryRateNightly(0);
+          if (respiratoryRate && respiratoryRate >= 8 && respiratoryRate <= 40) {
+            sleep.respiratoryRate = respiratoryRate;
+            console.log(`✅ [useHomeData] respiratoryRate from breathing data: ${respiratoryRate}`);
+          }
+        } catch (e) {
+          console.log('⚠️ [useHomeData] respiratory rate fetch failed:', e);
+        }
+      }
 
       const { insight, type } = generateInsight(sleep.score, activity.score);
       const overallScore = calculateOverallScore(sleep.score, activity.score);
@@ -635,6 +1202,39 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           ? hrvHrPoints
           : prev.hrChartData;
 
+        const recoveryContributors: RecoveryContributors = {
+          hrvBalance: hrvSdnn > 0 ? clampScore((hrvSdnn / 80) * 100) : null,
+          restingHrDelta:
+            restingHR > 0
+              ? Number(
+                  (
+                    restingHR -
+                    (median(baselinesRef.current.restingHR) ?? 60)
+                  ).toFixed(1)
+                )
+              : null,
+          tempDeviation:
+            prev.todayVitals.temperatureC !== null
+              ? Number(
+                  (
+                    prev.todayVitals.temperatureC -
+                    (median(baselinesRef.current.temperature) ?? 36.5)
+                  ).toFixed(2)
+                )
+              : null,
+          overnightSpo2: prev.todayVitals.lastSpo2 ?? prev.todayVitals.minSpo2,
+          sleepImpact: sleep.timeAsleepMinutes > 0 ? clampScore((sleep.timeAsleepMinutes / 480) * 100) : null,
+        };
+
+        const contributors = buildContributors(
+          sleep,
+          activity,
+          hrvSdnn,
+          prev.todayVitals,
+          baselinesRef.current,
+          recoveryContributors
+        );
+
         const newData: HomeData = {
           overallScore, strain, readiness,
           sleepScore: sleep.score,
@@ -648,12 +1248,37 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           isRingConnected: true,
           hrChartData: finalHrChartData,
           hrvSdnn,
+          todayVitals: prev.todayVitals,
+          cardDataStatus: prev.cardDataStatus === 'retrying' ? 'retrying' : getCardDataStatusFromVitals(prev.todayVitals),
+          refreshMissingCardData: prev.refreshMissingCardData,
+          contributors,
+          featureAvailability,
+          activitySessions,
+          recoveryContributors,
         };
+
+        baselinesRef.current = {
+          sleepMinutes: pushRolling(baselinesRef.current.sleepMinutes, sleep.timeAsleepMinutes),
+          restingHR: pushRolling(baselinesRef.current.restingHR, sleep.restingHR),
+          hrvSdnn: pushRolling(baselinesRef.current.hrvSdnn, hrvSdnn),
+          temperature: pushRolling(baselinesRef.current.temperature, prev.todayVitals.temperatureC ?? 0),
+          spo2: pushRolling(
+            baselinesRef.current.spo2,
+            (prev.todayVitals.lastSpo2 ?? prev.todayVitals.minSpo2) ?? 0
+          ),
+          steps: pushRolling(baselinesRef.current.steps, activity.steps),
+          calories: pushRolling(baselinesRef.current.calories, activity.adjustedActiveCalories),
+          activeMinutes: pushRolling(baselinesRef.current.activeMinutes, activity.activeMinutes),
+        };
+        void saveMetricBaselines(baselinesRef.current);
 
         console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: ringBattery, hrPts: finalHrChartData.length });
         saveToCache(newData);
+        // Push all ring data (7 days of sleep + vitals) to Supabase in the background
+        void dataSyncService.syncAllData();
         return newData;
       });
+      void refreshMissingCardData(hydrationReason);
     } catch (error: any) {
       const message = error?.message || 'Failed to sync ring data.';
       console.log('⚠️ [useHomeData] fetchData fatal error:', message);
@@ -666,25 +1291,24 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     } finally {
       isFetchingData.current = false;
     }
-  }, []);
+  }, [refreshMissingCardData]);
 
   // Initial fetch — call autoReconnect() immediately (same pattern as testing.tsx)
   useEffect(() => {
     console.log('🚀 [useHomeData] HOOK MOUNTED at', new Date().toLocaleTimeString());
-    fetchData(true);
+    fetchData(true, 'initial');
   }, [fetchData]);
 
-  // Listen for ring connection state changes
-  // ONLY update UI state - mount effect handles initial data fetch
+  // Listen for ring connection state changes.
+  // We update connection UI state and trigger targeted card hydration on reconnect.
   useEffect(() => {
     const unsubscribe = UnifiedSmartRingService.onConnectionStateChanged((state) => {
       console.log('📡 [useHomeData] Connection state changed:', state, 'at', new Date().toLocaleTimeString());
 
       if (state === 'connected') {
-        // IMPORTANT: Don't auto-fetch here - mount effect already handles connection + fetch
-        // This listener only updates connection status for UI display
-        // If user manually reconnects, they'll pull-to-refresh to get fresh data
-        console.log('📡 [useHomeData] Connected - UI will update. Mount/PTR handles data fetching.');
+        // Mount/foreground/manual refresh handles full data sync.
+        // Here we focus on connection UI state and missing card hydration.
+        console.log('📡 [useHomeData] Connected - UI will update and missing card hydration will run.');
 
         // Only update the connection flag if we're NOT mid-fetch.
         // If we're mid-fetch, isRingConnected will be set true in the final newData update.
@@ -696,19 +1320,22 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
             isRingConnected: true,
             error: null,
           }));
+          void refreshMissingCardData('reconnect');
         }
       } else if (state === 'disconnected') {
         // When ring disconnects, clear data and mark as disconnected
         console.log('😴 [useHomeData] Ring disconnected - clearing data');
         hasLoadedRealData.current = false;
         supabase.auth.getUser().then(({ data: { user } }) => {
-          setData({
+          setData(prev => ({
             ...getEmptyData(),
             userName: user?.user_metadata?.display_name || '',
             isLoading: false,
             isSyncing: false,
             isRingConnected: false,
-          });
+            todayVitals: prev.todayVitals,
+            cardDataStatus: getCardDataStatusFromVitals(prev.todayVitals),
+          }));
         });
       }
     });
@@ -716,7 +1343,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [refreshMissingCardData]);
 
   // Listen for app state changes (foreground/background)
   useEffect(() => {
@@ -726,7 +1353,8 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         console.log('😴 [useHomeData] App came to foreground - syncing data');
         // Reset the real data flag so we try to fetch fresh data
         hasLoadedRealData.current = false;
-        fetchData(true); // Force refresh
+        fetchData(true, 'foreground'); // Force refresh
+        void refreshMissingCardData('foreground');
       }
       appState.current = nextAppState;
     });
@@ -734,11 +1362,23 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     return () => {
       subscription.remove();
     };
-  }, [fetchData]);
+  }, [fetchData, refreshMissingCardData]);
+
+  useEffect(() => {
+    return () => {
+      if (delayedVitalsRetryRef.current) {
+        clearTimeout(delayedVitalsRetryRef.current);
+        delayedVitalsRetryRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     ...data,
-    refresh: async () => { await fetchData(true); }, // Always force refresh on manual refresh
+    refreshMissingCardData,
+    refresh: async () => {
+      await fetchData(true, 'manual');
+    }, // Always force refresh on manual refresh
   };
 }
 

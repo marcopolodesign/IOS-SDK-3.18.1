@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, ImageBackground, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, ImageBackground, ImageSourcePropType, TouchableOpacity } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { fontFamily, fontSize, spacing } from '../../theme/colors';
 
 type Metric = {
   label: string;
   value: number | string;
+  onPress?: () => void;
 };
 
 const formatValue = (value: number | string) => {
@@ -54,10 +55,10 @@ export function MetricInsightCard({
       <View style={[styles.metricsRow, styles.insightCard]}>
         {metrics.map((metric, index) => (
           <React.Fragment key={`${metric.label}-${index}`}>
-            <View style={styles.metric}>
+            <TouchableOpacity style={styles.metric} onPress={metric.onPress} activeOpacity={metric.onPress ? 0.7 : 1} disabled={!metric.onPress}>
               <Text style={styles.metricLabel}>{metric.label}</Text>
               <Text style={styles.metricValue}>{formatValue(metric.value)}</Text>
-            </View>
+            </TouchableOpacity>
             {index < metrics.length - 1 && <View style={styles.divider} />}
           </React.Fragment>
         ))}

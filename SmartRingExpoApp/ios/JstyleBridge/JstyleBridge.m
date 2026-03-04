@@ -37,6 +37,11 @@ static NSString *const kPairedDeviceNameKey = @"JstylePairedDeviceName";
 @property (nonatomic, strong) NSMutableArray *accumulatedSpO2Data;
 @property (nonatomic, strong) NSMutableArray *accumulatedTempData;
 @property (nonatomic, strong) NSMutableArray *accumulatedHRVData;
+@property (nonatomic, strong) NSMutableArray *accumulatedActivityModeData;
+@property (nonatomic, strong) NSMutableArray *accumulatedSleepHRVData;
+@property (nonatomic, strong) NSMutableArray *accumulatedOSAData;
+@property (nonatomic, strong) NSMutableArray *accumulatedEOVData;
+@property (nonatomic, strong) NSMutableArray *accumulatedPPIData;
 @property (nonatomic, copy) RCTPromiseResolveBlock pendingDataResolver;
 @property (nonatomic, copy) RCTPromiseRejectBlock pendingDataRejecter;
 @property (nonatomic, assign) DATATYPE_X3 pendingDataType;
@@ -65,6 +70,11 @@ RCT_EXPORT_MODULE();
         _accumulatedSpO2Data = [NSMutableArray array];
         _accumulatedTempData = [NSMutableArray array];
         _accumulatedHRVData = [NSMutableArray array];
+        _accumulatedActivityModeData = [NSMutableArray array];
+        _accumulatedSleepHRVData = [NSMutableArray array];
+        _accumulatedOSAData = [NSMutableArray array];
+        _accumulatedEOVData = [NSMutableArray array];
+        _accumulatedPPIData = [NSMutableArray array];
         _pendingDataType = DataError_X3;
         _pendingDataTimeoutInterval = 20.0;
 
@@ -196,6 +206,11 @@ RCT_EXPORT_MODULE();
     [self.accumulatedSpO2Data removeAllObjects];
     [self.accumulatedTempData removeAllObjects];
     [self.accumulatedHRVData removeAllObjects];
+    [self.accumulatedActivityModeData removeAllObjects];
+    [self.accumulatedSleepHRVData removeAllObjects];
+    [self.accumulatedOSAData removeAllObjects];
+    [self.accumulatedEOVData removeAllObjects];
+    [self.accumulatedPPIData removeAllObjects];
 }
 
 #pragma mark - Initialize SDK
@@ -573,6 +588,116 @@ RCT_EXPORT_METHOD(getHRVData:(RCTPromiseResolveBlock)resolve
     [self setPendingDataRequestWithResolver:resolve rejecter:reject type:HRVData_X3];
 
     NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetHRVDataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(getActivityModeData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getActivityModeData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting activity mode data"];
+
+    [self.accumulatedActivityModeData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:ActivityModeData_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetActivityModeDataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(getSleepHRVData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getSleepHRVData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting sleep HRV data"];
+
+    [self.accumulatedSleepHRVData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:sleepHrvData_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetSleepHRVDataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(getOSAData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getOSAData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting OSA data"];
+
+    [self.accumulatedOSAData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:osaData_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetOSADataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(getEOVData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getEOVData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting EOV data"];
+
+    [self.accumulatedEOVData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:eovData_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetEOVDataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(getPPIData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getPPIData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting PPI data"];
+
+    [self.accumulatedPPIData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:ppiData_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetPpiDataWithMode:0 withStartDate:nil];
     [[NewBle sharedManager] writeValue:kJstyleServiceUUID
                       characteristicUUID:kJstyleWriteCharUUID
                                        p:self.connectedPeripheral
@@ -1043,6 +1168,26 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
             [self handleHRVData:parsed];
             break;
 
+        case ActivityModeData_X3:
+            [self handleActivityModeData:parsed];
+            break;
+
+        case sleepHrvData_X3:
+            [self handleSleepHRVData:parsed];
+            break;
+
+        case osaData_X3:
+            [self handleOSAData:parsed];
+            break;
+
+        case eovData_X3:
+            [self handleEOVData:parsed];
+            break;
+
+        case ppiData_X3:
+            [self handlePPIData:parsed];
+            break;
+
         case RealTimeStep_X3:
             [self handleRealTimeData:parsed];
             break;
@@ -1305,6 +1450,136 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
         } else {
             [self debugLog:@"HRV pagination stopped - no pending request"];
             [self.accumulatedHRVData removeAllObjects];
+        }
+    }
+}
+
+- (void)handleActivityModeData:(DeviceData_X3 *)parsed {
+    if (parsed.dicData) {
+        [self.accumulatedActivityModeData addObject:parsed.dicData];
+    }
+
+    if (parsed.dataEnd) {
+        if (self.pendingDataResolver && self.pendingDataType == ActivityModeData_X3) {
+            NSArray *activityDataCopy = [self.accumulatedActivityModeData copy];
+            self.pendingDataResolver(@{@"data": activityDataCopy});
+            [self clearPendingDataRequest];
+        }
+        [self.accumulatedActivityModeData removeAllObjects];
+    } else {
+        if (self.pendingDataResolver && self.pendingDataType == ActivityModeData_X3) {
+            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetActivityModeDataWithMode:2 withStartDate:nil];
+            [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                              characteristicUUID:kJstyleWriteCharUUID
+                                               p:self.connectedPeripheral
+                                            data:cmd];
+        } else {
+            [self debugLog:@"Activity mode pagination stopped - no pending request"];
+            [self.accumulatedActivityModeData removeAllObjects];
+        }
+    }
+}
+
+- (void)handleSleepHRVData:(DeviceData_X3 *)parsed {
+    if (parsed.dicData) {
+        [self.accumulatedSleepHRVData addObject:parsed.dicData];
+    }
+
+    if (parsed.dataEnd) {
+        if (self.pendingDataResolver && self.pendingDataType == sleepHrvData_X3) {
+            NSArray *sleepHrvDataCopy = [self.accumulatedSleepHRVData copy];
+            self.pendingDataResolver(@{@"data": sleepHrvDataCopy});
+            [self clearPendingDataRequest];
+        }
+        [self.accumulatedSleepHRVData removeAllObjects];
+    } else {
+        if (self.pendingDataResolver && self.pendingDataType == sleepHrvData_X3) {
+            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetSleepHRVDataWithMode:2 withStartDate:nil];
+            [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                              characteristicUUID:kJstyleWriteCharUUID
+                                               p:self.connectedPeripheral
+                                            data:cmd];
+        } else {
+            [self debugLog:@"Sleep HRV pagination stopped - no pending request"];
+            [self.accumulatedSleepHRVData removeAllObjects];
+        }
+    }
+}
+
+- (void)handleOSAData:(DeviceData_X3 *)parsed {
+    if (parsed.dicData) {
+        [self.accumulatedOSAData addObject:parsed.dicData];
+    }
+
+    if (parsed.dataEnd) {
+        if (self.pendingDataResolver && self.pendingDataType == osaData_X3) {
+            NSArray *osaDataCopy = [self.accumulatedOSAData copy];
+            self.pendingDataResolver(@{@"data": osaDataCopy});
+            [self clearPendingDataRequest];
+        }
+        [self.accumulatedOSAData removeAllObjects];
+    } else {
+        if (self.pendingDataResolver && self.pendingDataType == osaData_X3) {
+            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetOSADataWithMode:2 withStartDate:nil];
+            [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                              characteristicUUID:kJstyleWriteCharUUID
+                                               p:self.connectedPeripheral
+                                            data:cmd];
+        } else {
+            [self debugLog:@"OSA pagination stopped - no pending request"];
+            [self.accumulatedOSAData removeAllObjects];
+        }
+    }
+}
+
+- (void)handleEOVData:(DeviceData_X3 *)parsed {
+    if (parsed.dicData) {
+        [self.accumulatedEOVData addObject:parsed.dicData];
+    }
+
+    if (parsed.dataEnd) {
+        if (self.pendingDataResolver && self.pendingDataType == eovData_X3) {
+            NSArray *eovDataCopy = [self.accumulatedEOVData copy];
+            self.pendingDataResolver(@{@"data": eovDataCopy});
+            [self clearPendingDataRequest];
+        }
+        [self.accumulatedEOVData removeAllObjects];
+    } else {
+        if (self.pendingDataResolver && self.pendingDataType == eovData_X3) {
+            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetEOVDataWithMode:2 withStartDate:nil];
+            [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                              characteristicUUID:kJstyleWriteCharUUID
+                                               p:self.connectedPeripheral
+                                            data:cmd];
+        } else {
+            [self debugLog:@"EOV pagination stopped - no pending request"];
+            [self.accumulatedEOVData removeAllObjects];
+        }
+    }
+}
+
+- (void)handlePPIData:(DeviceData_X3 *)parsed {
+    if (parsed.dicData) {
+        [self.accumulatedPPIData addObject:parsed.dicData];
+    }
+
+    if (parsed.dataEnd) {
+        if (self.pendingDataResolver && self.pendingDataType == ppiData_X3) {
+            NSArray *ppiDataCopy = [self.accumulatedPPIData copy];
+            self.pendingDataResolver(@{@"data": ppiDataCopy});
+            [self clearPendingDataRequest];
+        }
+        [self.accumulatedPPIData removeAllObjects];
+    } else {
+        if (self.pendingDataResolver && self.pendingDataType == ppiData_X3) {
+            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetPpiDataWithMode:2 withStartDate:nil];
+            [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                              characteristicUUID:kJstyleWriteCharUUID
+                                               p:self.connectedPeripheral
+                                            data:cmd];
+        } else {
+            [self debugLog:@"PPI pagination stopped - no pending request"];
+            [self.accumulatedPPIData removeAllObjects];
         }
     }
 }

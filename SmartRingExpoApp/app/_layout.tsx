@@ -5,6 +5,9 @@ import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { useFonts } from 'expo-font';
 import { OnboardingProvider } from '../src/context/OnboardingContext';
 import { HomeDataProvider } from '../src/context/HomeDataContext';
+import { AddOverlayProvider } from '../src/context/AddOverlayContext';
+import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -23,8 +26,11 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
+      <BottomSheetModalProvider>
       <OnboardingProvider>
         <HomeDataProvider>
+        <MetricExplainerProvider>
+        <AddOverlayProvider>
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
@@ -39,9 +45,14 @@ export default function RootLayout() {
           <Stack.Screen name="detail/temperature-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/activity-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/recovery-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="profile" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
+        </AddOverlayProvider>
+        </MetricExplainerProvider>
         </HomeDataProvider>
       </OnboardingProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

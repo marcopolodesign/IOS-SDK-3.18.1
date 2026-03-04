@@ -3,12 +3,10 @@ import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 import { router } from 'expo-router';
 import { DynamicColorIOS, Platform } from 'react-native';
 import { useOnboarding } from '../../src/context/OnboardingContext';
-import { AddOverlayProvider } from '../../src/context/AddOverlayContext';
 
 export default function TabLayout() {
   const { isAuthenticated, hasConnectedDevice, isLoading } = useOnboarding();
 
-  // Route guard - redirect if not properly onboarded
   useLayoutEffect(() => {
     if (isLoading) return;
 
@@ -19,13 +17,11 @@ export default function TabLayout() {
     }
   }, [isAuthenticated, hasConnectedDevice, isLoading]);
 
-  // Don't render tabs until properly authenticated
   if (isLoading || !isAuthenticated || !hasConnectedDevice) {
     return null;
   }
 
   return (
-    <AddOverlayProvider>
     <NativeTabs
       minimizeBehavior="onScrollDown"
       labelStyle={{
@@ -48,23 +44,22 @@ export default function TabLayout() {
         <Label>Health</Label>
       </NativeTabs.Trigger>
 
-      {/* <NativeTabs.Trigger name="ring">
-        <Icon sf={{ default: 'circle.circle', selected: 'circle.circle.fill' }} />
-        <Label>Ring</Label>
-      </NativeTabs.Trigger> */}
-
       <NativeTabs.Trigger name="settings">
-        <Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
-        <Label>Settings</Label>
+        <Icon src={{
+          default: require('../../assets/coach-icon.png'),
+          selected: require('../../assets/coach-icon-selected.png'),
+        }} />
+        <Label>Coach</Label>
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="add" role="search">
-        <Icon sf="plus" />
+      {/* 4th slot — role="search" for native layout, + icon triggers add overlay */}
+      <NativeTabs.Trigger name="[search]" role="search">
+        <Icon sf={{ default: 'plus', selected: 'plus' }} />
       </NativeTabs.Trigger>
 
-      {/* Hide the today folder from tab bar */}
+      {/* Hidden routes (no tab bar slot) */}
+      <NativeTabs.Trigger name="add" hidden />
       <NativeTabs.Trigger name="today" hidden />
     </NativeTabs>
-    </AddOverlayProvider>
   );
 }

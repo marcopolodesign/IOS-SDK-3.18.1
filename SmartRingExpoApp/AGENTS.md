@@ -1,5 +1,15 @@
 # Agent Guidance
 
+## Mandatory Catch-Up Log
+
+- `catchup.md` at the repo root is required and must be treated as append-only.
+- After **any code change** (source, config, scripts, tests), add a new entry to `catchup.md` in the same task before finishing.
+- Every entry must include:
+  - Date/time
+  - Short summary of what changed
+  - Files changed
+  - Any follow-up or risk note (if applicable)
+
 ## General Rules
 
 - Do **not** introduce demo or mock fallback data in production UI. If the SDK/ring does not return data, surface an empty/"None/No data" state instead of synthetic values.

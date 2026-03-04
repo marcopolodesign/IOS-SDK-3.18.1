@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
@@ -7,10 +7,11 @@ import { SleepHypnogram } from '../../components/home/SleepHypnogram';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
+import DailySleepTrendCard from '../../components/home/DailySleepTrendCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
-import JstyleService from '../../services/JstyleService';
+import { InfoButton } from '../../components/common/InfoButton';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -44,7 +45,6 @@ function DropIcon() {
 export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd, isActive = false }: SleepTabProps) {
   const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = React.useState(false);
-  const [lastSpO2, setLastSpO2] = useState<number | null>(null);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -52,32 +52,20 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
     setRefreshing(false);
   }, [homeData.refresh]);
 
-  // Fetch overnight SpO2 only when Sleep tab is visible and home sync is idle.
+  // Trigger targeted retry when this tab is visible but overnight SpO2 is missing.
   useEffect(() => {
     if (!isActive || !homeData.isRingConnected || homeData.isSyncing) return;
-    let cancelled = false;
-    const fetchSpO2 = async () => {
-      try {
-        const rawData = await JstyleService.getSpO2Data();
-        console.log('[SleepTab] RAW spo2 records count:', rawData.records?.length);
-        console.log('[SleepTab] RAW spo2 first record keys:', JSON.stringify(Object.keys(rawData.records?.[0] || {})));
-        console.log('[SleepTab] RAW spo2 first record:', JSON.stringify(rawData.records?.[0]));
-        if (!cancelled && rawData.records?.length > 0) {
-          const allEntries: any[] = [];
-          for (const rec of rawData.records) {
-            const arr: any[] = rec.arrayAutomaticSpo2Data || [];
-            allEntries.push(...arr);
-          }
-          console.log('[SleepTab] spo2 total entries:', allEntries.length, 'last:', JSON.stringify(allEntries[allEntries.length - 1]));
-          const last = allEntries[allEntries.length - 1];
-          const val = Number(last?.automaticSpo2Data ?? 0);
-          if (val > 0) setLastSpO2(val);
-        }
-      } catch (e) { console.log('[SleepTab] fetchSpO2 error:', e); }
-    };
-    fetchSpO2();
-    return () => { cancelled = true; };
-  }, [isActive, homeData.isRingConnected, homeData.isSyncing]);
+    if (homeData.cardDataStatus === 'retrying') return;
+    if (homeData.todayVitals.lastSpo2 !== null) return;
+    void homeData.refreshMissingCardData('tab-focus');
+  }, [
+    isActive,
+    homeData.isRingConnected,
+    homeData.isSyncing,
+    homeData.cardDataStatus,
+    homeData.todayVitals.lastSpo2,
+    homeData.refreshMissingCardData,
+  ]);
 
   const sleepMessage = getSleepMessage(homeData.sleepScore);
   const sleep = homeData.lastNightSleep;
@@ -92,6 +80,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
   const stressColor = sdnn >= 50 ? '#4ADE80' : sdnn >= 30 ? '#FFD700' : sdnn > 0 ? '#FF6B6B' : 'rgba(255,255,255,0.5)';
 
   // SpO2 status
+  const lastSpO2 = homeData.todayVitals.lastSpo2;
   const spo2Status = lastSpO2
     ? lastSpO2 >= 95 ? 'Normal' : lastSpO2 >= 90 ? 'Low' : 'Seek care'
     : null;
@@ -129,6 +118,9 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           label="LAST NIGHT"
           animated={!homeData.isLoading}
         />
+        <View style={styles.gaugeInfoBtn}>
+          <InfoButton metricKey="sleep_score" />
+        </View>
         <Text style={styles.scoreMessage}>{sleepMessage}</Text>
       </View>
 
@@ -136,7 +128,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       <View style={styles.metricsInsightSection}>
         <MetricInsightCard
           metrics={[
-            { label: 'Sleep', value: sleep.score || 0 },
+            { label: 'Duration', value: sleep.timeAsleep || '--' },
             { label: 'Rest HR', value: sleep.restingHR || '--' },
             { label: 'Resp', value: sleep.respiratoryRate || '--' },
           ]}
@@ -144,6 +136,17 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           backgroundImage={require('../../assets/backgrounds/insights/violet-insight.jpg')}
         />
       </View>
+      {homeData.contributors.sleep.length > 0 && (
+        <View style={styles.contributorRow}>
+          {homeData.contributors.sleep.slice(0, 3).map((chip) => (
+            <View key={chip.key} style={styles.contributorChip}>
+              <Text style={styles.contributorLabel}>{chip.label}</Text>
+              <Text style={styles.contributorValue}>{chip.display}</Text>
+              <Text style={styles.contributorMeta}>{chip.confidence}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Sleep Stats
       <View style={styles.statsSection}>
@@ -168,6 +171,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
             ]}
             gradientCenter={{ x: 0.51, y: -0.86 }}
             gradientRadii={{ rx: '80%', ry: '300%' }}
+            headerRight={<InfoButton metricKey="sleep_deep" />}
           >
             <SleepHypnogram
               segments={sleep.segments}
@@ -195,6 +199,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           gradientRadii={{ rx: '80%', ry: '300%' }}
           showArrow
           onHeaderPress={() => router.push('/detail/hrv-detail')}
+          headerRight={<InfoButton metricKey="hrv_sdnn" />}
         >
           <View style={styles.hrvBody}>
             <View style={styles.hrvRow}>
@@ -243,6 +248,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           gradientRadii={{ rx: '80%', ry: '300%' }}
           showArrow
           onHeaderPress={() => router.push('/detail/spo2-detail')}
+          headerRight={<InfoButton metricKey="spo2" />}
         >
           <View style={styles.spo2Body}>
             <View style={styles.spo2Row}>
@@ -267,6 +273,11 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
             </View>
           </View>
         </GradientInfoCard>
+      </View>
+
+      {/* 7-day Sleep Trend */}
+      <View style={styles.gradientCardSection}>
+        <DailySleepTrendCard headerRight={<InfoButton metricKey="sleep_trend_7d" />} />
       </View>
 
       {/* Sleep Tips Section (conditional) */}
@@ -347,6 +358,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
+  gaugeInfoBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 16,
+  },
   scoreMessage: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.md,
@@ -357,6 +373,39 @@ const styles = StyleSheet.create({
   },
   statsSection: {
     marginBottom: spacing.lg,
+  },
+  contributorRow: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  contributorChip: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  contributorLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+  },
+  contributorValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+    marginTop: 2,
+  },
+  contributorMeta: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    fontFamily: fontFamily.regular,
+    marginTop: 2,
+    textTransform: 'uppercase',
   },
   chartSection: {
     marginBottom: spacing.lg,

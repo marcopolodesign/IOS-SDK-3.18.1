@@ -70,7 +70,11 @@ function CountdownRing({ seconds, total = MEASURE_DURATION, size = 80 }: { secon
   );
 }
 
-export function LiveHeartRateCard() {
+type LiveHeartRateCardProps = {
+  headerRight?: React.ReactNode;
+};
+
+export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) {
   const homeData = useHomeDataContext();
   const [state, setState] = useState<MeasurementState>('idle');
   const [currentHR, setCurrentHR] = useState<number | null>(null);
@@ -305,6 +309,7 @@ export function LiveHeartRateCard() {
       gradientCenter={{ x: 0.51, y: -0.86 }}
       gradientRadii={{ rx: '80%', ry: '300%' }}
       showArrow={false}
+      headerRight={headerRight}
     >
       <View style={styles.body}>
         {state === 'measuring' ? (

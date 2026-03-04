@@ -13,6 +13,7 @@
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { SportType } from '../types/sdk.types';
 import type {
   DeviceInfo,
   StepsData,
@@ -25,6 +26,9 @@ import type {
   BatteryData,
   ConnectionState,
   BluetoothState,
+  SportData,
+  X3ActivitySession,
+  X3SleepBreathingMetrics,
 } from '../types/sdk.types';
 
 // Safely get native module
@@ -82,6 +86,11 @@ class JstyleService {
     'getHRVData',
     'getSpO2Data',
     'getTemperatureData',
+    'getActivityModeData',
+    'getSleepHRVData',
+    'getOSAData',
+    'getEOVData',
+    'getPPIData',
     'getMacAddress',
   ]);
   private readonly pendingResolverOperations = new Set<string>([
@@ -97,6 +106,11 @@ class JstyleService {
     'getHRVData',
     'getSpO2Data',
     'getTemperatureData',
+    'getActivityModeData',
+    'getSleepHRVData',
+    'getOSAData',
+    'getEOVData',
+    'getPPIData',
     'getMacAddress',
     'factoryReset',
   ]);
@@ -206,6 +220,26 @@ class JstyleService {
     return Number.isFinite(ts) && ts > 0 ? ts : undefined;
   }
 
+  private pickNumber(record: Record<string, any>, keys: string[]): number | undefined {
+    for (const key of keys) {
+      const value = Number(record?.[key]);
+      if (Number.isFinite(value)) return value;
+    }
+    return undefined;
+  }
+
+  private toSportType(value: number): SportType {
+    switch (value) {
+      case 0: return SportType.Running;
+      case 1: return SportType.Cycling;
+      case 9: return SportType.Walking;
+      case 10: return SportType.Gym;
+      case 12: return SportType.Hiking;
+      case 5: return SportType.Yoga;
+      default: return SportType.Other;
+    }
+  }
+
   /**
    * Check if Jstyle SDK is available
    */
@@ -239,11 +273,13 @@ class JstyleService {
 
   async connect(peripheralId: string): Promise<{ success: boolean; message: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    this._sleepRecordsCache = null; // clear cache so new connection fetches fresh sleep data
     return await JstyleBridge.connectToDevice(peripheralId);
   }
 
   async disconnect(): Promise<{ success: boolean; message: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    this._sleepRecordsCache = null; // clear cache on disconnect so next connect gets fresh data
     return await JstyleBridge.disconnect();
   }
 
@@ -443,6 +479,9 @@ class JstyleService {
 
   // ========== Sleep ==========
 
+  // Cache for all sleep records — populated once per app session to avoid re-hitting native SDK
+  private _sleepRecordsCache: any[] | null = null;
+
   // Parse SDK date string ("YYYY.MM.DD HH:mm:ss") to timestamp (ms)
   private parseSleepStart(value?: string): number | undefined {
     return this.parseX3DateTime(value);
@@ -466,14 +505,48 @@ class JstyleService {
     };
   }
 
-  async getSleepByDay(_dayIndex: number = 0): Promise<SleepData> {
-    const result = await this.getSleepData();
-    const records: any[] = result.records || [];
+  async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
+    // Fetch all records once and cache — the SDK returns 0 records on subsequent calls
+    if (!this._sleepRecordsCache) {
+      const result = await this.getSleepData();
+      this._sleepRecordsCache = result.records || [];
+      const allDates = this._sleepRecordsCache.map(r => {
+        const ms = r.startTimestamp || r.startTime || this.parseSleepStart(r.startTime_SleepData);
+        return ms ? new Date(ms).toISOString().split('T')[0] : '(no-ts)';
+      });
+      console.log('💤 [JstyleService] cached sleep records:', this._sleepRecordsCache.length, 'unique dates:', [...new Set(allDates)]);
+    }
+    const allRecords = this._sleepRecordsCache;
 
-    console.log('💤 [JstyleService] getSleepByDay records count:', records.length);
+    console.log('💤 [JstyleService] getSleepByDay records count:', allRecords.length, 'dayIndex:', dayIndex);
+
+    if (allRecords.length === 0) {
+      console.log('💤 [JstyleService] No sleep records - returning zeros');
+      return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
+    }
+
+    // Filter records to the target date (today - dayIndex days)
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - dayIndex);
+    const targetDateStr = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const records = allRecords.filter(record => {
+      const startMs = (() => {
+        const candidates = [
+          record.startTimestamp,
+          record.startTime,
+          this.parseSleepStart(record.startTime_SleepData),
+        ].filter((v: any) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+        return candidates.length ? candidates[0] : undefined;
+      })();
+      if (typeof startMs !== 'number') return dayIndex === 0; // no timestamp → only include for today
+      const recordDateStr = new Date(startMs).toISOString().split('T')[0];
+      return recordDateStr === targetDateStr;
+    });
+
+    console.log('💤 [JstyleService] Records for', targetDateStr, ':', records.length);
 
     if (records.length === 0) {
-      console.log('💤 [JstyleService] No sleep records - returning zeros');
       return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
     }
 
@@ -861,8 +934,200 @@ class JstyleService {
   // ========== Activity / Sport Mode ==========
 
   async getActivityModeData(): Promise<{ records: any[]; timestamp: number }> {
-    // Not implemented in current bridge
-    return { records: [], timestamp: Date.now() };
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getActivityModeData', async () =>
+      withNativeTimeout(JstyleBridge.getActivityModeData(), 10000, 'getActivityModeData')
+    );
+    return {
+      records: result.data || [],
+      timestamp: Date.now(),
+    };
+  }
+
+  async getActivityModeDataNormalized(): Promise<X3ActivitySession[]> {
+    const result = await this.getActivityModeData();
+    const sessions: X3ActivitySession[] = [];
+
+    for (const record of (result.records || [])) {
+      const entries = Array.isArray(record?.arrayActivityModeData)
+        ? record.arrayActivityModeData
+        : [record];
+
+      for (const entry of entries) {
+        const raw = entry || {};
+        const mode = Math.round(this.pickNumber(raw, ['activityMode', 'sportType', 'mode', 'type']) ?? -1);
+        const durationMin = this.pickNumber(raw, ['activityTime', 'duration', 'exerciseMinutes']) ?? 0;
+        const durationSec = Math.max(0, Math.round(durationMin > 1000 ? durationMin : durationMin * 60));
+
+        const parsedStart = this.parseX3DateTime(
+          raw.startDate || raw.startTime || raw.date || raw.startTime_ActivityModeData
+        );
+        const parsedEnd = this.parseX3DateTime(raw.endDate || raw.endTime);
+        const startTime = parsedStart ?? result.timestamp;
+        const endTime = parsedEnd ?? (durationSec > 0 ? startTime + durationSec * 1000 : startTime);
+
+        const steps = Math.max(0, Math.round(this.pickNumber(raw, ['step', 'steps']) ?? 0));
+        const distanceKm = this.pickNumber(raw, ['distance', 'distanceKm']) ?? 0;
+        const calories = Math.max(0, Math.round(this.pickNumber(raw, ['calories', 'kcal']) ?? 0));
+        const heartRateAvg = this.pickNumber(raw, ['averageHeartRate', 'avgHeartRate', 'heartRateAvg']);
+        const heartRateMax = this.pickNumber(raw, ['maxHeartRate', 'heartRateMax']);
+
+        sessions.push({
+          type: this.toSportType(mode),
+          typeLabel: raw.sportName || raw.modeName || `Sport ${mode >= 0 ? mode : 'Unknown'}`,
+          startTime,
+          endTime,
+          duration: Math.max(0, Math.round((endTime - startTime) / 1000)),
+          steps,
+          distance: Math.max(0, Math.round(distanceKm * 1000)),
+          calories,
+          heartRateAvg: heartRateAvg && heartRateAvg > 0 ? Math.round(heartRateAvg) : undefined,
+          heartRateMax: heartRateMax && heartRateMax > 0 ? Math.round(heartRateMax) : undefined,
+        });
+      }
+    }
+
+    return sessions
+      .filter(session => session.duration > 0 || session.steps > 0 || session.calories > 0)
+      .sort((a, b) => b.startTime - a.startTime);
+  }
+
+  async getSleepHRVData(): Promise<{ records: any[]; timestamp: number }> {
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getSleepHRVData', async () =>
+      withNativeTimeout(JstyleBridge.getSleepHRVData(), 10000, 'getSleepHRVData')
+    );
+    return {
+      records: result.data || [],
+      timestamp: Date.now(),
+    };
+  }
+
+  async getSleepHrvDataNormalized(): Promise<X3SleepBreathingMetrics[]> {
+    const result = await this.getSleepHRVData();
+    const metrics: X3SleepBreathingMetrics[] = [];
+
+    for (const record of (result.records || [])) {
+      const entries = Array.isArray(record?.arraySleepHrvData)
+        ? record.arraySleepHrvData
+        : [record];
+
+      for (const entry of entries) {
+        const timestamp =
+          this.parseX3DateTime(entry?.date || entry?.startDate || entry?.startTime) ?? result.timestamp;
+        const respiratoryRate = this.pickNumber(entry || {}, [
+          'respiratoryRate',
+          'respRate',
+          'breathRate',
+          'sleepRespiratoryRate',
+        ]);
+        const oxygenDropIndex = this.pickNumber(entry || {}, ['oxygenDropIndex', 'odi']);
+
+        metrics.push({
+          timestamp,
+          respiratoryRate:
+            respiratoryRate && respiratoryRate >= 8 && respiratoryRate <= 40
+              ? Math.round(respiratoryRate)
+              : undefined,
+          oxygenDropIndex: oxygenDropIndex && oxygenDropIndex >= 0 ? oxygenDropIndex : undefined,
+        });
+      }
+    }
+
+    return metrics;
+  }
+
+  async getOSAData(): Promise<{ records: any[]; timestamp: number }> {
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getOSAData', async () =>
+      withNativeTimeout(JstyleBridge.getOSAData(), 10000, 'getOSAData')
+    );
+    return {
+      records: result.data || [],
+      timestamp: Date.now(),
+    };
+  }
+
+  async getEOVData(): Promise<{ records: any[]; timestamp: number }> {
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getEOVData', async () =>
+      withNativeTimeout(JstyleBridge.getEOVData(), 10000, 'getEOVData')
+    );
+    return {
+      records: result.data || [],
+      timestamp: Date.now(),
+    };
+  }
+
+  async getOsaEovDataNormalized(): Promise<X3SleepBreathingMetrics[]> {
+    const [osa, eov] = await Promise.allSettled([this.getOSAData(), this.getEOVData()]);
+    const combined: X3SleepBreathingMetrics[] = [];
+
+    const append = (records: any[], key: 'apnoeaEvents' | 'eovEvents') => {
+      for (const record of records) {
+        const entries = Array.isArray(record?.arrayOSAData) || Array.isArray(record?.arrayEOVData)
+          ? [...(record.arrayOSAData || []), ...(record.arrayEOVData || [])]
+          : [record];
+        for (const entry of entries) {
+          const value = this.pickNumber(entry || {}, ['eventCount', 'count', 'events', 'value']);
+          if (!value || value < 0) continue;
+          const metric: X3SleepBreathingMetrics = {
+            timestamp: this.parseX3DateTime(entry?.date || entry?.startDate || entry?.startTime) ?? Date.now(),
+          };
+          metric[key] = Math.round(value);
+          combined.push(metric);
+        }
+      }
+    };
+
+    if (osa.status === 'fulfilled') append(osa.value.records || [], 'apnoeaEvents');
+    if (eov.status === 'fulfilled') append(eov.value.records || [], 'eovEvents');
+    return combined;
+  }
+
+  async getPPIData(): Promise<{ records: any[]; timestamp: number }> {
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getPPIData', async () =>
+      withNativeTimeout(JstyleBridge.getPPIData(), 10000, 'getPPIData')
+    );
+    return {
+      records: result.data || [],
+      timestamp: Date.now(),
+    };
+  }
+
+  async getPpiDataNormalized(): Promise<Array<{ timestamp: number; ppi: number }>> {
+    const result = await this.getPPIData();
+    const ppiData: Array<{ timestamp: number; ppi: number }> = [];
+
+    for (const record of (result.records || [])) {
+      const entries = Array.isArray(record?.arrayPpiData) ? record.arrayPpiData : [record];
+      for (const entry of entries) {
+        const ppi = this.pickNumber(entry || {}, ['ppi', 'rrInterval', 'rri']);
+        if (!ppi || ppi <= 0) continue;
+        ppiData.push({
+          timestamp: this.parseX3DateTime(entry?.date || entry?.startDate || entry?.startTime) ?? result.timestamp,
+          ppi,
+        });
+      }
+    }
+
+    return ppiData;
+  }
+
+  async getSportData(): Promise<SportData[]> {
+    const sessions = await this.getActivityModeDataNormalized();
+    return sessions.map(session => ({
+      type: session.type,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      duration: session.duration,
+      steps: session.steps,
+      distance: session.distance,
+      calories: session.calories,
+      heartRateAvg: session.heartRateAvg,
+      heartRateMax: session.heartRateMax,
+    }));
   }
 
   // ========== Event Listeners ==========

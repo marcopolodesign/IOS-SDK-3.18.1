@@ -6,14 +6,17 @@ import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
 import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
-import { LiveHeartRateCard } from '../../components/home/LiveHeartRateCard';
-import DailySleepTrendCard from '../../components/home/DailySleepTrendCard';
 import CalorieDeficitCard from '../../components/home/CalorieDeficitCard';
+import DailyTimelineCard from '../../components/home/DailyTimelineCard';
+import LogEntrySheet from '../../components/home/LogEntrySheet';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getScoreMessage, getSleepMessage } from '../../hooks/useHomeData';
+import { useTimelineEntries } from '../../hooks/useTimelineEntries';
+import { useAddOverlay } from '../../context/AddOverlayContext';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import NightTimeIcon from '../../assets/icons/NightTimeIcon';
 import WakeTimeIcon from '../../assets/icons/WakeTimeIcon';
+import { InfoButton } from '../../components/common/InfoButton';
 
 type OverviewTabProps = {
   onScroll?: Animated.AnimatedEvent<any>;
@@ -21,13 +24,31 @@ type OverviewTabProps = {
 
 export function OverviewTab({ onScroll }: OverviewTabProps) {
   const homeData = useHomeDataContext();
+  const { setActionHandler, showOverlay } = useAddOverlay();
+  const { entries: timelineEntries, addEntry } = useTimelineEntries();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [sheetMode, setSheetMode] = React.useState<'recovery' | 'meal' | 'activity' | null>(null);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     await homeData.refresh();
     setRefreshing(false);
   }, [homeData.refresh]);
+
+  const handleOverlayAction = React.useCallback((label: string) => {
+    if (label === 'Log Recovery') {
+      setSheetMode('recovery');
+    } else if (label === 'Log Meal' || label === 'Capture Meal') {
+      setSheetMode('meal');
+    } else if (label === 'Log Activity') {
+      setSheetMode('activity');
+    }
+  }, []);
+
+  React.useEffect(() => {
+    setActionHandler(handleOverlayAction);
+    return () => setActionHandler(null);
+  }, [setActionHandler, handleOverlayAction]);
 
   const scoreMessage = getScoreMessage(homeData.overallScore);
   const sleepMessage = getSleepMessage(homeData.sleepScore);
@@ -44,6 +65,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
   };
 
   return (
+    <>
     <Animated.ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -65,6 +87,9 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           label="OVERALL SCORE"
           animated={!homeData.isLoading}
         />
+        <View style={styles.gaugeInfoBtn}>
+          <InfoButton metricKey="recovery_score" />
+        </View>
         <Text style={styles.scoreMessage}>{scoreMessage}</Text>
       </View>
 
@@ -74,12 +99,27 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           metrics={[
             { label: 'Strain', value: homeData.strain },
             { label: 'Readiness', value: homeData.readiness },
-            { label: 'Sleep', value: homeData.sleepScore },
+            { label: 'Sleep', value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
           ]}
           insight={homeData.insight}
           backgroundImage={require('../../assets/backgrounds/insights/blue-insight.jpg')}
         />
       </TouchableOpacity>
+      {homeData.contributors.recovery.length > 0 && (
+        <View style={styles.contributorRow}>
+          {homeData.contributors.recovery.slice(0, 3).map((chip) => (
+            <View key={chip.key} style={styles.contributorChip}>
+              <Text style={styles.contributorLabel}>{chip.label}</Text>
+              <Text style={styles.contributorValue}>{chip.display}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      {homeData.contributors.recommendations[0] && (
+        <View style={styles.recommendationWrap}>
+          <Text style={styles.recommendationText}>{homeData.contributors.recommendations[0]}</Text>
+        </View>
+      )}
 
       {/* Sleep Preview
       <View style={styles.previewSection}>
@@ -92,7 +132,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
         />
       </View> */}
 
-      {/* Reusable gradient info card example */}
+      {/* Sleep Score */}
       <View style={styles.gradientCardSection}>
         <GradientInfoCard
           icon={<SleepScoreIcon />}
@@ -107,6 +147,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           ]}
           gradientCenter={{ x: 0.51, y: -0.86 }}
           gradientRadii={{ rx: '80%', ry: '300%' }}
+          headerRight={<InfoButton metricKey="sleep_score" />}
         >
           <View style={styles.sleepTimeline}>
             <View style={styles.sleepTimeItem}>
@@ -127,29 +168,37 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
         </GradientInfoCard>
       </View>
 
-      {/* Live HR measurement */}
-      <View style={styles.gradientCardSection}>
-        <LiveHeartRateCard />
-      </View>
-
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>
-        <DailyHeartRateCard preloadedData={homeData.hrChartData} />
+        <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} />
       </View>
 
       {/* Caloric deficit */}
       <View style={styles.gradientCardSection}>
-        <CalorieDeficitCard activeCalories={homeData.activity.adjustedActiveCalories} />
+        <CalorieDeficitCard activeCalories={homeData.activity.adjustedActiveCalories} headerRight={<InfoButton metricKey="calorie_deficit" />} />
       </View>
 
-      {/* Sleep trend (7 days) */}
+      {/* Daily Chronology Timeline */}
       <View style={styles.gradientCardSection}>
-        <DailySleepTrendCard />
+        <DailyTimelineCard
+          sleep={sleep}
+          activitySessions={homeData.activitySessions}
+          manualEntries={timelineEntries}
+          onAddPress={() => showOverlay()}
+        />
       </View>
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
+
+    <LogEntrySheet
+      visible={sheetMode !== null}
+      mode={sheetMode}
+      onClose={() => setSheetMode(null)}
+      onSave={addEntry}
+    />
+    </>
   );
 }
 
@@ -165,9 +214,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
   },
+  gaugeInfoBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 16,
+  },
   metricsInsightSection: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
+  },
+  contributorRow: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  contributorChip: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  contributorLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+  },
+  contributorValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+    marginTop: 2,
+  },
+  recommendationWrap: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  recommendationText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    lineHeight: 20,
   },
   scoreMessage: {
     color: 'rgba(255, 255, 255, 0.8)',

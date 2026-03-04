@@ -86,6 +86,14 @@ export default function SleepDetailScreen() {
     : null;
   const dayData = todayFallback ?? (selectedDateKey ? data.get(selectedDateKey) : undefined);
 
+  // Debug logging
+  console.log('[SleepDetail] selectedIndex=', selectedIndex, 'selectedDateKey=', selectedDateKey);
+  console.log('[SleepDetail] data map keys=', Array.from(data.keys()));
+  console.log('[SleepDetail] isLoading=', isLoading, 'dayData=', dayData ? `score=${dayData.score} total=${dayData.timeAsleepMinutes}min` : null);
+  if (selectedIndex !== 0) {
+    console.log('[SleepDetail] RAW data.get(selectedDateKey)=', data.get(selectedDateKey));
+  }
+
   const efficiency = dayData && dayData.timeAsleepMinutes > 0
     ? Math.round(((dayData.deepMin + dayData.lightMin + dayData.remMin) / dayData.timeAsleepMinutes) * 100)
     : null;

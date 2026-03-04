@@ -1,99 +1,71 @@
 /**
- * StyledHealthScreen - Ring health metrics with frosted glass styling
- * Shows heart rate, SpO2, HRV, sleep, and other health data from the ring
+ * StyledHealthScreen - Oura-style Health Vitals Overview
+ * Shows a premium overview of Sleep, Activity, and Recovery with scores,
+ * status labels, animated range bars, and key sub-metrics.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  ImageBackground,
-  Dimensions,
+  RefreshControl,
+  Animated,
+  Easing,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Polyline } from 'react-native-svg';
-import { useSmartRing } from '../hooks';
-import { GlassCard } from '../components/home/GlassCard';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
+
+import { GradientInfoCard } from '../components/common/GradientInfoCard';
+import { LiveHeartRateCard } from '../components/home/LiveHeartRateCard';
 import { useHomeDataContext } from '../context/HomeDataContext';
+import { colors, spacing, fontSize, fontFamily } from '../theme/colors';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-// Icons
-function HeartIcon({ size = 28 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={1.5}
-        fill="rgba(239,68,68,0.4)"
-      />
-    </Svg>
-  );
+type ScoreLabel = 'OPTIMAL' | 'GOOD' | 'FAIR' | 'NEEDS REST';
+
+function getScoreLabel(score: number): ScoreLabel {
+  if (score >= 85) return 'OPTIMAL';
+  if (score >= 70) return 'GOOD';
+  if (score >= 50) return 'FAIR';
+  return 'NEEDS REST';
 }
 
-function OxygenIcon({ size = 28 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={9} stroke="rgba(255,255,255,0.9)" strokeWidth={1.5} />
-      <Path
-        d="M9 12a3 3 0 1 0 6 0 3 3 0 1 0-6 0"
-        stroke="rgba(96,165,250,0.8)"
-        strokeWidth={1.5}
-      />
-    </Svg>
-  );
+function getScoreLabelColor(label: ScoreLabel): string {
+  switch (label) {
+    case 'OPTIMAL':    return '#C4FF6B';
+    case 'GOOD':       return '#00D4AA';
+    case 'FAIR':       return '#FFB84D';
+    case 'NEEDS REST': return '#FF6B6B';
+  }
 }
 
-function HRVIcon({ size = 28 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Polyline
-        points="3,12 7,12 9,6 12,18 15,9 17,12 21,12"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Svg>
-  );
+function getTodayLabel(): string {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
 }
 
-function SleepIcon({ size = 28 }: { size?: number }) {
+function fmtNum(val: number | undefined, fallback = '--'): string {
+  if (!val || val === 0) return fallback;
+  return String(Math.round(val));
+}
+
+// ─── Inline Icons ────────────────────────────────────────────────────────────
+
+function MoonIcon() {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
       <Path
         d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={1.5}
-        fill="rgba(139,92,246,0.4)"
-      />
-    </Svg>
-  );
-}
-
-function TempIcon({ size = 28 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={1.5}
-      />
-    </Svg>
-  );
-}
-
-function StepsIcon({ size = 28 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M4 16l4-8 4 8 4-8 4 8"
-        stroke="rgba(255,255,255,0.9)"
-        strokeWidth={1.5}
+        stroke="#6B8EFF"
+        strokeWidth={1.8}
+        fill="rgba(107,142,255,0.25)"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -101,395 +73,481 @@ function StepsIcon({ size = 28 }: { size?: number }) {
   );
 }
 
-// Large Metric Card
-function LargeMetricCard({ 
-  icon, 
-  title, 
-  value, 
-  unit, 
-  subtitle,
-  color = 'rgba(255,255,255,0.95)' 
-}: { 
-  icon: React.ReactNode; 
-  title: string; 
-  value: string; 
-  unit: string;
-  subtitle?: string;
-  color?: string;
-}) {
+function FlameIcon() {
   return (
-    <GlassCard style={styles.largeMetricCard}>
-      <View style={styles.metricHeader}>
-        <View style={styles.metricIconBg}>{icon}</View>
-        <Text style={styles.metricTitle}>{title}</Text>
-      </View>
-      <View style={styles.metricValueRow}>
-        <Text style={[styles.largeValue, { color }]}>{value}</Text>
-        <Text style={styles.largeUnit}>{unit}</Text>
-      </View>
-      {subtitle && <Text style={styles.metricSubtitle}>{subtitle}</Text>}
-    </GlassCard>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+        stroke="#00D4AA"
+        strokeWidth={1.8}
+        fill="rgba(0,212,170,0.25)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
-// Small Metric Card
-function SmallMetricCard({ 
-  icon, 
-  title, 
-  value, 
-  unit, 
-  color = 'rgba(255,255,255,0.95)' 
-}: { 
-  icon: React.ReactNode; 
-  title: string; 
-  value: string; 
-  unit: string;
-  color?: string;
-}) {
+function HeartPulseIcon() {
   return (
-    <GlassCard style={styles.smallMetricCard}>
-      <View style={styles.smallMetricIcon}>{icon}</View>
-      <Text style={styles.smallMetricTitle}>{title}</Text>
-      <View style={styles.smallMetricValueRow}>
-        <Text style={[styles.smallValue, { color }]}>{value}</Text>
-        <Text style={styles.smallUnit}>{unit}</Text>
-      </View>
-    </GlassCard>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+        stroke="#C4FF6B"
+        strokeWidth={1.8}
+        fill="rgba(196,255,107,0.2)"
+      />
+    </Svg>
   );
 }
+
+// ─── Score Label Badge ────────────────────────────────────────────────────────
+
+function ScoreLabelBadge({ label, color }: { label: ScoreLabel; color: string }) {
+  return (
+    <View
+      style={[
+        badge.pill,
+        { backgroundColor: `${color}20`, borderColor: `${color}55` },
+      ]}
+    >
+      <Text style={[badge.text, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+const badge = StyleSheet.create({
+  pill: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  text: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.xs,
+    letterSpacing: 0.8,
+  },
+});
+
+// ─── Range Indicator Bar ──────────────────────────────────────────────────────
+
+function RangeIndicatorBar({ score, color }: { score: number; color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: score,
+      duration: 1000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [score]);
+
+  const fillWidth = anim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <View style={barStyles.wrapper}>
+      <View style={barStyles.track}>
+        <Animated.View style={[barStyles.fill, { width: fillWidth, backgroundColor: color }]}>
+          <View
+            style={[
+              barStyles.thumb,
+              {
+                backgroundColor: color,
+                shadowColor: color,
+              },
+            ]}
+          />
+        </Animated.View>
+      </View>
+      <View style={barStyles.labels}>
+        <Text style={barStyles.labelText}>0</Text>
+        <Text style={barStyles.labelText}>100</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Steps Progress Bar ───────────────────────────────────────────────────────
+
+const STEPS_GOAL = 8000;
+
+function StepsProgressBar({ steps, color }: { steps: number; color: string }) {
+  const pct = Math.min(100, STEPS_GOAL > 0 ? (steps / STEPS_GOAL) * 100 : 0);
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: pct,
+      duration: 1000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [pct]);
+
+  const fillWidth = anim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
+  const goalReached = steps > 0 && steps >= STEPS_GOAL;
+  const label = goalReached
+    ? 'Goal reached!'
+    : steps > 0
+    ? `${steps.toLocaleString()} / ${STEPS_GOAL.toLocaleString()} steps`
+    : '-- steps';
+
+  return (
+    <View style={barStyles.wrapper}>
+      <View style={barStyles.track}>
+        <Animated.View style={[barStyles.fill, { width: fillWidth, backgroundColor: color }]}>
+          <View style={[barStyles.thumb, { backgroundColor: color, shadowColor: color }]} />
+        </Animated.View>
+      </View>
+      <View style={barStyles.stepsLabelRow}>
+        <Text style={barStyles.stepsLabel}>{label}</Text>
+        <Text style={barStyles.stepsGoal}>{STEPS_GOAL.toLocaleString()} goal</Text>
+      </View>
+    </View>
+  );
+}
+
+const barStyles = StyleSheet.create({
+  wrapper: {
+    gap: 6,
+  },
+  track: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    overflow: 'visible',
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 2,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  thumb: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    position: 'absolute',
+    right: -5,
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  labels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  labelText: {
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.35)',
+  },
+  stepsLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  stepsLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  stepsGoal: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.3)',
+  },
+});
+
+// ─── Sub-Metrics Row ──────────────────────────────────────────────────────────
+
+type SubMetric = { label: string; value: string; unit?: string };
+
+function SubMetricsRow({ metrics }: { metrics: SubMetric[] }) {
+  return (
+    <View style={subStyles.row}>
+      {metrics.map((m, i) => (
+        <React.Fragment key={m.label}>
+          <View style={subStyles.item}>
+            <View style={subStyles.valueRow}>
+              <Text style={subStyles.value}>{m.value}</Text>
+              {m.unit ? <Text style={subStyles.unit}> {m.unit}</Text> : null}
+            </View>
+            <Text style={subStyles.label}>{m.label}</Text>
+          </View>
+          {i < metrics.length - 1 && <View style={subStyles.divider} />}
+        </React.Fragment>
+      ))}
+    </View>
+  );
+}
+
+const subStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  item: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  value: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.xl,
+    color: '#FFFFFF',
+  },
+  unit: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  label: {
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  divider: {
+    width: 1,
+    height: 32,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export function StyledHealthScreen() {
-  const insets = useSafeAreaInsets();
-  const { isConnected, connectedDevice, refreshMetrics, metrics, battery } = useSmartRing();
   const homeData = useHomeDataContext();
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Refresh metrics on mount and whenever we become connected
-  useEffect(() => {
-    if (isConnected) {
-      refreshMetrics();
-    }
-  }, [isConnected, refreshMetrics]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await homeData.refresh();
+    setRefreshing(false);
+  }, [homeData.refresh]);
 
-  const healthData = useMemo(() => {
-    const hr = metrics.heartRate ?? '--';
-    const spo2 = metrics.spo2 ?? '--';
-    const steps = metrics.steps ?? '--';
-    const calories = metrics.calories ?? '--';
-    const distanceKm = metrics.distance ? (metrics.distance / 1000).toFixed(2) : '--';
+  const sleep = homeData.lastNightSleep;
+  const activity = homeData.activity;
+  const hrFallbackValues = homeData.hrChartData
+    .map(point => Number(point.heartRate))
+    .filter(value => Number.isFinite(value) && value > 0);
+  const restingHRForDisplay =
+    sleep?.restingHR && sleep.restingHR > 0
+      ? sleep.restingHR
+      : hrFallbackValues.length > 0
+      ? Math.min(...hrFallbackValues)
+      : 0;
 
-    return {
-      heartRate: isConnected ? hr : '--',
-      heartRateStatus: isConnected && hr !== '--' ? 'Live' : 'Unavailable',
-      spo2: isConnected ? spo2 : '--',
-      hrv: homeData.hrvSdnn > 0 ? String(homeData.hrvSdnn) : '--',
-      hrvStatus: homeData.hrvSdnn > 0 ? 'ms SDNN' : '—',
-      sleepScore: '--',
-      sleepDuration: '--',
-      skinTemp: '--',
-      steps: isConnected ? steps : '--',
-      calories: isConnected ? calories : '--',
-      respiratoryRate: '--',
-      distance: isConnected ? distanceKm : '--',
-      battery: battery ?? '--',
-    };
-  }, [isConnected, metrics, battery, homeData.hrvSdnn]);
+  // Sleep
+  const sleepScore = homeData.sleepScore;
+  const sleepLabel = getScoreLabel(sleepScore);
+  const sleepLabelColor = getScoreLabelColor(sleepLabel);
+  const sleepSubMetrics: SubMetric[] = [
+    { label: 'Total Sleep', value: sleep?.timeAsleep || '--' },
+    {
+      label: 'Resting HR',
+      value: fmtNum(restingHRForDisplay),
+      unit: restingHRForDisplay ? 'bpm' : undefined,
+    },
+    {
+      label: 'Resp. Rate',
+      value: fmtNum(sleep?.respiratoryRate),
+      unit: sleep?.respiratoryRate ? '/min' : undefined,
+    },
+  ];
 
-  // healthData now pulls from live metrics via useSmartRing
+  // Activity
+  const activityScore = activity?.score ?? 0;
+  const activityLabel = getScoreLabel(activityScore);
+  const activityLabelColor = getScoreLabelColor(activityLabel);
+  const steps = activity?.steps ?? 0;
+  const activitySubMetrics: SubMetric[] = [
+    {
+      label: 'Steps',
+      value: steps > 0 ? steps.toLocaleString() : '--',
+    },
+    {
+      label: 'Calories',
+      value: fmtNum(activity?.calories),
+      unit: activity?.calories ? 'kcal' : undefined,
+    },
+    {
+      label: 'Active Min',
+      value: fmtNum(activity?.activeMinutes),
+      unit: activity?.activeMinutes ? 'min' : undefined,
+    },
+  ];
+
+  // Recovery
+  const readiness = homeData.readiness;
+  const recoveryLabel = getScoreLabel(readiness);
+  const recoveryLabelColor = getScoreLabelColor(recoveryLabel);
+  const recoverySubMetrics: SubMetric[] = [
+    {
+      label: 'HRV',
+      value: fmtNum(homeData.hrvSdnn),
+      unit: homeData.hrvSdnn ? 'ms' : undefined,
+    },
+    {
+      label: 'Strain',
+      value: fmtNum(homeData.strain),
+    },
+    {
+      label: 'Readiness',
+      value: readiness > 0 ? String(readiness) : '--',
+    },
+  ];
 
   return (
-    <ImageBackground
-      source={require('../assets/backgrounds/sleep.jpg')}
-      style={styles.backgroundImage}
-      resizeMode="cover"
-    >
-      <View style={styles.overlay} />
-      
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="rgba(255,255,255,0.7)"
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Health</Text>
-          {isConnected ? (
-            <View style={styles.connectedBadge}>
-              <View style={styles.connectedDot} />
-              <Text style={styles.connectedText}>Ring Connected</Text>
-            </View>
-          ) : (
-            <View style={styles.disconnectedBadge}>
-              <Text style={styles.disconnectedText}>Ring Not Connected</Text>
-            </View>
-          )}
+          <Text style={styles.headerDate}>{getTodayLabel()}</Text>
         </View>
 
-        <ScrollView 
-          style={styles.scrollView} 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {!isConnected && (
-            <GlassCard style={styles.warningCard}>
-              <Text style={styles.warningTitle}>Connect Your Ring</Text>
-              <Text style={styles.warningText}>
-                Go to the Ring tab to connect your Smart Ring and see your health data here.
-              </Text>
-            </GlassCard>
-          )}
+        {/* Sleep Card */}
+        <View style={styles.cardWrap}>
+          <GradientInfoCard
+            icon={<MoonIcon />}
+            title="Sleep"
+            headerValue={sleepScore > 0 ? sleepScore : undefined}
+            showArrow
+            onHeaderPress={() => router.push('/detail/sleep-detail')}
+            gradientStops={[
+              { offset: 0, color: '#3B1D8A', opacity: 1 },
+              { offset: 0.6, color: '#3B1D8A', opacity: 0 },
+            ]}
+            gradientCenter={{ x: 0.5, y: -0.5 }}
+            gradientRadii={{ rx: '100%', ry: '250%' }}
+          >
+            <ScoreLabelBadge label={sleepLabel} color={sleepLabelColor} />
+            <RangeIndicatorBar score={sleepScore} color="#6B8EFF" />
+            <SubMetricsRow metrics={sleepSubMetrics} />
+          </GradientInfoCard>
+        </View>
 
-          {/* Heart Rate - Large Card */}
-          <LargeMetricCard
-            icon={<HeartIcon />}
-            title="Heart Rate"
-            value={String(healthData.heartRate)}
-            unit="bpm"
-            subtitle={isConnected ? healthData.heartRateStatus : undefined}
-            color="#F87171"
-          />
+        {/* Activity Card */}
+        <View style={styles.cardWrap}>
+          <GradientInfoCard
+            icon={<FlameIcon />}
+            title="Activity"
+            headerValue={activityScore > 0 ? activityScore : undefined}
+            showArrow
+            onHeaderPress={() => router.push('/detail/activity-detail')}
+            gradientStops={[
+              { offset: 0, color: '#00533F', opacity: 1 },
+              { offset: 0.6, color: '#00533F', opacity: 0 },
+            ]}
+            gradientCenter={{ x: 0.5, y: -0.5 }}
+            gradientRadii={{ rx: '100%', ry: '250%' }}
+          >
+            <ScoreLabelBadge label={activityLabel} color={activityLabelColor} />
+            <StepsProgressBar steps={steps} color="#00D4AA" />
+            <SubMetricsRow metrics={activitySubMetrics} />
+          </GradientInfoCard>
+        </View>
 
-          {/* Grid of smaller metrics */}
-          <View style={styles.metricsGrid}>
-            <SmallMetricCard
-              icon={<OxygenIcon size={24} />}
-              title="Blood Oxygen"
-              value={String(healthData.spo2)}
-              unit="%"
-              color="#60A5FA"
-            />
-            <SmallMetricCard
-              icon={<HRVIcon size={24} />}
-              title="HRV"
-              value={String(healthData.hrv)}
-              unit="ms"
-              color="#A78BFA"
-            />
-          </View>
+        {/* Recovery Card */}
+        <View style={styles.cardWrap}>
+          <GradientInfoCard
+            icon={<HeartPulseIcon />}
+            title="Recovery"
+            headerValue={readiness > 0 ? readiness : undefined}
+            showArrow
+            onHeaderPress={() => router.push('/detail/recovery-detail')}
+            gradientStops={[
+              { offset: 0, color: '#2A4A1A', opacity: 1 },
+              { offset: 0.6, color: '#2A4A1A', opacity: 0 },
+            ]}
+            gradientCenter={{ x: 0.5, y: -0.5 }}
+            gradientRadii={{ rx: '100%', ry: '250%' }}
+          >
+            <ScoreLabelBadge label={recoveryLabel} color={recoveryLabelColor} />
+            <RangeIndicatorBar score={readiness} color="#C4FF6B" />
+            <SubMetricsRow metrics={recoverySubMetrics} />
+          </GradientInfoCard>
+        </View>
 
-          {/* Sleep - Large Card */}
-          <LargeMetricCard
-            icon={<SleepIcon />}
-            title="Sleep Score"
-            value={String(healthData.sleepScore)}
-            unit="/100"
-            subtitle={isConnected ? `Last night: ${healthData.sleepDuration}` : undefined}
-            color="#A78BFA"
-          />
+        {/* Live HR measurement */}
+        <View style={styles.cardWrap}>
+          <LiveHeartRateCard />
+        </View>
 
-          {/* More metrics grid */}
-          <View style={styles.metricsGrid}>
-            <SmallMetricCard
-              icon={<TempIcon size={24} />}
-              title="Skin Temp"
-              value={String(healthData.skinTemp)}
-              unit="°C"
-              color="#FB923C"
-            />
-            <SmallMetricCard
-              icon={<StepsIcon size={24} />}
-              title="Steps"
-              value={isConnected ? healthData.steps.toLocaleString() : '--'}
-              unit="today"
-              color="#4ADE80"
-            />
-          </View>
-
-          {/* Additional stats */}
-          <GlassCard style={styles.additionalStats}>
-            <Text style={styles.additionalTitle}>Additional Metrics</Text>
-            <View style={styles.statRow}>
-              <Text style={styles.statLabel}>Respiratory Rate</Text>
-              <Text style={styles.statValue}>{healthData.respiratoryRate} breaths/min</Text>
-            </View>
-            <View style={styles.statRow}>
-              <Text style={styles.statLabel}>Active Calories</Text>
-              <Text style={styles.statValue}>{healthData.calories} kcal</Text>
-            </View>
-            <View style={styles.statRow}>
-              <Text style={styles.statLabel}>Resting Heart Rate</Text>
-              <Text style={styles.statValue}>{isConnected ? '62' : '--'} bpm</Text>
-            </View>
-          </GlassCard>
-        </ScrollView>
-      </View>
-    </ImageBackground>
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  backgroundImage: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
   container: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: 'white',
-  },
-  connectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(74, 222, 128, 0.2)',
-    gap: 6,
-  },
-  connectedDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4ADE80',
-  },
-  connectedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
-  },
-  disconnectedBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(248, 113, 113, 0.2)',
-  },
-  disconnectedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  scrollView: {
+  scroll: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 100,
+    paddingBottom: spacing.xxl,
   },
-  warningCard: {
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(251, 191, 36, 0.3)',
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FCD34D',
-    marginBottom: 8,
-  },
-  warningText: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    lineHeight: 20,
-  },
-  largeMetricCard: {
-    padding: 20,
-    marginBottom: 16,
-  },
-  metricHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  metricIconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metricTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  metricValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  largeValue: {
-    fontSize: 48,
-    fontWeight: '700',
-  },
-  largeUnit: {
-    fontSize: 18,
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  metricSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 8,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  smallMetricCard: {
-    flex: 1,
-    padding: 16,
-    alignItems: 'flex-start',
-  },
-  smallMetricIcon: {
-    marginBottom: 10,
-  },
-  smallMetricTitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginBottom: 6,
-  },
-  smallMetricValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
-  smallValue: {
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  smallUnit: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  additionalStats: {
-    padding: 20,
-    marginTop: 8,
-  },
-  additionalTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 16,
-  },
-  statRow: {
+  header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'flex-end',
   },
-  statLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
+  headerTitle: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.xxl,
+    color: '#FFFFFF',
   },
-  statValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
+  headerDate: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.4)',
+    paddingBottom: 3,
+  },
+  cardWrap: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  bottomSpacer: {
+    height: 40,
   },
 });
 

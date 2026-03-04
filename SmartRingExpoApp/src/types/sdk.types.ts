@@ -108,6 +108,44 @@ export interface SportData {
   heartRateMax?: number;
 }
 
+export interface X3ActivitySession {
+  type: SportType;
+  typeLabel: string;
+  startTime: number;
+  endTime: number;
+  duration: number; // seconds
+  steps: number;
+  distance: number; // meters
+  calories: number;
+  heartRateAvg?: number;
+  heartRateMax?: number;
+}
+
+export interface X3SleepBreathingMetrics {
+  timestamp: number;
+  respiratoryRate?: number;
+  apnoeaEvents?: number;
+  eovEvents?: number;
+  oxygenDropIndex?: number;
+}
+
+export interface RecoveryContributors {
+  hrvBalance: number | null;
+  restingHrDelta: number | null;
+  tempDeviation: number | null;
+  overnightSpo2: number | null;
+  sleepImpact: number | null;
+}
+
+export interface FeatureAvailability {
+  respiratoryRate: boolean;
+  activitySessions: boolean;
+  stressIndex: boolean;
+  sleepHrv: boolean;
+  osaEov: boolean;
+  ppi: boolean;
+}
+
 export enum SportType {
   Walking = 0,
   Running = 1,
@@ -249,7 +287,6 @@ export interface ISmartRingService {
   // State
   isUsingMockData(): boolean;
 }
-
 
 
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -9,7 +9,7 @@ import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
-import JstyleService from '../../services/JstyleService';
+import { InfoButton } from '../../components/common/InfoButton';
 
 // Workout type icons
 function WorkoutIcon({ type }: { type: string }) {
@@ -113,8 +113,6 @@ function OxygenIcon() {
 export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = React.useState(false);
-  const [temperature, setTemperature] = useState<number | null>(null);
-  const [minSpo2, setMinSpo2] = useState<number | null>(null);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -122,39 +120,21 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
     setRefreshing(false);
   }, [homeData.refresh]);
 
-  // Fetch temperature and SpO2 only when Activity tab is visible and home sync is idle.
+  // Trigger targeted retry when this tab is visible but vitals are still missing.
   useEffect(() => {
     if (!isActive || !homeData.isRingConnected || homeData.isSyncing) return;
-    let cancelled = false;
-    const fetchVitals = async () => {
-      try {
-        try {
-          const tempData = await JstyleService.getTemperatureDataNormalized();
-          if (!cancelled && tempData.length > 0) {
-            setTemperature(tempData[tempData.length - 1].temperature);
-          }
-        } catch (e) { console.log('[ActivityTab] temperature error:', e); }
-        try {
-          const rawSpo2 = await JstyleService.getSpO2Data();
-          console.log('[ActivityTab] RAW spo2:', JSON.stringify(rawSpo2));
-          if (!cancelled) {
-            // flatten arrayAutomaticSpo2Data entries from all packets
-            const allEntries: any[] = [];
-            for (const rec of rawSpo2.records || []) {
-              const arr: any[] = rec.arrayAutomaticSpo2Data || [];
-              allEntries.push(...arr);
-            }
-            console.log('[ActivityTab] spo2 flattened entries count:', allEntries.length);
-            console.log('[ActivityTab] spo2 first 3 entries:', JSON.stringify(allEntries.slice(0, 3)));
-            const values = allEntries.map((e: any) => Number(e.automaticSpo2Data ?? 0)).filter(v => v > 0);
-            if (values.length > 0) setMinSpo2(Math.min(...values));
-          }
-        } catch (e) { console.log('[ActivityTab] spo2 error:', e); }
-      } catch (e) { console.log('[ActivityTab] fetchVitals error:', e); }
-    };
-    fetchVitals();
-    return () => { cancelled = true; };
-  }, [isActive, homeData.isRingConnected, homeData.isSyncing]);
+    if (homeData.cardDataStatus === 'retrying') return;
+    if (homeData.todayVitals.temperatureC !== null && homeData.todayVitals.minSpo2 !== null) return;
+    void homeData.refreshMissingCardData('tab-focus');
+  }, [
+    isActive,
+    homeData.isRingConnected,
+    homeData.isSyncing,
+    homeData.cardDataStatus,
+    homeData.todayVitals.temperatureC,
+    homeData.todayVitals.minSpo2,
+    homeData.refreshMissingCardData,
+  ]);
 
   const activityMessage = getActivityMessage(homeData.activity.score);
   const activity = homeData.activity;
@@ -165,12 +145,13 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const distanceKmRounded = Math.round(distanceKm);
 
   // Temperature status
-  const tempC = temperature ?? 0;
+  const tempC = homeData.todayVitals.temperatureC ?? 0;
   const tempF = tempC > 0 ? Math.round(tempC * 9 / 5 + 32) : null;
   const tempStatus = tempC >= 36.1 && tempC <= 37.2 ? 'Normal' : tempC > 37.2 ? 'Elevated' : tempC > 0 ? 'Low' : null;
   const tempColor = tempStatus === 'Normal' ? '#4ADE80' : tempStatus === 'Elevated' ? '#FF6B6B' : '#FFD700';
 
   // SpO2 status
+  const minSpo2 = homeData.todayVitals.minSpo2;
   const spo2Status = minSpo2
     ? minSpo2 >= 95 ? 'Normal' : minSpo2 >= 90 ? 'Low' : 'Very low'
     : null;
@@ -201,6 +182,9 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           goal={calorieGoal}
           message={activityMessage}
         />
+        <View style={styles.gaugeInfoBtn}>
+          <InfoButton metricKey="steps" />
+        </View>
       </View>
 
       {/* Activity Insight/metrics card (shared component) */}
@@ -215,6 +199,16 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           backgroundImage={require('../../assets/backgrounds/insights/red-insight.jpg')}
         />
       </TouchableOpacity>
+      {homeData.contributors.activity.length > 0 && (
+        <View style={styles.contributorRow}>
+          {homeData.contributors.activity.slice(0, 3).map((chip) => (
+            <View key={chip.key} style={styles.contributorChip}>
+              <Text style={styles.contributorLabel}>{chip.label}</Text>
+              <Text style={styles.contributorValue}>{chip.display}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Recent Workouts */}
       <View style={styles.workoutsSection}>
@@ -273,6 +267,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
             showArrow
             onHeaderPress={() => router.push('/detail/temperature-detail')}
             style={{ flex: 1 }}
+            headerRight={<InfoButton metricKey="body_temperature" />}
           >
             <View style={styles.vitalBody}>
               {tempF && (
@@ -305,6 +300,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
             showArrow
             onHeaderPress={() => router.push('/detail/spo2-detail')}
             style={{ flex: 1 }}
+            headerRight={<InfoButton metricKey="spo2" />}
           >
             <View style={styles.vitalBody}>
               {minSpo2 && (
@@ -321,6 +317,41 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           </GradientInfoCard>
         </View>
       </View>
+
+      {/* Recent Sessions (X3 parity additive section) */}
+      {homeData.featureAvailability.activitySessions && (
+        <View style={styles.sessionsSection}>
+          <Text style={styles.sectionTitle}>Recent Sessions</Text>
+          <GlassCard style={styles.sessionsCard} noPadding>
+            {homeData.activitySessions.length > 0 ? (
+              homeData.activitySessions.slice(0, 4).map((session, index) => (
+                <React.Fragment key={`${session.startTime}-${session.type}-${index}`}>
+                  <View style={styles.sessionRow}>
+                    <View style={styles.sessionLeft}>
+                      <Text style={styles.sessionTitle}>{session.typeLabel}</Text>
+                      <Text style={styles.sessionMeta}>
+                        {Math.round(session.duration / 60)} min • {session.calories} kcal
+                      </Text>
+                    </View>
+                    <View style={styles.sessionRight}>
+                      <Text style={styles.sessionStat}>{session.steps.toLocaleString()} steps</Text>
+                      <Text style={styles.sessionStat}>{Math.round(session.distance / 1000)} km</Text>
+                    </View>
+                  </View>
+                  {index < Math.min(homeData.activitySessions.length, 4) - 1 && (
+                    <View style={styles.workoutDivider} />
+                  )}
+                </React.Fragment>
+              ))
+            ) : (
+              <View style={styles.emptyWorkouts}>
+                <Text style={styles.emptyText}>No recent ring sessions</Text>
+                <Text style={styles.emptySubtext}>Sessions will appear after sport-mode sync</Text>
+              </View>
+            )}
+          </GlassCard>
+        </View>
+      )}
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
@@ -374,6 +405,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
+  gaugeInfoBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 16,
+  },
   scoreMessage: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.md,
@@ -388,6 +424,32 @@ const styles = StyleSheet.create({
   insightSection: {
     marginBottom: spacing.lg,
     marginHorizontal: spacing.md,
+  },
+  contributorRow: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  contributorChip: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  contributorLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+  },
+  contributorValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+    marginTop: 2,
   },
   workoutsSection: {
     paddingHorizontal: spacing.lg,
@@ -497,6 +559,43 @@ const styles = StyleSheet.create({
   vitalsSection: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
+  },
+  sessionsSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  sessionsCard: {
+    paddingVertical: spacing.sm,
+  },
+  sessionRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionLeft: {
+    flex: 1,
+  },
+  sessionRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  sessionTitle: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
+  },
+  sessionMeta: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+    marginTop: 2,
+  },
+  sessionStat: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
   },
   vitalsRow: {
     flexDirection: 'row',

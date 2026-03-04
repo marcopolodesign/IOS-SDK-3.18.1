@@ -24,6 +24,8 @@ type GradientInfoCardProps = {
   gradientRadii?: { rx: string; ry: string };
   style?: ViewStyle;
   onHeaderPress?: () => void;
+  /** Optional node placed on the right side of the header (e.g. InfoButton) */
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -46,6 +48,7 @@ export function GradientInfoCard({
   gradientRadii = { rx: '80%', ry: '300%' },
   style,
   onHeaderPress,
+  headerRight,
   children,
 }: GradientInfoCardProps) {
   return (
@@ -90,6 +93,7 @@ export function GradientInfoCard({
                 <Text style={styles.title}>{title}</Text>
                 {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
               </View>
+              {headerRight && <View>{headerRight}</View>}
             </TouchableOpacity>
           ) : (
             <View style={styles.header}>
@@ -98,6 +102,7 @@ export function GradientInfoCard({
                 <Text style={styles.title}>{title}</Text>
                 {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
               </View>
+              {headerRight && <View>{headerRight}</View>}
             </View>
           )}
 

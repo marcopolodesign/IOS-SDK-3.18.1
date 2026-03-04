@@ -11,9 +11,10 @@ type HourRange = { hour: number; min: number; max: number; hasData: boolean };
 type Props = {
   /** Pre-fetched data — skips the internal BLE fetch when provided */
   preloadedData?: Array<{ timeMinutes: number; heartRate: number }>;
+  headerRight?: React.ReactNode;
 };
 
-export function DailyHeartRateCard({ preloadedData }: Props = {}) {
+export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
   const [hourlyHrRanges, setHourlyHrRanges] = useState<HourRange[]>([]);
   const [selectedHrIndex, setSelectedHrIndex] = useState<number | null>(null);
   const isMockData = UnifiedSmartRingService.isUsingMockData();
@@ -184,6 +185,7 @@ export function DailyHeartRateCard({ preloadedData }: Props = {}) {
         router.push('/detail/heart-rate-detail');
       }}
       showArrow
+      headerRight={headerRight}
     >
       <View style={styles.hrChart}>
         {noData ? (
