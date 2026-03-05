@@ -2,17 +2,197 @@
 
 This document provides context for Claude Code when working on this Expo/React Native project.
 
-> **📝 Important:** When completing tasks, **always update this file** with a summary of what was done/changed/implemented in the "Recent Changes" section below. This keeps the project history clear and helps future context.
+> **📝 Important:** When completing tasks, **always update `catchup.md`** with a concise entry for what was implemented, and add a summary to the "Recent Changes" section below. `catchup.md` is the canonical implementation log — always write there first after every successful implementation.
 
 ## Project Overview
 
-Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring via CRPSmartBand SDK integration.
+Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring via the **Jstyle/X3 SDK only**.
+
+## Active SDK
+
+> **CRITICAL: Only the Jstyle/X3 SDK is used.** QCBand SDK is present in the repo but is NOT active and must NOT be used. All ring communication goes through `JstyleBridge.m` (native) → `JstyleService.ts` → `UnifiedSmartRingService.ts`. Never add code paths for QCBand, never call `QCBandService`, never reference `QCBandBridge`.
 
 ## SDK Reference Rule
 
 > **IMPORTANT:** When implementing SDK features, fixing data issues, or adding new ring data types, **ALWAYS check the X3 demo project** at `IOS (X3)/Ble SDK Demo/` and the native bridge files at `ios/JstyleBridge/` for reference implementation patterns before writing code. The demo project contains working examples for all data types (sleep, steps, heart rate, HRV, SpO2, temperature, battery).
 
 ## Recent Changes
+
+### 2026-03-05: Full App i18n Translation Pass
+
+**Completed:** All remaining hardcoded user-visible strings replaced with `t()` calls.
+
+**New locale keys:** `strava.button_sync_athlete`, alert keys, `strava_detail.col_pace/go_back/label_activity`, `sleep_trend.value_none/status_no_data`, `hr_live.value_na`
+
+**Files updated:** `DailyTimelineCard`, `StravaScreen`, `StravaActivityDetailScreen`, `AuthScreen`, `OnboardingScreen`, `LiveHeartRateCard`, `DailyHeartRateCard`, `DailySleepTrendCard`, `CalorieDeficitCard`, `ChatFAB` — plus `en.json` + `es.json`.
+
+Also in this session:
+- **Strava DB fix:** `npx supabase db push` applied `20260304_strava_detail_columns.sql` (missing `detail_fetched_at` column)
+- **Focus Realtime:** Added Supabase Realtime subscription in `useFocusData.ts` to bust cache on new `strava_activities` INSERT
+
+### 2026-03-04: Design System Docs + Profile Redesign + i18n
+
+**Implemented:**
+
+1. **`design-system.md`** — Comprehensive design system reference extracted from the codebase: color tokens, typography, spacing, border radius, shadows, glass card patterns, gradient presets, opacity hierarchy, and component patterns.
+
+2. **i18n Infrastructure** — Full internationalization (English + Spanish):
+   - Packages: `expo-localization`, `i18next`, `react-i18next`
+   - `src/i18n/locales/en.json` — English translations for all key screens
+   - `src/i18n/locales/es.json` — Spanish translations
+   - `src/i18n/index.ts` — i18next init with AsyncStorage persistence + device locale detection
+   - `src/hooks/useLanguage.ts` — `changeLanguage(lang)` hook with AsyncStorage persist
+   - `app/_layout.tsx` — side-effect import `'../src/i18n'` at top
+
+3. **Profile Screen Redesign** (`src/screens/SettingsScreen.tsx`) — Rewritten with glassmorphism design:
+   - 60×60 avatar with `shadows.glow(colors.primary)` ring
+   - Glass cards: `rgba(255,255,255,0.07)` bg + `rgba(255,255,255,0.12)` border + `borderRadius.xl`
+   - Row separators: `rgba(255,255,255,0.06)` 1px bottom border
+   - Language picker row with teal `EN`/`ES` chip → ActionSheet Alert
+   - Goal preset chips with teal-tinted active state
+   - Destructive sign-out button with glass-red border
+   - All strings via `useTranslation()`
+
+4. **t() Applied Across Screens:**
+   - `src/components/home/HomeHeader.tsx` — greeting, reconnect, syncing, connecting
+   - `src/components/home/SyncStatusSheet.tsx` — all phase labels, metric messages, count
+   - `app/(tabs)/_layout.tsx` — tab labels (Today/Health/Coach)
+   - `src/screens/FocusScreen.tsx` — title, all insight headlines/bodies
+
+**Files Created:**
+- `design-system.md`
+- `src/i18n/index.ts`
+- `src/i18n/locales/en.json`
+- `src/i18n/locales/es.json`
+- `src/hooks/useLanguage.ts`
+
+**Files Modified:**
+- `src/screens/SettingsScreen.tsx` (full rewrite as ProfileScreen)
+- `app/_layout.tsx` (i18n import)
+- `app/(tabs)/_layout.tsx` (translated tab labels)
+- `src/components/home/HomeHeader.tsx` (translated strings)
+- `src/components/home/SyncStatusSheet.tsx` (translated strings)
+- `src/screens/FocusScreen.tsx` (translated title + insight copy)
+
+**Key notes:**
+- Language key: `app_language_v1` in AsyncStorage
+- Supported langs: `en`, `es` (fallback: `en`)
+- i18next init is synchronous with `'en'`, then async switches to saved/device lang
+- Zero new TS errors introduced (all pre-existing errors in other files unchanged)
+
+### 2026-03-04: Fix Strava Auth + Sync (authService.currentUser bug)
+
+**Root cause:** `AuthService` class has no `currentUser` property — it's always `undefined`. All 4 `authService.currentUser?.id` calls in `StravaService.ts` returned `undefined`, causing:
+- `loadTokensFromDatabase` → returns early → `isConnected` always `false` → shows "Connect" screen even after OAuth
+- `saveTokensToDatabase` → never saved token to Supabase after OAuth
+- `syncActivitiesToSupabase` → returns `{ success: false, count: 0 }` silently
+- `disconnect` → always returns `false`
+
+**Fix:** Added `private async getCurrentUserId()` helper that calls `supabase.auth.getUser()` directly. Replaced all 4 occurrences. Also removed stale `authService` import. Added comprehensive console logging to sync pipeline for debugging.
+
+**Files Modified:** `src/services/StravaService.ts`, `src/screens/StravaScreen.tsx`
+
+### 2026-03-04: Strava Full Activity Fetch + Visualization
+
+**Implemented:** Complete Strava detail pipeline — fetch per-activity splits/zones/best efforts, redesigned activity list, activity detail screen, and Today tab integration.
+
+**Files Created:**
+- `supabase/migrations/20260304_strava_detail_columns.sql` — Adds `suffer_score, average_cadence, average_speed, max_speed, pr_count, elev_high, elev_low, zones_json, splits_metric_json, laps_json, best_efforts_json, detail_fetched_at` to `strava_activities`
+- `src/screens/StravaActivityDetailScreen.tsx` — Detail screen: Hero, Summary Stats, HR Zones bars, Km Splits, Best Efforts, Laps
+- `app/(tabs)/settings/strava-detail.tsx` — Route shell for detail screen
+
+**Files Modified:**
+- `src/types/strava.types.ts` — Added `StravaSplit, StravaLap, StravaBestEffort, StravaHRZone, StravaHRZones, StravaActivityDetail, StravaActivitySummary` interfaces
+- `src/types/supabase.types.ts` — Added new detail columns to `strava_activities` Row/Insert/Update types
+- `src/services/StravaService.ts` — Added `getActivityDetail(id)` (parallel fetch of `/activities/{id}` + `/activities/{id}/zones`), `syncAllActivityDetails(userId, onProgress)` (rate-limited 1 req-pair/sec, skips already-fetched), `syncActivitiesToSupabase` default days: 30→60
+- `src/screens/StravaScreen.tsx` — Full redesign: dark glass-morphism, "Training" header, all-time stats GlassCard, filter tabs (All/Runs/Rides/Hikes), activity list with sport-color left border, pace/elev/suffer badges, tap→detail navigation, sync shows detail progress "Syncing details… X/Y"
+- `src/hooks/useHomeData.ts` — Added `stravaActivities: StravaActivitySummary[]` to HomeData, Supabase query for last 7 days, Strava suffer_score blended into strain formula (65% Strava / 35% cal when today has Strava data)
+- `src/screens/home/ActivityTab.tsx` — Added `StravaWorkoutCard`, fallback to Strava activities in "Recent Workouts" when ring has no workouts
+- `src/components/home/DailyTimelineCard.tsx` — Added `strava_activity` event kind (Strava orange #FC4C02), `distanceLabel` chip, `stravaActivities` prop — today's Strava runs appear in Cronología timeline
+- `src/screens/home/OverviewTab.tsx` — Passes `stravaActivities={homeData.stravaActivities}` to DailyTimelineCard
+
+**Key implementation notes:**
+- Run: `npx supabase db push` to apply migration before testing
+- Strava detail sync caches via `detail_fetched_at` — re-runs are no-ops for already-fetched activities
+- Sport colors: Run/TrailRun = `#FC4C02`, Ride = `#6B8EFF`, Hike = `#FFB84D`, Swim = `#B16BFF`
+- Strava activities query: selects only needed columns (no `raw_data`) for performance
+
+### 2026-03-04: Sync Status Bottom Sheet
+
+**Implemented:**
+
+Non-blocking bottom sheet that slides up during ring connection/sync. Today screen remains fully scrollable and interactive underneath (no backdrop). Auto-dismisses 1.5s after sync completes.
+
+**Files Created:**
+- `src/types/syncStatus.types.ts` — SyncPhase, MetricKey, MetricStatus, MetricSyncState, SyncProgressState types
+
+- `src/components/home/SyncStatusSheet.tsx` — BottomSheetModal with BlurView background, animated Reanimated SVG progress arc (pulsing/filling), phase label crossfade, 7 metric rows with spring checkmark animation
+
+**Files Modified:**
+- `src/hooks/useHomeData.ts` — Added `syncProgress: SyncProgressState` to HomeData, INITIAL_METRICS constant, `updateMetric` helper, full instrumentation of `fetchData()` (connecting → connected → syncing → complete phases + per-metric loading/done/error states)
+- `src/screens/NewHomeScreen.tsx` — Added `syncSheetRef`, auto-present/dismiss effect on `syncProgress.phase`, renders `<SyncStatusSheet>` as last child
+
+**Key implementation notes:**
+- Phase transitions: connecting (pulsing 5→12%) → connected (12%, 200ms pause) → syncing (fills per completed metric) → complete (100%)
+- Auto-dismiss: `setTimeout(dismiss, 1500)` when phase === 'complete'
+- Cloud sync updates metric asynchronously via `.then()/.catch()` on `dataSyncService.syncAllData()`
+- No backdrop — sheet renders above content, touches pass through to Today screen
+- `isReconnecting` local state in NewHomeScreen untouched (still drives HomeHeader reconnect spinner)
+
+### 2026-03-04: Focus/Readiness Screen (Coach Tab)
+
+**Implemented:**
+
+Replaced the Coach tab (previously `app/(tabs)/settings.tsx` → AIChatScreen) with a full Focus/Readiness screen. The Coach tab is now a Stack with:
+- Root: FocusScreen (readiness score ring + 3 cards)
+- FAB → push to AIChatScreen (`settings/chat`)
+
+**Files Created:**
+- `src/types/focus.types.ts` — ReadinessScore, IllnessWatch, LastRunContext, FocusBaselines, FocusState types
+- `src/services/ReadinessService.ts` — Pure calculation: baseline persistence (AsyncStorage), readiness scoring (HRV/sleep/HR/training load), illness watch (5 signals), last run context (Supabase queries)
+- `src/hooks/useFocusData.ts` — Supabase-only data orchestration, 6-hour cache, pull-to-refresh
+- `src/components/focus/FocusScoreRing.tsx` — SVG circular gauge, teal/amber/red by score
+- `src/components/focus/ReadinessCard.tsx` — Collapsible, 4 component bars with relative labels
+- `src/components/focus/IllnessWatchCard.tsx` — Collapsible, 5 signal rows (CLEAR/WATCH/SICK)
+- `src/components/focus/LastRunContextCard.tsx` — Collapsible, effort verdict + body state retrospective
+- `src/components/focus/ChatFAB.tsx` — Floating pill button → router.push('/(tabs)/settings/chat')
+- `src/screens/FocusScreen.tsx` — Main screen, SafeAreaView + ScrollView + FAB overlay
+- `app/(tabs)/settings/_layout.tsx` — Stack layout (headerShown: false)
+- `app/(tabs)/settings/index.tsx` — FocusScreen entry
+- `app/(tabs)/settings/chat.tsx` — AIChatScreen entry
+
+**Files Deleted:**
+- `app/(tabs)/settings.tsx` — replaced by settings/ directory
+
+**Key implementation notes:**
+- Supabase column names: `hrv_readings.recorded_at`, `sleep_sessions.start_time + sleep_score`, `strava_activities.distance_m + moving_time_sec + sport_type`
+- Baselines stored in AsyncStorage key `focus_baselines_v1` (rolling 14-day window)
+- Cache key: `focus_state_cache_v1` (6-hour TTL)
+- TypeScript `data: never` errors from Supabase are pre-existing in the codebase (not introduced here)
+
+### 2026-03-04: Battery Charging State in Header Indicator
+
+**Implemented:**
+
+Added ⚡ charging indicator next to battery % in `HomeHeader` when ring is charging.
+
+1. **Native bridge** (`ios/JstyleBridge/JstyleBridge.m`): `handleBatteryData:` now extracts `charging`/`chargeStatus`/`isCharging` key from X3 SDK `dicData` and includes `isCharging` in the resolved dict (defaults to `@NO` if key absent).
+
+2. **JstyleService** (`src/services/JstyleService.ts`): `getBattery()` now reads `isCharging`/`charging` from native result and returns it in the `BatteryData` object.
+
+3. **useHomeData** (`src/hooks/useHomeData.ts`): Added `isRingCharging: boolean` to `HomeData`, `CachedData`, default state, battery fetch block, `setData` payload, and both cache normalization passes.
+
+4. **NewHomeScreen** (`src/screens/NewHomeScreen.tsx`): Passes `isCharging={homeData.isRingCharging}` to `HomeHeader`.
+
+5. **HomeHeader** (`src/components/home/HomeHeader.tsx`): Added `isCharging?` prop, `ChargingBoltIcon` SVG component (8×12 lightning bolt), wraps battery text in `batteryValueRow` row with bolt shown when charging, added `batteryValueRow` style.
+
+**Files Modified:**
+- `ios/JstyleBridge/JstyleBridge.m`
+- `src/services/JstyleService.ts`
+- `src/hooks/useHomeData.ts`
+- `src/screens/NewHomeScreen.tsx`
+- `src/components/home/HomeHeader.tsx`
+- `CLAUDE.md`
 
 ### 2026-02-24: Live HR Last Reading Persistence + BUSY/Reconnect Spiral Fixes
 
@@ -295,12 +475,12 @@ SmartRingExpoApp/
 
 ## Key Services
 
-- **SmartRingService** - Main SDK interface for ring communication
-- **QCBandService** - QCBand SDK integration
-- **UnifiedSmartRingService** - Unified interface across SDK variants
+- **JstyleService** - Active SDK service for all ring communication (Jstyle/X3)
+- **UnifiedSmartRingService** - Thin wrapper that routes to JstyleService
 - **AuthService** - User authentication via Supabase
 - **DataSyncService** - Cloud data synchronization
 - **SupabaseService** - Database operations
+- ~~QCBandService~~ - **NOT USED. Do not call.**
 
 ## Development Commands
 
@@ -323,13 +503,13 @@ npx expo install <package-name>
 
 ## Native SDK Integration
 
-The app integrates with CRPSmartBand iOS SDK via a native bridge. Key frameworks in `ios/Frameworks/`:
-- CRPSmartBand.framework
-- RTKLEFoundation.framework
-- RTKOTASDK.framework
-- QCBandSDK.framework
+The app uses the **Jstyle/X3 BLE SDK** exclusively. Bridge: `ios/JstyleBridge/JstyleBridge.m`.
 
-Bridge files are in `ios/SmartRing/` and `ios/QCBandBridge/`.
+Frameworks present in `ios/Frameworks/` (only the X3 ones are active):
+- CRPSmartBand.framework ✅ active (X3/Jstyle)
+- RTKLEFoundation.framework ✅ active (X3/Jstyle)
+- RTKOTASDK.framework ✅ active (X3/Jstyle)
+- QCBandSDK.framework ❌ NOT used
 
 ## Environment Variables
 

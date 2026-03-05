@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, PanResponder } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import JstyleService from '../../services/JstyleService';
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
+  const { t } = useTranslation();
   const [hourlyHrRanges, setHourlyHrRanges] = useState<HourRange[]>([]);
   const [selectedHrIndex, setSelectedHrIndex] = useState<number | null>(null);
   const isMockData = UnifiedSmartRingService.isUsingMockData();
@@ -122,17 +124,17 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
 
   const noData = hourlyHrRanges.length === 0 || hourlyHrRanges.every(h => !h.hasData);
   const headerValue = noData
-    ? 'None'
+    ? t('hr_daily.value_none')
     : selectedRange
     ? `${selectedRange.min}-${selectedRange.max}`
     : `${hrMin}-${hrMax}`;
   const headerSubtitle = noData
-    ? 'No data'
+    ? t('hr_daily.status_no_data')
     : selectedRange
     ? `${String(selectedRange.hour).padStart(2, '0')}:00`
     : isMockData
-    ? 'Normal · Mock data'
-    : 'Normal';
+    ? t('hr_daily.subtitle_mock')
+    : t('hr_daily.subtitle_normal');
 
   handleTouchRef.current = (touchX: number) => {
     if (!chartWidthRef.current || hourlyHrRanges.length === 0) return;
@@ -171,7 +173,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
   return (
     <GradientInfoCard
       icon={<Text style={styles.hrIcon}>♥</Text>}
-      title="Heart Rate"
+      title={t('hr_daily.card_title')}
       headerValue={headerValue}
       headerSubtitle={headerSubtitle}
       gradientStops={[
@@ -190,8 +192,8 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
       <View style={styles.hrChart}>
         {noData ? (
           <View style={styles.noDataContainer}>
-            <Text style={styles.noDataText}>No heart rate data today</Text>
-            <Text style={styles.noDataSub}>Data will appear after the ring syncs</Text>
+            <Text style={styles.noDataText}>{t('hr_daily.empty_no_data')}</Text>
+            <Text style={styles.noDataSub}>{t('hr_daily.empty_hint')}</Text>
           </View>
         ) : (
           <>

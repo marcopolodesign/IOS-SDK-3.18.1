@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { spacing, fontFamily, fontSize } from '../../theme/colors';
@@ -15,6 +16,7 @@ type DailySleepTrendCardProps = {
 };
 
 export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = {}) {
+  const { t } = useTranslation();
   const [sleepDays, setSleepDays] = useState<SleepDay[]>([]);
   const [retryNonce, setRetryNonce] = useState(0);
   const homeData = useHomeDataContext();
@@ -166,9 +168,9 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
   return (
     <GradientInfoCard
       icon={<Text style={styles.icon}>♥</Text>}
-      title="Avg. Sleep"
-      headerValue={sleepDays.length ? formatMinutes(avgMinutes) : 'None'}
-      headerSubtitle={sleepDays.length ? 'Great' : 'No data'}
+      title={t('sleep_trend.card_title')}
+      headerValue={sleepDays.length ? formatMinutes(avgMinutes) : t('sleep_trend.value_none')}
+      headerSubtitle={sleepDays.length ? t('sleep_trend.subtitle_great') : t('sleep_trend.status_no_data')}
       gradientStops={[
         { offset: 0, color: 'rgba(35, 101, 203, 0.95)' },
         { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },

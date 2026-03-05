@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/useAuth';
 import { colors, spacing, borderRadius, fontSize } from '../theme/colors';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -19,6 +20,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 type AuthMode = 'signIn' | 'signUp' | 'forgotPassword';
 
 export function AuthScreen() {
+  const { t } = useTranslation();
   const { signIn, signUp, signInWithGitHub, resetPassword } = useAuth();
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
@@ -31,7 +33,7 @@ export function AuthScreen() {
     setError(null);
 
     if (!email.trim()) {
-      setError('Please enter your email');
+      setError(t('auth.error_email_required'));
       return;
     }
 
@@ -40,10 +42,10 @@ export function AuthScreen() {
       try {
         const result = await resetPassword(email);
         if (result.success) {
-          Alert.alert('Success', 'Check your email for a password reset link');
+          Alert.alert(t('auth.alert_success'), t('auth.alert_reset_sent'));
           setMode('signIn');
         } else {
-          setError(result.error || 'Failed to send reset email');
+          setError(result.error || t('auth.error_unexpected'));
         }
       } finally {
         setIsSubmitting(false);
@@ -52,7 +54,7 @@ export function AuthScreen() {
     }
 
     if (!password.trim() || password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('auth.error_password_short'));
       return;
     }
 
@@ -61,10 +63,10 @@ export function AuthScreen() {
       if (mode === 'signUp') {
         const result = await signUp(email, password, displayName || undefined);
         if (!result.success) {
-          setError(result.error || 'Sign up failed');
+          setError(result.error || t('auth.error_unexpected'));
           setIsSubmitting(false);
         } else if (result.needsEmailConfirmation) {
-          Alert.alert('Success', 'Check your email to confirm your account');
+          Alert.alert(t('auth.alert_success'), t('auth.alert_confirm_sent'));
           setMode('signIn');
           setIsSubmitting(false);
         }
@@ -73,13 +75,13 @@ export function AuthScreen() {
       } else {
         const result = await signIn(email, password);
         if (!result.success) {
-          setError(result.error || 'Sign in failed');
+          setError(result.error || t('auth.error_unexpected'));
           setIsSubmitting(false);
         }
         // If success, don't reset isSubmitting - navigation will happen
       }
     } catch (e) {
-      setError('An unexpected error occurred');
+      setError(t('auth.error_unexpected'));
       setIsSubmitting(false);
     }
   };
@@ -90,12 +92,12 @@ export function AuthScreen() {
     try {
       const result = await signInWithGitHub();
       if (!result.success) {
-        setError(result.error || 'GitHub sign in failed');
+        setError(result.error || t('auth.error_unexpected'));
         setIsSubmitting(false);
       }
       // If success, don't reset - navigation will happen
     } catch (e) {
-      setError('An unexpected error occurred');
+      setError(t('auth.error_unexpected'));
       setIsSubmitting(false);
     }
   };
@@ -136,16 +138,16 @@ export function AuthScreen() {
                 />
               </Svg>
             </View>
-            <Text style={styles.logoText}>Smart Ring</Text>
-            <Text style={styles.tagline}>Your health, on your finger</Text>
+            <Text style={styles.logoText}>{t('auth.logo_text')}</Text>
+            <Text style={styles.tagline}>{t('auth.tagline')}</Text>
           </View>
 
           {/* Form */}
           <View style={styles.formContainer}>
             <Text style={styles.title}>
-              {mode === 'signIn' && 'Welcome Back'}
-              {mode === 'signUp' && 'Create Account'}
-              {mode === 'forgotPassword' && 'Reset Password'}
+              {mode === 'signIn' && t('auth.title_sign_in')}
+              {mode === 'signUp' && t('auth.title_sign_up')}
+              {mode === 'forgotPassword' && t('auth.title_forgot_password')}
             </Text>
 
             {error && (
@@ -156,10 +158,10 @@ export function AuthScreen() {
 
             {mode === 'signUp' && (
               <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Display Name</Text>
+                <Text style={styles.inputLabel}>{t('auth.label_display_name')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Your name"
+                  placeholder={t('auth.placeholder_display_name')}
                   placeholderTextColor={colors.textMuted}
                   value={displayName}
                   onChangeText={setDisplayName}
@@ -169,10 +171,10 @@ export function AuthScreen() {
             )}
 
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email</Text>
+              <Text style={styles.inputLabel}>{t('auth.label_email')}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="you@example.com"
+                placeholder={t('auth.placeholder_email')}
                 placeholderTextColor={colors.textMuted}
                 value={email}
                 onChangeText={setEmail}
@@ -184,10 +186,10 @@ export function AuthScreen() {
 
             {mode !== 'forgotPassword' && (
               <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Password</Text>
+                <Text style={styles.inputLabel}>{t('auth.label_password')}</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="••••••••"
+                  placeholder={t('auth.placeholder_password')}
                   placeholderTextColor={colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
@@ -206,9 +208,9 @@ export function AuthScreen() {
                 <ActivityIndicator color={colors.background} />
               ) : (
                 <Text style={styles.primaryButtonText}>
-                  {mode === 'signIn' && 'Sign In'}
-                  {mode === 'signUp' && 'Create Account'}
-                  {mode === 'forgotPassword' && 'Send Reset Link'}
+                  {mode === 'signIn' && t('auth.button_sign_in')}
+                  {mode === 'signUp' && t('auth.button_sign_up')}
+                  {mode === 'forgotPassword' && t('auth.button_reset')}
                 </Text>
               )}
             </TouchableOpacity>
@@ -217,7 +219,7 @@ export function AuthScreen() {
               <>
                 <View style={styles.divider}>
                   <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
+                  <Text style={styles.dividerText}>{t('auth.divider_or')}</Text>
                   <View style={styles.dividerLine} />
                 </View>
 
@@ -229,7 +231,7 @@ export function AuthScreen() {
                   <Svg width={20} height={20} viewBox="0 0 24 24" fill={colors.text}>
                     <Path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                   </Svg>
-                  <Text style={styles.githubButtonText}>Continue with GitHub</Text>
+                  <Text style={styles.githubButtonText}>{t('auth.button_github')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -239,21 +241,21 @@ export function AuthScreen() {
               {mode === 'signIn' && (
                 <>
                   <TouchableOpacity onPress={() => setMode('forgotPassword')}>
-                    <Text style={styles.linkText}>Forgot password?</Text>
+                    <Text style={styles.linkText}>{t('auth.link_forgot')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setMode('signUp')}>
-                    <Text style={styles.linkText}>Create an account</Text>
+                    <Text style={styles.linkText}>{t('auth.link_create')}</Text>
                   </TouchableOpacity>
                 </>
               )}
               {mode === 'signUp' && (
                 <TouchableOpacity onPress={() => setMode('signIn')}>
-                  <Text style={styles.linkText}>Already have an account? Sign in</Text>
+                  <Text style={styles.linkText}>{t('auth.link_sign_in')}</Text>
                 </TouchableOpacity>
               )}
               {mode === 'forgotPassword' && (
                 <TouchableOpacity onPress={() => setMode('signIn')}>
-                  <Text style={styles.linkText}>Back to sign in</Text>
+                  <Text style={styles.linkText}>{t('auth.link_back')}</Text>
                 </TouchableOpacity>
               )}
             </View>

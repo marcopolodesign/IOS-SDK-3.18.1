@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED_PLACEHOLDER, headerRight }: Props) {
+  const { t } = useTranslation();
   const active = Math.round(activeCalories);
   const consumed = Math.round(consumedCalories);
 
@@ -22,9 +24,9 @@ export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED
   const sign = deficit > 0 ? '+' : '';
   const deficitDisplay = `${sign}${Math.round(deficit)}`;
   const message =
-    Math.abs(deficit) < 100 ? 'Balanced'
-    : deficit < 0 ? "You're on deficit"
-    : "You're on surplus";
+    Math.abs(deficit) < 100 ? t('calorie.status_balanced')
+    : deficit < 0 ? t('calorie.status_deficit')
+    : t('calorie.status_surplus');
 
   // SVG donut arc math
   const radius = 68;
@@ -49,7 +51,7 @@ export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED
   return (
     <GradientInfoCard
       icon={<Text style={styles.icon}>⚖</Text>}
-      title="Caloric Deficit"
+      title={t('calorie.card_title')}
       headerValue={deficitDisplay}
       headerSubtitle={message}
       gradientStops={[
@@ -117,13 +119,13 @@ export function CalorieDeficitCard({ activeCalories, consumedCalories = CONSUMED
           <View style={styles.legendRow}>
             <View style={[styles.legendDot, { backgroundColor: '#F5A623' }]} />
             <Text style={[styles.legendText, { color: '#F5A623' }]}>
-              {active} Active{'\n'}Calories
+              {active} {t('calorie.legend_active')}
             </Text>
           </View>
           <View style={[styles.legendRow, { marginTop: spacing.md }]}>
             <View style={[styles.legendDot, { backgroundColor: '#4AACF5' }]} />
             <Text style={[styles.legendText, { color: '#4AACF5' }]}>
-              {consumed} Consumed{'\n'}Calories
+              {consumed} {t('calorie.legend_consumed')}
             </Text>
           </View>
         </View>

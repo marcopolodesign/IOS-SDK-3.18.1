@@ -9,83 +9,37 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Circle } from 'react-native-svg';
-import { colors, spacing, borderRadius, fontSize } from '../theme/colors';
+import Svg, { Path } from 'react-native-svg';
+import { router } from 'expo-router';
+import { colors, spacing, borderRadius, fontSize, fontFamily } from '../theme/colors';
 import { stravaService } from '../services/StravaService';
-import { supabaseService } from '../services/SupabaseService';
+import { supabase } from '../services/SupabaseService';
 import { useAuth } from '../hooks/useAuth';
-import { StravaActivity, StravaActivityStats, StravaAthlete } from '../types/strava.types';
+import {
+  StravaActivity,
+  StravaActivityStats,
+  StravaAthlete,
+  StravaActivitySummary,
+} from '../types/strava.types';
 
-// Strava brand color
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const STRAVA_ORANGE = '#FC4C02';
 
-function StravaIcon({ size = 24 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill={STRAVA_ORANGE}>
-      <Path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-    </Svg>
-  );
-}
+const SPORT_COLORS: Record<string, string> = {
+  Run: '#FC4C02',
+  TrailRun: '#FC4C02',
+  Ride: '#6B8EFF',
+  MountainBikeRide: '#6B8EFF',
+  GravelRide: '#6B8EFF',
+  Hike: '#FFB84D',
+  Swim: '#B16BFF',
+};
 
-function formatDistance(meters: number): string {
-  if (meters >= 1000) {
-    return `${(meters / 1000).toFixed(1)} km`;
-  }
-  return `${Math.round(meters)} m`;
-}
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-}
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function ActivityCard({ activity }: { activity: StravaActivity }) {
-  const sportIcon = getSportIcon(activity.sport_type);
-  
-  return (
-    <View style={styles.activityCard}>
-      <View style={styles.activityHeader}>
-        <View style={styles.activityIconContainer}>
-          <Text style={styles.activityIcon}>{sportIcon}</Text>
-        </View>
-        <View style={styles.activityInfo}>
-          <Text style={styles.activityName} numberOfLines={1}>{activity.name}</Text>
-          <Text style={styles.activityDate}>{formatDate(activity.start_date)}</Text>
-        </View>
-      </View>
-      <View style={styles.activityStats}>
-        <View style={styles.activityStat}>
-          <Text style={styles.statValue}>{formatDistance(activity.distance)}</Text>
-          <Text style={styles.statLabel}>Distance</Text>
-        </View>
-        <View style={styles.activityStat}>
-          <Text style={styles.statValue}>{formatDuration(activity.moving_time)}</Text>
-          <Text style={styles.statLabel}>Duration</Text>
-        </View>
-        {activity.average_heartrate && (
-          <View style={styles.activityStat}>
-            <Text style={styles.statValue}>{Math.round(activity.average_heartrate)}</Text>
-            <Text style={styles.statLabel}>Avg HR</Text>
-          </View>
-        )}
-      </View>
-    </View>
-  );
+function getSportColor(sportType: string): string {
+  return SPORT_COLORS[sportType] ?? '#00D4AA';
 }
 
 function getSportIcon(sportType: string): string {
@@ -109,64 +63,243 @@ function getSportIcon(sportType: string): string {
   return icons[sportType] || '🏅';
 }
 
-function StatsCard({ stats }: { stats: StravaActivityStats }) {
+// ─── Helper Functions ─────────────────────────────────────────────────────────
+
+function formatPace(averageSpeedMs: number): string {
+  if (!averageSpeedMs || averageSpeedMs <= 0) return '--';
+  const secPerKm = 1000 / averageSpeedMs;
+  const mins = Math.floor(secPerKm / 60);
+  const secs = Math.round(secPerKm % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}/km`;
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+function formatTotalHours(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+function formatDate(dateString: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+// ─── StravaIcon SVG ───────────────────────────────────────────────────────────
+
+function StravaIcon({ size = 24 }: { size?: number }) {
   return (
-    <View style={styles.statsContainer}>
-      <Text style={styles.statsTitle}>All-Time Stats</Text>
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={STRAVA_ORANGE}>
+      <Path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+    </Svg>
+  );
+}
+
+// ─── Activity Card ────────────────────────────────────────────────────────────
+
+function ActivityCard({ activity, onPress }: { activity: StravaActivitySummary; onPress: () => void }) {
+  const { t } = useTranslation();
+  const sportColor = getSportColor(activity.sport_type || '');
+  const sportIcon = getSportIcon(activity.sport_type || '');
+
+  const distStr = activity.distance_m
+    ? `${(activity.distance_m / 1000).toFixed(1)} km`
+    : null;
+  const durStr = activity.moving_time_sec
+    ? formatDuration(activity.moving_time_sec)
+    : null;
+  const paceStr = activity.average_speed
+    ? formatPace(activity.average_speed)
+    : null;
+  const elevStr = activity.total_elevation_gain_m
+    ? `↑${Math.round(activity.total_elevation_gain_m)}m`
+    : null;
+
+  const metricsLine = [distStr, durStr, paceStr, elevStr]
+    .filter(Boolean)
+    .join('  ·  ');
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+      <View style={[styles.activityCard, { borderLeftColor: sportColor, borderLeftWidth: 3 }]}>
+        <View style={styles.activityHeader}>
+          <Text style={styles.activityIcon}>{sportIcon}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.activityName} numberOfLines={1}>{activity.name}</Text>
+            <Text style={styles.activityDate}>{formatDate(activity.start_date || '')}</Text>
+          </View>
+        </View>
+        {metricsLine ? (
+          <Text style={styles.metricsLine}>{metricsLine}</Text>
+        ) : null}
+        {(activity.average_heartrate || activity.suffer_score) ? (
+          <View style={styles.activityBadges}>
+            {activity.average_heartrate ? (
+              <View style={[styles.badge, { borderColor: 'rgba(255,100,100,0.4)', backgroundColor: 'rgba(255,100,100,0.1)' }]}>
+                <Text style={[styles.badgeText, { color: '#FF6B6B' }]}>
+                  {Math.round(activity.average_heartrate)} {t('strava.badge_bpm_avg')}
+                </Text>
+              </View>
+            ) : null}
+            {activity.suffer_score ? (
+              <View style={[styles.badge, { borderColor: `${sportColor}44`, backgroundColor: `${sportColor}1A` }]}>
+                <Text style={[styles.badgeText, { color: sportColor }]}>
+                  {t('strava.badge_suffer', { score: activity.suffer_score })}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Stats Card ───────────────────────────────────────────────────────────────
+
+function ComputedStatsCard({ activities }: { activities: StravaActivitySummary[] }) {
+  const { t } = useTranslation();
+  const runActivities = activities.filter(a => {
+    const s = (a.sport_type || '').toLowerCase();
+    return s.includes('run') || s === 'trailrun';
+  });
+
+  const totalRuns = runActivities.length;
+
+  const totalKm = activities.reduce((sum, a) => sum + (a.distance_m || 0), 0) / 1000;
+
+  const runWithSpeed = runActivities.filter(a => (a.average_speed || 0) > 0);
+  let avgPace = '--';
+  if (runWithSpeed.length > 0) {
+    const avgSpeed = runWithSpeed.reduce((sum, a) => sum + (a.average_speed || 0), 0) / runWithSpeed.length;
+    avgPace = formatPace(avgSpeed);
+  }
+
+  const totalTimeSec = activities.reduce((sum, a) => sum + (a.moving_time_sec || 0), 0);
+  const totalTime = formatTotalHours(totalTimeSec);
+
+  return (
+    <View style={styles.statsCard}>
+      <Text style={styles.statsTitle}>{t('strava.stats_title')}</Text>
       <View style={styles.statsGrid}>
         <View style={styles.statBox}>
-          <Text style={styles.statBoxValue}>
-            {formatDistance(stats.all_run_totals.distance + stats.all_ride_totals.distance)}
-          </Text>
-          <Text style={styles.statBoxLabel}>Total Distance</Text>
+          <Text style={styles.statBoxValue}>{totalRuns}</Text>
+          <Text style={styles.statBoxLabel}>{t('strava.stat_total_runs')}</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statBoxValue}>
-            {stats.all_run_totals.count + stats.all_ride_totals.count + stats.all_swim_totals.count}
-          </Text>
-          <Text style={styles.statBoxLabel}>Activities</Text>
+          <Text style={styles.statBoxValue}>{totalKm.toFixed(1)} km</Text>
+          <Text style={styles.statBoxLabel}>{t('strava.stat_total_km')}</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statBoxValue}>
-            {formatDuration(stats.all_run_totals.moving_time + stats.all_ride_totals.moving_time)}
-          </Text>
-          <Text style={styles.statBoxLabel}>Total Time</Text>
+          <Text style={styles.statBoxValue}>{avgPace}</Text>
+          <Text style={styles.statBoxLabel}>{t('strava.stat_avg_pace')}</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statBoxValue}>
-            {formatDistance(stats.all_run_totals.elevation_gain + stats.all_ride_totals.elevation_gain)}
-          </Text>
-          <Text style={styles.statBoxLabel}>Elevation Gain</Text>
+          <Text style={styles.statBoxValue}>{totalTime}</Text>
+          <Text style={styles.statBoxLabel}>{t('strava.stat_total_time')}</Text>
         </View>
       </View>
     </View>
   );
 }
 
+// ─── Filter Tabs ──────────────────────────────────────────────────────────────
+
+type FilterType = 'all' | 'run' | 'ride' | 'hike';
+
+function FilterTabs({
+  active,
+  onChange,
+}: {
+  active: FilterType;
+  onChange: (f: FilterType) => void;
+}) {
+  const { t } = useTranslation();
+  const FILTERS: { key: FilterType; label: string }[] = [
+    { key: 'all', label: t('strava.filter_all') },
+    { key: 'run', label: t('strava.filter_runs') },
+    { key: 'ride', label: t('strava.filter_rides') },
+    { key: 'hike', label: t('strava.filter_hikes') },
+  ];
+  return (
+    <View style={styles.filterRow}>
+      {FILTERS.map(f => (
+        <TouchableOpacity
+          key={f.key}
+          onPress={() => onChange(f.key)}
+          activeOpacity={0.7}
+          style={[styles.filterTab, active === f.key && styles.filterTabActive]}
+        >
+          <Text style={[styles.filterTabText, active === f.key && styles.filterTabTextActive]}>
+            {f.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export function StravaScreen() {
+  const { t } = useTranslation();
   const { user, isAuthenticated } = useAuth();
+
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [athlete, setAthlete] = useState<StravaAthlete | null>(null);
-  const [activities, setActivities] = useState<StravaActivity[]>([]);
+  const [activities, setActivities] = useState<StravaActivitySummary[]>([]);
   const [stats, setStats] = useState<StravaActivityStats | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+
+  // ── Load activities from Supabase ─────────────────────────────────────────
+
+  const loadActivities = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('strava_activities')
+      .select(
+        'id, name, sport_type, start_date, distance_m, moving_time_sec, average_heartrate, max_heartrate, suffer_score, calories, average_speed, total_elevation_gain_m'
+      )
+      .eq('user_id', user.id)
+      .order('start_date', { ascending: false })
+      .limit(50);
+
+    if (data) {
+      setActivities(data as StravaActivitySummary[]);
+    }
+  }, [user]);
+
+  // ── Load all data ─────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
-    console.log('[StravaScreen] loadData called, user:', user?.id);
     if (!user) {
-      console.log('[StravaScreen] No user, skipping load');
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log('[StravaScreen] Calling stravaService.reload()...');
       await stravaService.reload();
-      console.log('[StravaScreen] reload complete, isConnected:', stravaService.isConnected);
       setIsConnected(stravaService.isConnected);
 
       if (stravaService.isConnected) {
@@ -176,37 +309,20 @@ export function StravaScreen() {
         ]);
         setAthlete(athleteData);
         setStats(statsData);
-
-        // Load activities from Supabase
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const storedActivities = await supabaseService.getStravaActivities(
-          user.id,
-          thirtyDaysAgo,
-          new Date()
-        );
-        
-        // Convert to StravaActivity format
-        setActivities(storedActivities.map(a => ({
-          ...a,
-          distance: a.distance_m || 0,
-          moving_time: a.moving_time_sec || 0,
-          elapsed_time: a.elapsed_time_sec || 0,
-          total_elevation_gain: a.total_elevation_gain_m || 0,
-          start_date: a.start_date || '',
-          sport_type: a.sport_type || 'Workout',
-        } as unknown as StravaActivity)));
+        await loadActivities();
       }
     } catch (e) {
-      console.error('Error loading Strava data:', e);
+      console.error('[StravaScreen] Error loading data:', e);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, loadActivities]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -216,23 +332,23 @@ export function StravaScreen() {
         setIsConnected(true);
         await loadData();
       } else {
-        Alert.alert('Connection Failed', result.error || 'Failed to connect to Strava');
+        Alert.alert(t('strava.alert_connect_failed_title'), result.error || t('strava.alert_connect_failed_message'));
       }
     } catch (e) {
-      Alert.alert('Error', 'An error occurred while connecting to Strava');
+      Alert.alert(t('strava.alert_error_title'), t('strava.alert_connect_error_message'));
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = () => {
     Alert.alert(
-      'Disconnect Strava',
-      'Are you sure you want to disconnect your Strava account?',
+      t('strava.alert_disconnect_title'),
+      t('strava.alert_disconnect_message'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('strava.button_cancel'), style: 'cancel' },
         {
-          text: 'Disconnect',
+          text: t('strava.button_disconnect_confirm'),
           style: 'destructive',
           onPress: async () => {
             await stravaService.disconnect();
@@ -248,16 +364,29 @@ export function StravaScreen() {
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncProgress(t('strava.sync_fetching'));
     try {
-      const result = await stravaService.syncActivitiesToSupabase(30);
+      const result = await stravaService.syncActivitiesToSupabase(60);
       if (result.success) {
-        Alert.alert('Sync Complete', `Synced ${result.count} activities`);
-        await loadData();
+        setSyncProgress(
+          result.count > 0
+            ? t('strava.sync_synced', { count: result.count })
+            : t('strava.sync_up_to_date')
+        );
+        const detailResult = await stravaService.syncAllActivityDetails(user!.id, (done, total) => {
+          setSyncProgress(t('strava.sync_details', { done, total }));
+        });
+        console.log('[StravaScreen] Detail sync result:', detailResult);
+        setSyncProgress('');
+        await loadActivities();
       } else {
-        Alert.alert('Sync Failed', 'Failed to sync activities');
+        setSyncProgress('');
+        Alert.alert(t('strava.alert_sync_failed_title'), t('strava.alert_sync_failed_message'));
       }
     } catch (e) {
-      Alert.alert('Error', 'An error occurred while syncing');
+      console.error('[StravaScreen] handleSync error:', e);
+      setSyncProgress('');
+      Alert.alert(t('strava.alert_error_title'), `${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setIsSyncing(false);
     }
@@ -269,11 +398,26 @@ export function StravaScreen() {
     setRefreshing(false);
   };
 
+  // ── Filtered activities ───────────────────────────────────────────────────
+
+  const filteredActivities =
+    activeFilter === 'all'
+      ? activities
+      : activities.filter(a => {
+          const sport = (a.sport_type || '').toLowerCase();
+          if (activeFilter === 'run') return sport.includes('run') || sport === 'trailrun';
+          if (activeFilter === 'ride') return sport.includes('ride');
+          if (activeFilter === 'hike') return sport === 'hike';
+          return true;
+        });
+
+  // ── Loading / auth states ─────────────────────────────────────────────────
+
   if (!isAuthenticated) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.centered}>
-          <Text style={styles.message}>Please sign in to connect Strava</Text>
+          <Text style={styles.message}>{t('strava.sign_in_required')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -281,13 +425,15 @@ export function StravaScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -301,97 +447,122 @@ export function StravaScreen() {
             tintColor={colors.primary}
           />
         }
+        showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.header}>
-          <StravaIcon size={32} />
-          <Text style={styles.headerTitle}>Strava</Text>
+          <Text style={styles.headerTitle}>{t('strava.header_title')}</Text>
+          {isConnected ? (
+            <TouchableOpacity onPress={handleDisconnect} style={styles.headerBtn}>
+              <Text style={styles.headerBtnText}>{t('strava.button_disconnect')}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {!isConnected ? (
-          // Not connected view
+          /* ── Not connected ───────────────────────────────────────────── */
           <View style={styles.connectContainer}>
             <View style={styles.connectCard}>
               <StravaIcon size={48} />
-              <Text style={styles.connectTitle}>Connect to Strava</Text>
+              <Text style={styles.connectTitle}>{t('strava.connect_title')}</Text>
               <Text style={styles.connectDescription}>
-                Sync your workouts and activities from Strava to get a complete picture of your fitness.
+                {t('strava.connect_description')}
               </Text>
               <TouchableOpacity
                 style={[styles.connectButton, isConnecting && styles.buttonDisabled]}
                 onPress={handleConnect}
                 disabled={isConnecting}
+                activeOpacity={0.8}
               >
                 {isConnecting ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.connectButtonText}>Connect with Strava</Text>
+                  <Text style={styles.connectButtonText}>{t('strava.button_connect')}</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          // Connected view
+          /* ── Connected ───────────────────────────────────────────────── */
           <>
-            {/* Athlete Info */}
-            {athlete && (
-              <View style={styles.athleteCard}>
-                <View style={styles.athleteInfo}>
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>
-                      {athlete.firstname?.[0]}{athlete.lastname?.[0]}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text style={styles.athleteName}>
-                      {athlete.firstname} {athlete.lastname}
-                    </Text>
+            {/* Athlete row */}
+            {athlete ? (
+              <View style={styles.athleteRow}>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarText}>
+                    {athlete.firstname?.[0] ?? ''}{athlete.lastname?.[0] ?? ''}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.athleteName}>
+                    {athlete.firstname} {athlete.lastname}
+                  </Text>
+                  {(athlete.city || athlete.state) ? (
                     <Text style={styles.athleteLocation}>
                       {[athlete.city, athlete.state].filter(Boolean).join(', ')}
                     </Text>
-                  </View>
+                  ) : null}
                 </View>
-                <View style={styles.athleteActions}>
-                  <TouchableOpacity
-                    style={[styles.syncButton, isSyncing && styles.buttonDisabled]}
-                    onPress={handleSync}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Text style={styles.syncButtonText}>Sync</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.disconnectButton}
-                    onPress={handleDisconnect}
-                  >
-                    <Text style={styles.disconnectButtonText}>Disconnect</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={[styles.syncBtn, isSyncing && styles.buttonDisabled]}
+                  onPress={handleSync}
+                  disabled={isSyncing}
+                  activeOpacity={0.8}
+                >
+                  {isSyncing ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text style={styles.syncBtnText}>{t('strava.button_sync_athlete')}</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-            )}
+            ) : null}
 
-            {/* Stats */}
-            {stats && <StatsCard stats={stats} />}
+            {/* Sync progress label */}
+            {syncProgress ? (
+              <Text style={styles.syncProgressText}>{syncProgress}</Text>
+            ) : null}
 
-            {/* Recent Activities */}
-            <View style={styles.activitiesSection}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
-              {activities.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No activities synced yet</Text>
-                  <TouchableOpacity style={styles.syncNowButton} onPress={handleSync}>
-                    <Text style={styles.syncNowButtonText}>Sync Now</Text>
+            {/* All-time stats from local activities */}
+            {activities.length > 0 ? (
+              <ComputedStatsCard activities={activities} />
+            ) : null}
+
+            {/* Filter tabs */}
+            <FilterTabs active={activeFilter} onChange={setActiveFilter} />
+
+            {/* Activity list */}
+            {filteredActivities.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>
+                  {activities.length === 0
+                    ? t('strava.empty_no_activities')
+                    : t('strava.empty_no_match')}
+                </Text>
+                {activities.length === 0 ? (
+                  <TouchableOpacity
+                    style={styles.syncNowBtn}
+                    onPress={handleSync}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.syncNowBtnText}>{t('strava.button_sync')}</Text>
                   </TouchableOpacity>
-                </View>
-              ) : (
-                activities.slice(0, 10).map(activity => (
-                  <ActivityCard key={activity.id} activity={activity} />
-                ))
-              )}
-            </View>
+                ) : null}
+              </View>
+            ) : (
+              filteredActivities.map(activity => (
+                <ActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs)/settings/strava-detail',
+                      params: { id: String(activity.id) },
+                    })
+                  }
+                />
+              ))
+            )}
           </>
         )}
       </ScrollView>
@@ -399,17 +570,20 @@ export function StravaScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#0D0D0D',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 100,
   },
   centered: {
     flex: 1,
@@ -417,138 +591,153 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   message: {
-    color: colors.textSecondary,
+    color: 'rgba(255,255,255,0.6)',
     fontSize: fontSize.lg,
+    fontFamily: fontFamily.regular,
   },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.xl,
-    gap: spacing.md,
   },
   headerTitle: {
     fontSize: fontSize.xxxl,
-    fontWeight: '700',
-    color: colors.text,
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
   },
+  headerBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,100,100,0.4)',
+  },
+  headerBtnText: {
+    color: '#FF6B6B',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+
+  // ── Connect card ──
   connectContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: spacing.xxxl,
+    paddingVertical: spacing.xxl,
   },
   connectCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
     padding: spacing.xl,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   connectTitle: {
     fontSize: fontSize.xxl,
-    fontWeight: '600',
-    color: colors.text,
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
   connectDescription: {
     fontSize: fontSize.md,
-    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
-    marginBottom: spacing.xl,
     lineHeight: 22,
+    marginBottom: spacing.xl,
   },
   connectButton: {
     backgroundColor: STRAVA_ORANGE,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
     paddingHorizontal: spacing.xl,
     borderRadius: borderRadius.md,
     width: '100%',
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   connectButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
-  athleteCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  athleteInfo: {
+
+  // ── Athlete row ──
+  athleteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  avatarCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: STRAVA_ORANGE,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    color: '#fff',
-    fontSize: fontSize.lg,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
   },
   athleteName: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
-    color: colors.text,
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
   },
   athleteLocation: {
     fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
   },
-  athleteActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  syncButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-  },
-  syncButtonText: {
-    color: colors.background,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
-  disconnectButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+  syncBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.error,
+    borderColor: '#00D4AA',
+    minWidth: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
   },
-  disconnectButtonText: {
-    color: colors.error,
+  syncBtnText: {
+    color: '#00D4AA',
     fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
   },
-  statsContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+  syncProgressText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+
+  // ── Stats card ──
+  statsCard: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
     padding: spacing.lg,
     marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   statsTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
-    color: colors.text,
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
     marginBottom: spacing.md,
   },
   statsGrid: {
@@ -558,110 +747,133 @@ const styles = StyleSheet.create({
   },
   statBox: {
     width: '48%',
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(0,0,0,0.25)',
     borderRadius: borderRadius.md,
     padding: spacing.md,
   },
   statBoxValue: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
-    color: STRAVA_ORANGE,
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
   },
   statBoxLabel: {
     fontSize: fontSize.xs,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 3,
   },
-  activitiesSection: {
-    marginTop: spacing.md,
-  },
-  sectionTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
-    color: colors.text,
+
+  // ── Filter tabs ──
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  activityCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  filterTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  filterTabActive: {
+    backgroundColor: 'rgba(0,212,170,0.15)',
+    borderColor: '#00D4AA',
+  },
+  filterTabText: {
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  filterTabTextActive: {
+    color: '#00D4AA',
+    fontFamily: fontFamily.demiBold,
+  },
+
+  // ── Activity card ──
+  activityCard: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginBottom: 10,
+    padding: 14,
+    overflow: 'hidden',
   },
   activityHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  activityIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: 8,
   },
   activityIcon: {
     fontSize: 20,
-  },
-  activityInfo: {
-    flex: 1,
+    lineHeight: 24,
   },
   activityName: {
     fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.text,
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
+    lineHeight: 20,
   },
   activityDate: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-  },
-  activityStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  activityStat: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  statLabel: {
     fontSize: fontSize.xs,
-    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 2,
   },
+  metricsLine: {
+    fontSize: 13,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 8,
+  },
+  activityBadges: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  badge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+  },
+
+  // ── Empty state ──
   emptyState: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
     padding: spacing.xl,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginTop: spacing.md,
   },
   emptyStateText: {
     fontSize: fontSize.md,
-    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.5)',
     marginBottom: spacing.md,
+    textAlign: 'center',
   },
-  syncNowButton: {
+  syncNowBtn: {
     backgroundColor: STRAVA_ORANGE,
-    paddingVertical: spacing.sm,
+    paddingVertical: 10,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
   },
-  syncNowButtonText: {
-    color: '#fff',
+  syncNowBtnText: {
+    color: '#FFFFFF',
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontFamily: fontFamily.demiBold,
   },
 });
 
 export default StravaScreen;
-

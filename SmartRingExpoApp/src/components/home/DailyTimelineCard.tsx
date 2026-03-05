@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import type { SleepData } from '../../hooks/useHomeData';
 import type { X3ActivitySession } from '../../types/sdk.types';
 import type { TimelineEntry, RecoverySubtype } from '../../types/timeline.types';
+import type { StravaActivitySummary } from '../../types/strava.types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,7 +17,8 @@ type TimelineEventKind =
   | 'activity'
   | 'recovery'
   | 'meal'
-  | 'manual_activity';
+  | 'manual_activity'
+  | 'strava_activity';
 
 interface TimelineEvent {
   id: string;
@@ -30,6 +33,7 @@ interface TimelineEvent {
   calories?: number;
   heartRateAvg?: number;
   heartRateMax?: number;
+  distanceLabel?: string;  // e.g. "8.4 km" for Strava activities
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,6 +72,7 @@ const EVENT_CONFIG: Record<
   recovery:        { icon: 'snow-outline',          color: '#6BFFF5' },
   meal:            { icon: 'restaurant-outline',    color: '#FF9F6B' },
   manual_activity: { icon: 'bicycle-outline',       color: '#00D4AA' },
+  strava_activity: { icon: 'trophy-outline',         color: '#FC4C02' },
 };
 
 function recoveryIcon(subtype: RecoverySubtype | string): React.ComponentProps<typeof Ionicons>['name'] {
@@ -81,6 +86,10 @@ function recoveryIcon(subtype: RecoverySubtype | string): React.ComponentProps<t
 
 function MetricsRow({ event, accentColor }: { event: TimelineEvent; accentColor: string }) {
   const chips: { label: string; icon?: React.ComponentProps<typeof Ionicons>['name'] }[] = [];
+
+  if (event.distanceLabel) {
+    chips.unshift({ label: event.distanceLabel, icon: 'map-outline' });
+  }
 
   if (event.durationSecs) {
     chips.push({ label: formatDuration(event.durationSecs), icon: 'time-outline' });
@@ -145,6 +154,7 @@ interface DailyTimelineCardProps {
   sleep: SleepData;
   activitySessions: X3ActivitySession[];
   manualEntries: TimelineEntry[];
+  stravaActivities?: StravaActivitySummary[];
   onAddPress?: () => void;
 }
 
@@ -154,8 +164,10 @@ export default function DailyTimelineCard({
   sleep,
   activitySessions,
   manualEntries,
+  stravaActivities = [],
   onAddPress,
 }: DailyTimelineCardProps) {
+  const { t } = useTranslation();
   const events = useMemo<TimelineEvent[]>(() => {
     const list: TimelineEvent[] = [];
 
@@ -165,7 +177,7 @@ export default function DailyTimelineCard({
         id: 'bed_time',
         kind: 'bed_time',
         time: sleep.bedTime.getTime(),
-        label: 'Bedtime',
+        label: t('timeline.event_bedtime'),
         detail: formatTime(sleep.bedTime.getTime()),
       });
     }
@@ -180,7 +192,7 @@ export default function DailyTimelineCard({
         id: 'fall_asleep',
         kind: 'fall_asleep',
         time: fallAsleepMs,
-        label: 'Fell asleep',
+        label: t('timeline.event_fell_asleep'),
         detail: formatTime(fallAsleepMs),
       });
     }
@@ -190,7 +202,7 @@ export default function DailyTimelineCard({
         id: 'wake_up',
         kind: 'wake_up',
         time: sleep.wakeTime.getTime(),
-        label: 'Wake up',
+        label: t('timeline.event_wake_up'),
         detail: formatTime(sleep.wakeTime.getTime()),
       });
     }
@@ -206,7 +218,7 @@ export default function DailyTimelineCard({
         kind: 'activity',
         time: session.startTime,
         endTime: session.endTime > session.startTime ? session.endTime : undefined,
-        label: session.typeLabel || 'Workout',
+        label: session.typeLabel || t('timeline.event_activity'),
         durationSecs,
         calories: session.calories || undefined,
         heartRateAvg: session.heartRateAvg || undefined,
@@ -232,16 +244,35 @@ export default function DailyTimelineCard({
       });
     });
 
+    // Strava activities — today only, inserted by start_date time
+    const todayIso = new Date().toISOString().slice(0, 10);
+    stravaActivities.forEach((activity) => {
+      if (!activity.start_date?.startsWith(todayIso)) return;
+      const startMs = new Date(activity.start_date).getTime();
+      const endMs = activity.moving_time_sec ? startMs + activity.moving_time_sec * 1000 : undefined;
+      list.push({
+        id: `strava_${activity.id}`,
+        kind: 'strava_activity',
+        time: startMs,
+        endTime: endMs,
+        label: activity.name || activity.sport_type || t('timeline.event_activity'),
+        durationSecs: activity.moving_time_sec ?? undefined,
+        calories: activity.calories ?? undefined,
+        heartRateAvg: activity.average_heartrate ?? undefined,
+        distanceLabel: activity.distance_m ? `${(activity.distance_m / 1000).toFixed(1)} km` : undefined,
+      });
+    });
+
     return list.sort((a, b) => a.time - b.time);
-  }, [sleep, activitySessions, manualEntries]);
+  }, [sleep, activitySessions, manualEntries, stravaActivities]);
 
   // Kinds that get the metrics chip row instead of plain detail text
   const isMetricKind = (kind: TimelineEventKind) =>
-    kind === 'activity' || kind === 'recovery' || kind === 'manual_activity';
+    kind === 'activity' || kind === 'recovery' || kind === 'manual_activity' || kind === 'strava_activity';
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Cronología</Text>
+      <Text style={styles.header}>{t('timeline.header')}</Text>
       <View style={styles.timeline}>
         {events.map((event, index) => {
           const cfg = EVENT_CONFIG[event.kind];
@@ -301,7 +332,7 @@ export default function DailyTimelineCard({
             </View>
             <View style={styles.entryOuter}>
               <View style={[styles.entryBubble, styles.addBubble]}>
-                <Text style={styles.addLabel}>Add entry</Text>
+                <Text style={styles.addLabel}>{t('timeline.button_add')}</Text>
               </View>
             </View>
           </Pressable>

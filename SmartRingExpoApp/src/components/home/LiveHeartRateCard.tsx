@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, NativeModules, NativeEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import JstyleService from '../../services/JstyleService';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
@@ -75,6 +76,7 @@ type LiveHeartRateCardProps = {
 };
 
 export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) {
+  const { t } = useTranslation();
   const homeData = useHomeDataContext();
   const [state, setState] = useState<MeasurementState>('idle');
   const [currentHR, setCurrentHR] = useState<number | null>(null);
@@ -279,7 +281,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
   const isConnected = homeData.isRingConnected;
 
   const headerValue = state === 'idle'
-    ? (lastMeasurement ? String(lastMeasurement.heartRate) : (isConnected ? 'Ready' : 'N/A'))
+    ? (lastMeasurement ? String(lastMeasurement.heartRate) : (isConnected ? t('hr_live.status_ready') : t('hr_live.value_na')))
     : state === 'measuring'
     ? (currentHR ? String(currentHR) : '…')
     : state === 'done'
@@ -288,18 +290,18 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
 
   const headerSubtitle = state === 'idle'
     ? (lastMeasurement
-      ? `Last measured ${formatMeasuredTime(lastMeasurement.measuredAt)}`
-      : (isConnected ? 'Tap to measure' : 'Ring disconnected'))
+      ? t('hr_live.subtitle_last_measured', { time: formatMeasuredTime(lastMeasurement.measuredAt) })
+      : (isConnected ? t('hr_live.subtitle_idle') : t('hr_live.status_disconnected')))
     : state === 'measuring'
-    ? `${secondsLeft}s remaining`
+    ? t('hr_live.subtitle_measuring', { seconds: secondsLeft })
     : state === 'done'
-    ? 'BPM · Tap to re-measure'
-    : 'Measurement failed';
+    ? t('hr_live.subtitle_done')
+    : t('hr_live.subtitle_error');
 
   return (
     <GradientInfoCard
       icon={<HeartIcon size={20} color="#FF6B6B" />}
-      title="Live Heart Rate"
+      title={t('hr_live.card_title')}
       headerValue={headerValue}
       headerSubtitle={headerSubtitle}
       gradientStops={[
@@ -326,7 +328,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
               </View>
             </View>
             <TouchableOpacity style={styles.stopBtn} onPress={stopMeasurement}>
-              <Text style={styles.stopBtnText}>Stop</Text>
+              <Text style={styles.stopBtnText}>{t('hr_live.button_stop')}</Text>
             </TouchableOpacity>
           </View>
         ) : state === 'done' ? (
@@ -338,27 +340,27 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
             </View>
             <Text style={styles.resultLabel}>
               {currentHR
-                ? currentHR < 60 ? 'Low · Rest or sleep detected'
-                  : currentHR < 100 ? 'Normal resting rate'
-                  : 'Elevated · Consider resting'
-                : 'No reading captured'}
+                ? currentHR < 60 ? t('hr_live.result_low')
+                  : currentHR < 100 ? t('hr_live.result_normal')
+                  : t('hr_live.result_elevated')
+                : t('hr_live.result_no_reading')}
             </Text>
             <View style={styles.actionRow}>
               <TouchableOpacity style={styles.actionBtn} onPress={reset}>
-                <Text style={styles.actionBtnText}>Reset</Text>
+                <Text style={styles.actionBtnText}>{t('hr_live.button_reset')}</Text>
               </TouchableOpacity>
               {isConnected && (
                 <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={startMeasurement}>
-                  <Text style={styles.actionBtnTextPrimary}>Measure Again</Text>
+                  <Text style={styles.actionBtnTextPrimary}>{t('hr_live.button_measure_again')}</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
         ) : state === 'error' ? (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Measurement failed. Ensure ring is worn.</Text>
+            <Text style={styles.errorText}>{t('hr_live.error_message')}</Text>
             <TouchableOpacity style={styles.actionBtn} onPress={reset}>
-              <Text style={styles.actionBtnText}>Try Again</Text>
+              <Text style={styles.actionBtnText}>{t('hr_live.button_try_again')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -372,10 +374,10 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
               <HeartIcon size={28} color={isConnected ? '#FF6B6B' : 'rgba(255,255,255,0.3)'} />
             </Animated.View>
             <Text style={[styles.measureBtnText, !isConnected && styles.measureBtnTextDisabled]}>
-              {isConnected ? 'Start Measurement' : 'Ring Not Connected'}
+              {isConnected ? t('hr_live.button_start') : t('hr_live.status_disconnected')}
             </Text>
             {isConnected && (
-              <Text style={styles.measureBtnSub}>30-second reading</Text>
+              <Text style={styles.measureBtnSub}>{t('hr_live.info_duration')}</Text>
             )}
           </TouchableOpacity>
         )}

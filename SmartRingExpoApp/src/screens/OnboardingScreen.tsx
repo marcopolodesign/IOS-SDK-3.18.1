@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useSmartRing } from '../hooks/useSmartRing';
 import type { DeviceInfo } from '../types/sdk.types';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
@@ -26,6 +27,7 @@ interface OnboardingScreenProps {
 }
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
+  const { t } = useTranslation();
   const [step, setStep] = useState<OnboardingStep>('checking');
   const [connectingDevice, setConnectingDevice] = useState<DeviceInfo | null>(null);
 
@@ -137,19 +139,19 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         transitionTo('connected');
       } else {
         Alert.alert(
-          'Connection Failed',
-          'Could not connect to the ring. Please make sure it\'s nearby and try again.',
+          t('onboarding.alert_failed_title'),
+          t('onboarding.alert_failed_message'),
           [
-            { text: 'Retry', onPress: () => handleConnect(device) },
-            { text: 'Back', onPress: () => transitionTo('devices') },
+            { text: t('onboarding.button_retry'), onPress: () => handleConnect(device) },
+            { text: t('onboarding.button_back'), onPress: () => transitionTo('devices') },
           ]
         );
       }
     } catch (error) {
       Alert.alert(
-        'Connection Error',
-        'An error occurred while connecting. Please try again.',
-        [{ text: 'OK', onPress: () => transitionTo('devices') }]
+        t('onboarding.alert_error_title'),
+        t('onboarding.alert_error_message'),
+        [{ text: t('onboarding.button_ok'), onPress: () => transitionTo('devices') }]
       );
     }
   };
@@ -166,11 +168,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         </LinearGradient>
       </View>
       
-      <Text style={styles.title}>Welcome to FOCUS</Text>
-      <Text style={styles.subtitle}>
-        Let's connect your smart ring to start tracking your health metrics
-      </Text>
-      
+      <Text style={styles.title}>{t('onboarding.title_welcome')}</Text>
+      <Text style={styles.subtitle}>{t('onboarding.subtitle_welcome')}</Text>
+
       <TouchableOpacity style={styles.primaryButton} onPress={handleScan}>
         <LinearGradient
           colors={['#6366F1', '#8B5CF6']}
@@ -179,12 +179,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
           style={styles.buttonGradient}
         >
           <Ionicons name="bluetooth" size={24} color="#fff" style={styles.buttonIcon} />
-          <Text style={styles.buttonText}>Scan for Devices</Text>
+          <Text style={styles.buttonText}>{t('onboarding.button_scan')}</Text>
         </LinearGradient>
       </TouchableOpacity>
-      
+
       <TouchableOpacity style={styles.skipButton} onPress={onComplete}>
-        <Text style={styles.skipText}>Skip for now</Text>
+        <Text style={styles.skipText}>{t('onboarding.button_skip')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -201,10 +201,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         </LinearGradient>
       </Animated.View>
       
-      <Text style={styles.title}>Scanning...</Text>
-      <Text style={styles.subtitle}>
-        Looking for nearby FOCUS rings.{'\n'}Make sure your ring is charged and nearby.
-      </Text>
+      <Text style={styles.title}>{t('onboarding.title_scanning')}</Text>
+      <Text style={styles.subtitle}>{t('onboarding.subtitle_scanning')}</Text>
       
       <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
     </View>
@@ -231,14 +229,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
   const renderDevices = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.title}>
-        {devices.length > 0 ? 'Devices Found' : 'No Devices Found'}
+        {devices.length > 0 ? t('onboarding.title_devices_found') : t('onboarding.title_no_devices')}
       </Text>
       <Text style={styles.subtitle}>
         {devices.length > 0
-          ? 'Tap a device to connect'
-          : 'Make sure your ring is charged and nearby'}
+          ? t('onboarding.subtitle_devices_found')
+          : t('onboarding.subtitle_no_devices')}
       </Text>
-      
+
       {devices.length > 0 ? (
         <FlatList
           data={devices}
@@ -250,17 +248,17 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
       ) : (
         <View style={styles.emptyState}>
           <Ionicons name="search" size={60} color="#6B7280" />
-          <Text style={styles.emptyText}>No rings detected</Text>
+          <Text style={styles.emptyText}>{t('onboarding.empty_no_rings')}</Text>
         </View>
       )}
-      
+
       <TouchableOpacity style={styles.secondaryButton} onPress={handleScan}>
         <Ionicons name="refresh" size={20} color="#6366F1" style={styles.buttonIcon} />
-        <Text style={styles.secondaryButtonText}>Scan Again</Text>
+        <Text style={styles.secondaryButtonText}>{t('onboarding.button_scan_again')}</Text>
       </TouchableOpacity>
-      
+
       <TouchableOpacity style={styles.skipButton} onPress={onComplete}>
-        <Text style={styles.skipText}>Skip for now</Text>
+        <Text style={styles.skipText}>{t('onboarding.button_skip')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -285,10 +283,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
           </LinearGradient>
         </Animated.View>
         
-        <Text style={styles.title}>Connecting...</Text>
+        <Text style={styles.title}>{t('onboarding.title_connecting')}</Text>
         <Text style={styles.subtitle}>
-          Pairing with {connectingDevice?.name || 'FOCUS R1'}{'\n'}
-          This may take a moment
+          {t('onboarding.subtitle_connecting', { name: connectingDevice?.name || 'FOCUS R1' })}
         </Text>
         
         <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
@@ -308,9 +305,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         </LinearGradient>
       </View>
 
-      <Text style={styles.title}>Connected!</Text>
+      <Text style={styles.title}>{t('onboarding.title_connected')}</Text>
       <Text style={styles.subtitle}>
-        Your {connectedDevice?.name || connectingDevice?.name || 'FOCUS R1'} is ready to use
+        {t('onboarding.subtitle_connected', { name: connectedDevice?.name || connectingDevice?.name || 'FOCUS R1' })}
       </Text>
 
       <TouchableOpacity style={styles.primaryButton} onPress={onComplete}>
@@ -320,7 +317,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
           end={{ x: 1, y: 0 }}
           style={styles.buttonGradient}
         >
-          <Text style={styles.buttonText}>Continue to App</Text>
+          <Text style={styles.buttonText}>{t('onboarding.button_continue')}</Text>
           <Ionicons name="arrow-forward" size={24} color="#fff" style={styles.buttonIconRight} />
         </LinearGradient>
       </TouchableOpacity>
@@ -339,10 +336,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         </LinearGradient>
       </View>
 
-      <Text style={styles.title}>Looking for your ring...</Text>
-      <Text style={styles.subtitle}>
-        Checking for previously paired devices
-      </Text>
+      <Text style={styles.title}>{t('onboarding.title_checking')}</Text>
+      <Text style={styles.subtitle}>{t('onboarding.subtitle_checking')}</Text>
 
       <ActivityIndicator size="large" color="#6366F1" style={styles.loader} />
     </View>
