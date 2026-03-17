@@ -80,11 +80,12 @@ export default function SleepDetailScreen() {
   const homeData = useHomeDataContext();
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
-  const todayKey = DAY_ENTRIES[0]?.dateKey;
-  const todayFallback = selectedIndex === 0 && !data.get(todayKey)
+  // For today, always prefer live ring data — it's fresher than a cached Supabase sync,
+  // keeping bedTime/wakeTime in sync with the overview card.
+  const todayLive = selectedIndex === 0 && homeData.lastNightSleep.score > 0
     ? buildTodaySleepFromContext(homeData.lastNightSleep)
     : null;
-  const dayData = todayFallback ?? (selectedDateKey ? data.get(selectedDateKey) : undefined);
+  const dayData = todayLive ?? (selectedDateKey ? data.get(selectedDateKey) : undefined);
 
   // Debug logging
   console.log('[SleepDetail] selectedIndex=', selectedIndex, 'selectedDateKey=', selectedDateKey);
@@ -148,16 +149,22 @@ export default function SleepDetailScreen() {
               </View>
             </View>
 
-            {/* Hypnogram */}
-            {dayData.segments.length > 0 && dayData.bedTime && dayData.wakeTime && (
-              <View style={styles.hypnogramWrapper}>
-                <SleepHypnogram
-                  segments={dayData.segments as any}
-                  bedTime={dayData.bedTime}
-                  wakeTime={dayData.wakeTime}
-                />
-              </View>
-            )}
+            {/* Hypnogram (unified with naps for today) */}
+            {dayData.segments.length > 0 && dayData.bedTime && dayData.wakeTime && (() => {
+              // For today, use pre-built unified sessions from data layer
+              const allSessions = selectedIndex === 0 ? homeData.unifiedSleepSessions : [];
+              const hasNaps = allSessions.length > 1;
+              return (
+                <View style={styles.hypnogramWrapper}>
+                  <SleepHypnogram
+                    segments={dayData.segments as any}
+                    bedTime={dayData.bedTime}
+                    wakeTime={dayData.wakeTime}
+                    sessions={hasNaps ? allSessions : undefined}
+                  />
+                </View>
+              );
+            })()}
 
             {/* Stats */}
             <View style={styles.statsContainer}>
@@ -175,6 +182,21 @@ export default function SleepDetailScreen() {
                 <DetailStatRow title="Resting HR" value={`${dayData.restingHR}`} unit="bpm" />
               )}
             </View>
+
+            {/* Nap Stats (today only) */}
+            {selectedIndex === 0 && homeData.todayNaps.length > 0 && (
+              <View style={styles.statsContainer}>
+                <DetailStatRow title="Naps" value={`${homeData.todayNaps.length}`} />
+                <DetailStatRow title="Total Nap Time" value={`${homeData.totalNapMinutesToday} min`} accent="#8B5CF6" />
+                {homeData.todayNaps.map((nap, i) => (
+                  <DetailStatRow
+                    key={nap.id}
+                    title={`Nap ${homeData.todayNaps.length > 1 ? i + 1 : ''}`}
+                    value={`${formatTime(new Date(nap.startTime))} – ${formatTime(new Date(nap.endTime))}`}
+                  />
+                ))}
+              </View>
+            )}
 
             {/* Insight */}
             <View style={styles.insightBlock}>

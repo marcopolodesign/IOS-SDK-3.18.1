@@ -4,11 +4,10 @@
  * This service provides access to the Jstyle smart ring SDK (Focus X3).
  * It handles connection, data retrieval, and real-time monitoring.
  *
- * Key differences from QCBandService:
- * - BLE protocol: Service FFF0, Send FFF6, Receive FFF7
+ * BLE protocol: Service FFF0, Send FFF6, Receive FFF7
  * - Async delegate-based communication (command → write → delegate → parse)
  * - Paginated data retrieval (mode 0=start, 2=continue, dataEnd flag)
- * - Gender: 0=female, 1=male (opposite of QCBand convention)
+ * - Gender: 0=female, 1=male
  * - Distance returned in km (multiplied to meters for normalization)
  */
 
@@ -415,9 +414,9 @@ class JstyleService {
     const result: any = await this.enqueueNativeCall<any>('getBatteryLevel', async () =>
       withNativeTimeout(JstyleBridge.getBatteryLevel(), 5000, 'getBatteryLevel')
     );
-    console.log('RAW_BATTERY', result);
     const batteryValue = Number(result?.battery ?? result?.batteryLevel ?? 0);
-    return { battery: batteryValue };
+    const isCharging = Boolean(result?.isCharging ?? result?.charging ?? false);
+    return { battery: batteryValue, isCharging };
   }
 
   async getFirmwareInfo(): Promise<{ hardwareVersion: string; softwareVersion: string }> {
@@ -514,21 +513,18 @@ class JstyleService {
         const ms = r.startTimestamp || r.startTime || this.parseSleepStart(r.startTime_SleepData);
         return ms ? new Date(ms).toISOString().split('T')[0] : '(no-ts)';
       });
-      console.log('💤 [JstyleService] cached sleep records:', this._sleepRecordsCache.length, 'unique dates:', [...new Set(allDates)]);
     }
     const allRecords = this._sleepRecordsCache;
 
-    console.log('💤 [JstyleService] getSleepByDay records count:', allRecords.length, 'dayIndex:', dayIndex);
-
     if (allRecords.length === 0) {
-      console.log('💤 [JstyleService] No sleep records - returning zeros');
       return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
     }
 
     // Filter records to the target date (today - dayIndex days)
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() - dayIndex);
-    const targetDateStr = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    // Use local date string (YYYY-MM-DD) to avoid UTC/local mismatch in non-UTC timezones
+    const localDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
 
     const records = allRecords.filter(record => {
       const startMs = (() => {
@@ -540,11 +536,10 @@ class JstyleService {
         return candidates.length ? candidates[0] : undefined;
       })();
       if (typeof startMs !== 'number') return dayIndex === 0; // no timestamp → only include for today
-      const recordDateStr = new Date(startMs).toISOString().split('T')[0];
-      return recordDateStr === targetDateStr;
+      const d = new Date(startMs);
+      const recordDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return recordDateStr === localDateStr;
     });
-
-    console.log('💤 [JstyleService] Records for', targetDateStr, ':', records.length);
 
     if (records.length === 0) {
       return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
@@ -701,8 +696,43 @@ class JstyleService {
   }
 
   async getSingleHeartRate(): Promise<{ records: any[]; timestamp: number }> {
-    // X3 doesn't distinguish between single and continuous
-    return await this.getContinuousHeartRate();
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    const result: any = await this.enqueueNativeCall<any>('getSingleHeartRateData', async () =>
+      withNativeTimeout(JstyleBridge.getSingleHeartRateData(), 10000, 'getSingleHeartRateData')
+    );
+    const requestTimestamp = Date.now();
+    const normalizedRecords: any[] = [];
+
+    for (const rec of (result.data || [])) {
+      // Single HR data uses arraySingleHR: [{date, singleHR}]
+      const singles: any[] = Array.isArray(rec?.arraySingleHR) ? rec.arraySingleHR : [];
+      for (const entry of singles) {
+        const hr = Number(entry?.singleHR);
+        const dateStr = typeof entry?.date === 'string' ? entry.date : undefined;
+        const ts = this.parseX3DateTime(dateStr);
+        if (Number.isFinite(hr) && hr > 0) {
+          normalizedRecords.push({
+            date: dateStr ?? rec?.date,
+            startTimestamp: ts ?? requestTimestamp,
+            arrayDynamicHR: [hr], // wrap single value for unified consumption
+          });
+        }
+      }
+    }
+
+    return {
+      records: normalizedRecords,
+      timestamp: requestTimestamp,
+    };
+  }
+
+  async enableAutoHRMonitoring(): Promise<void> {
+    if (!JstyleBridge) throw new Error('Jstyle SDK not available');
+    try {
+      await withNativeTimeout(JstyleBridge.enableAutoHRMonitoring(), 5000, 'enableAutoHRMonitoring');
+    } catch (e) {
+      console.log('⚠️ [JstyleService] enableAutoHRMonitoring failed:', e);
+    }
   }
 
   async getScheduledHeartRate(_dayIndexes: number[] = [0]): Promise<HeartRateData[]> {
@@ -1202,11 +1232,11 @@ class JstyleService {
 
   onBatteryChanged(callback: (data: BatteryData) => void): () => void {
     if (!eventEmitter) return () => {};
-    // Battery data comes through onMeasurementResult
-    const subscription = eventEmitter.addListener('onMeasurementResult', (data) => {
-      if (data.battery !== undefined) {
-        callback({ battery: data.battery });
-      }
+    const subscription = eventEmitter.addListener('onBatteryData', (data) => {
+      callback({
+        battery: Number(data.battery ?? 0),
+        isCharging: Boolean(data.isCharging),
+      });
     });
     return () => subscription.remove();
   }

@@ -1,11 +1,12 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { supabase } from './SupabaseService';
-import { authService } from './AuthService';
 import {
   StravaTokens,
   StravaTokenResponse,
   StravaActivity,
+  StravaActivityDetail,
+  StravaHRZones,
   StravaActivityStats,
   StravaAthlete,
   StravaScope,
@@ -56,22 +57,22 @@ class StravaService {
 
   async connect(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Strava only accepts web domains as redirect URIs
-      // We use Expo's auth proxy which forwards the callback to our app
-      // 
-      // How it works:
-      // 1. Redirect URI: https://auth.expo.io/@anonymous/smart-ring-expo-app
-      // 2. After user authorizes, Strava redirects to that URL
-      // 3. Expo proxy detects the app and redirects to: com.smartring.testapp://expo-auth-session?code=xxx
-      // 4. Our app intercepts that and gets the code
+      // Strava requires an https:// redirect URI (no custom schemes).
+      // We use a Supabase Edge Function as the callback bridge:
+      //   1. Strava redirects to the edge function with ?code=xxx
+      //   2. The function immediately deep-links back: smartring://strava-auth?code=xxx
+      //   3. iOS opens the app and openAuthSessionAsync returns the URL
       //
-      // IMPORTANT: Add "auth.expo.io" to your Strava API's "Authorization Callback Domain"
-      
-      const proxyRedirectUri = 'https://auth.expo.io/@anonymous/smart-ring-expo-app';
-      
+      // IMPORTANT: Set Strava's "Authorization Callback Domain" to:
+      //   pxuemdkxdjuwxtupeqoa.supabase.co
+
+      const callbackUri = 'https://pxuemdkxdjuwxtupeqoa.supabase.co/functions/v1/strava-callback';
+      // The deep link the edge function will redirect to — watched by openAuthSessionAsync
+      const returnUrl = 'smartring://strava-auth';
+
       const params = new URLSearchParams({
         client_id: STRAVA_CLIENT_ID || '192408',
-        redirect_uri: proxyRedirectUri,
+        redirect_uri: callbackUri,
         response_type: 'code',
         approval_prompt: 'auto',
         scope: REQUIRED_SCOPES.join(','),
@@ -79,18 +80,11 @@ class StravaService {
 
       const authUrl = `${STRAVA_AUTH_URL}?${params.toString()}`;
 
-      // Debug logging
       console.log('🔗 Strava OAuth Debug:');
       console.log('  Client ID:', STRAVA_CLIENT_ID || '192408');
-      console.log('  Redirect URI (proxy):', proxyRedirectUri);
-      console.log('  Auth URL:', authUrl);
-
-      // The return URL scheme that the proxy will redirect to
-      const returnUrl = AuthSession.makeRedirectUri({
-        scheme: 'com.smartring.testapp',
-      });
-      
+      console.log('  Redirect URI:', callbackUri);
       console.log('  Return URL:', returnUrl);
+      console.log('  Auth URL:', authUrl);
 
       // Open browser for OAuth
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
@@ -231,14 +225,19 @@ class StravaService {
   // DATABASE OPERATIONS
   // ============================================
 
+  /** Get current supabase user ID — replaces stale authService.currentUser reference */
+  private async getCurrentUserId(): Promise<string | undefined> {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id;
+  }
+
   private async loadTokensFromDatabase() {
-    // Verbose logs disabled to reduce noise
-    // console.log('[StravaService] loadTokensFromDatabase called');
-    const userId = authService.currentUser?.id;
+    const userId = await this.getCurrentUserId();
     if (!userId) {
-      // console.log('[StravaService] No user ID, skipping');
+      console.log('[StravaService] loadTokensFromDatabase: no authenticated user');
       return;
     }
+    console.log('[StravaService] loadTokensFromDatabase: userId =', userId);
 
     try {
       console.log('[StravaService] Querying strava_tokens for user:', userId);
@@ -286,10 +285,12 @@ class StravaService {
   }
 
   private async saveTokensToDatabase(): Promise<boolean> {
-    const userId = authService.currentUser?.id;
+    const userId = await this.getCurrentUserId();
     if (!userId || !this._tokens) {
+      console.error('[StravaService] saveTokensToDatabase: no userId or tokens');
       return false;
     }
+    console.log('[StravaService] saveTokensToDatabase: saving for userId =', userId);
 
     try {
       const { error } = await supabase
@@ -405,11 +406,103 @@ class StravaService {
   // SYNC TO SUPABASE
   // ============================================
 
-  async syncActivitiesToSupabase(days: number = 30): Promise<{ success: boolean; count: number }> {
-    const userId = authService.currentUser?.id;
+  // ============================================
+  // ACTIVITY DETAIL FETCH
+  // ============================================
+
+  async getActivityDetail(activityId: number): Promise<{ detail: StravaActivityDetail | null; zones: StravaHRZones | null }> {
+    const [detail, zones] = await Promise.all([
+      this.apiRequest<StravaActivityDetail>(`/activities/${activityId}`),
+      this.apiRequest<StravaHRZones>(`/activities/${activityId}/zones`),
+    ]);
+    return { detail, zones };
+  }
+
+  async syncAllActivityDetails(
+    userId: string,
+    onProgress?: (synced: number, total: number) => void
+  ): Promise<{ synced: number; failed: number }> {
+    console.log('[StravaService] syncAllActivityDetails: checking for unfetched activities');
+    // Find activities without detail
+    const { data: pending, error } = await supabase
+      .from('strava_activities')
+      .select('id')
+      .eq('user_id', userId)
+      .is('detail_fetched_at', null)
+      .order('start_date', { ascending: false });
+
+    if (error) {
+      console.error('[StravaService] syncAllActivityDetails: query error', error);
+      return { synced: 0, failed: 0 };
+    }
+    if (!pending || pending.length === 0) {
+      console.log('[StravaService] syncAllActivityDetails: all activities already have details');
+      return { synced: 0, failed: 0 };
+    }
+    console.log('[StravaService] syncAllActivityDetails: fetching details for', pending.length, 'activities');
+
+    let synced = 0;
+    let failed = 0;
+    const total = pending.length;
+
+    for (let i = 0; i < pending.length; i++) {
+      const activityId = pending[i].id;
+      try {
+        console.log(`[StravaService] detail fetch ${i + 1}/${total}: activity ${activityId}`);
+        const { detail, zones } = await this.getActivityDetail(activityId);
+
+        if (!detail) {
+          console.warn(`[StravaService] detail fetch failed for ${activityId}`);
+          failed++;
+        } else {
+          await supabase
+            .from('strava_activities')
+            .update({
+              suffer_score: detail.suffer_score ?? null,
+              average_cadence: detail.average_cadence ?? null,
+              average_speed: detail.average_speed ?? null,
+              max_speed: detail.max_speed ?? null,
+              pr_count: detail.pr_count ?? null,
+              elev_high: detail.elev_high ?? null,
+              elev_low: detail.elev_low ?? null,
+              zones_json: zones ?? null,
+              splits_metric_json: detail.splits_metric ?? null,
+              laps_json: detail.laps ?? null,
+              best_efforts_json: detail.best_efforts ?? null,
+              detail_fetched_at: new Date().toISOString(),
+            } as Record<string, unknown>)
+            .eq('id', activityId);
+          synced++;
+        }
+      } catch {
+        failed++;
+      }
+
+      onProgress?.(synced + failed, total);
+
+      // Rate-limit: 1 req-pair/sec to stay under Strava's 100/15min
+      if (i < pending.length - 1) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    console.log(`[StravaService] syncAllActivityDetails complete: synced=${synced} failed=${failed}`);
+    return { synced, failed };
+  }
+
+  async syncActivitiesToSupabase(days: number = 60): Promise<{ success: boolean; count: number }> {
+    const userId = await this.getCurrentUserId();
     if (!userId) {
+      console.error('[StravaService] syncActivitiesToSupabase: no authenticated user');
       return { success: false, count: 0 };
     }
+
+    if (!(await this.ensureValidToken())) {
+      console.error('[StravaService] syncActivitiesToSupabase: no valid token');
+      return { success: false, count: 0 };
+    }
+
+    console.log('[StravaService] syncActivitiesToSupabase: fetching last', days, 'days for user', userId);
 
     try {
       const after = new Date();
@@ -432,6 +525,8 @@ class StravaService {
           }
         }
       }
+
+      console.log('[StravaService] syncActivitiesToSupabase: fetched', allActivities.length, 'activities');
 
       if (allActivities.length === 0) {
         return { success: true, count: 0 };
@@ -463,9 +558,10 @@ class StravaService {
         return { success: false, count: 0 };
       }
 
+      console.log('[StravaService] syncActivitiesToSupabase: upserted', allActivities.length, 'activities');
       return { success: true, count: allActivities.length };
     } catch (e) {
-      console.error('Error in syncActivitiesToSupabase:', e);
+      console.error('[StravaService] syncActivitiesToSupabase error:', e);
       return { success: false, count: 0 };
     }
   }
@@ -475,7 +571,7 @@ class StravaService {
   // ============================================
 
   async disconnect(): Promise<boolean> {
-    const userId = authService.currentUser?.id;
+    const userId = await this.getCurrentUserId();
     if (!userId) {
       return false;
     }

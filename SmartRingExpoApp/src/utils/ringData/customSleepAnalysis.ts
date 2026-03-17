@@ -16,7 +16,6 @@
  * - Movement patterns: REM has characteristic rapid eye movements, deep sleep has minimal movement
  */
 
-import QCBandService from '../../services/QCBandService';
 import { getSleep, type SleepInfo } from './sleep';
 import { getOvernightHeartRate } from './heartRate';
 

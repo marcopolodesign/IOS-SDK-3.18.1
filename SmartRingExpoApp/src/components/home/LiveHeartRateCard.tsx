@@ -336,7 +336,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
             <View style={styles.resultRow}>
               <HeartIcon size={32} color="#FF6B6B" />
               <Text style={styles.resultHR}>{currentHR ?? '--'}</Text>
-              <Text style={styles.resultUnit}>BPM</Text>
+              <Text style={styles.resultUnit}>{t('hr_live.bpm_unit')}</Text>
             </View>
             <Text style={styles.resultLabel}>
               {currentHR

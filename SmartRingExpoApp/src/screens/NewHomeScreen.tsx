@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   View,
   StyleSheet,
@@ -11,7 +12,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-
 import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
 import { OverviewTab, SleepTab, NutritionTab, ActivityTab } from './home';
@@ -21,27 +21,31 @@ import { useSmartRing } from '../hooks/useSmartRing';
 import { spacing, fontFamily } from '../theme/colors';
 import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
 import { BatteryAlertStorage } from '../utils/storage';
+import { SyncStatusSheet } from '../components/home/SyncStatusSheet';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const ICON_SIZE = 65;
 const ICON_STROKE_WIDTH = 1.5;
 
-// Tab configuration
-const tabs = [
-  { key: 'overview', title: 'Overview', Icon: OverviewIcon },
-  { key: 'sleep', title: 'Sleep', Icon: SleepIcon },
-  { key: 'activity', title: 'Activity', Icon: ActivityIcon },
-  { key: 'nutrition', title: 'Nutrition', Icon: NutritionIcon },
-] as const;
-
 // Map tab index to TabType
 const tabIndexMap: TabType[] = ['overview', 'sleep', 'activity', 'nutrition'];
 
 function NewHomeScreenContent() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
+
+  // Tab configuration — inside component so t() is available
+  const tabs = [
+    { key: 'overview', title: t('overview.title'), Icon: OverviewIcon },
+    { key: 'sleep',    title: t('sleep.title'),    Icon: SleepIcon },
+    { key: 'activity', title: t('activity.title'), Icon: ActivityIcon },
+    { key: 'nutrition',title: t('nutrition.title'),Icon: NutritionIcon },
+  ] as const;
   const [activeIndex, setActiveIndex] = useState(0);
   const headerAnim = useRef(new Animated.Value(0)).current;
+  const borderAnim = useRef(new Animated.Value(0)).current;
+  const wasFullyCollapsed = useRef(false);
   const homeData = useHomeDataContext();
   const scrollViewRef = useRef<ScrollView>(null);
   const { autoConnect, isAutoConnecting } = useSmartRing();
@@ -76,12 +80,28 @@ function NewHomeScreenContent() {
         } else if (hasScrolled && y <= 1) {
           setHasScrolled(false);
         }
+
+        const isFullyCollapsed = y >= collapseRange;
+        if (isFullyCollapsed && !wasFullyCollapsed.current) {
+          wasFullyCollapsed.current = true;
+          Animated.timing(borderAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
+        } else if (!isFullyCollapsed && wasFullyCollapsed.current) {
+          wasFullyCollapsed.current = false;
+          borderAnim.setValue(0);
+        }
       },
     },
   );
 
   useEffect(() => {
     headerAnim.setValue(0);
+    borderAnim.setValue(0);
+    wasFullyCollapsed.current = false;
+    setHasScrolled(false);
   }, [activeIndex]);
 
   const handleTabPress = (index: number) => {
@@ -105,12 +125,14 @@ function NewHomeScreenContent() {
     setIsReconnecting(true);
     try {
       await autoConnect();
+      // Trigger a full data sync so the SyncStatusSheet appears
+      void homeData.refresh();
     } catch (error) {
       console.log('Reconnect failed:', error);
     } finally {
       setIsReconnecting(false);
     }
-  }, [autoConnect, isReconnecting, isAutoConnecting]);
+  }, [autoConnect, homeData, isReconnecting, isAutoConnecting]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -167,16 +189,16 @@ function NewHomeScreenContent() {
     BatteryAlertStorage.saveShownThresholds(shown);
 
     if (thresholdToAlert === 5) {
-      Alert.alert('Critical Battery', `Ring battery is ${battery}%. Charge immediately.`);
+      Alert.alert(t('battery.alert_critical_title'), t('battery.alert_critical_body', { battery }));
       return;
     }
 
     if (thresholdToAlert === 10) {
-      Alert.alert('Low Battery', `Ring battery is ${battery}%. Please charge soon.`);
+      Alert.alert(t('battery.alert_low_title'), t('battery.alert_low_10_body', { battery }));
       return;
     }
 
-    Alert.alert('Low Battery', `Ring battery is ${battery}%. Consider charging your ring.`);
+    Alert.alert(t('battery.alert_low_title'), t('battery.alert_low_20_body', { battery }));
   }, [isConnected, homeData.ringBattery]);
 
   const iconScale = 1;
@@ -234,6 +256,7 @@ function NewHomeScreenContent() {
           userName={homeData.userName || 'there'}
           streakDays={homeData.streakDays}
           ringBattery={homeData.ringBattery}
+          isCharging={homeData.isRingCharging}
           isConnected={isConnected}
           isReconnecting={isReconnecting || isAutoConnecting}
           onReconnect={handleReconnect}
@@ -251,12 +274,11 @@ function NewHomeScreenContent() {
                 height: tabBarHeight,
                 paddingTop: tabBarPaddingTop,
                 paddingBottom: 0,
-                borderBottomWidth: hasScrolled ? 1 : 0,
-                borderBottomColor: 'rgba(255, 255, 255, 0.4)',
                 transform: [{ translateY: tabBarTranslateY }],
               },
             ]}
           >
+            <Animated.View style={[styles.tabBarBorder, { opacity: borderAnim }]} />
             <View style={styles.tabBar}>
               {tabs.map((tab, index) => {
                 const focused = index === activeIndex;
@@ -312,7 +334,7 @@ function NewHomeScreenContent() {
             style={styles.contentScroll}
           >
             <View style={styles.page}>
-              <OverviewTab onScroll={onVerticalScroll} />
+              <OverviewTab onScroll={onVerticalScroll} onChartTouchStart={lockTabScroll} onChartTouchEnd={unlockTabScroll} onSleepPress={() => handleTabPress(1)} isActive={activeIndex === 0} />
             </View>
             <View style={styles.page}>
               <SleepTab
@@ -331,6 +353,11 @@ function NewHomeScreenContent() {
           </Animated.ScrollView>
         </Animated.View>
       </View>
+
+      <SyncStatusSheet
+        syncProgress={homeData.syncProgress}
+        isSyncing={homeData.isSyncing}
+      />
     </AnimatedGradientBackground>
   );
 }
@@ -349,6 +376,14 @@ const styles = StyleSheet.create({
   tabBarContainer: {
     marginHorizontal: spacing.sm,
     marginTop: spacing.md,
+  },
+  tabBarBorder: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   tabBar: {
     flexDirection: 'row',

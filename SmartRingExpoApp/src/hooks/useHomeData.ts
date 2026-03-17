@@ -14,9 +14,12 @@ import TodayCardVitalsService, {
 } from '../services/TodayCardVitalsService';
 import dataSyncService from '../services/DataSyncService';
 import type { FeatureAvailability, RecoveryContributors, SportData, X3ActivitySession } from '../types/sdk.types';
+import type { SyncProgressState, MetricKey, MetricStatus, MetricSyncState } from '../types/syncStatus.types';
+import type { StravaActivitySummary } from '../types/strava.types';
 
 const CACHE_KEY = 'home_data_cache';
 const BASELINES_KEY = 'home_metric_baselines_v1';
+const SYNC_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes — skip foreground sync if last sync was recent
 
 type ContributorTrend = 'up' | 'down' | 'flat';
 type ContributorConfidence = 'high' | 'medium' | 'low';
@@ -88,6 +91,7 @@ export interface HomeData {
   lastNightSleep: SleepData;
   activity: ActivityData;
   ringBattery: number;
+  isRingCharging: boolean;
   streakDays: number;
   insight: string;
   insightType: 'sleep' | 'activity' | 'nutrition' | 'general';
@@ -105,6 +109,23 @@ export interface HomeData {
   featureAvailability: FeatureAvailability;
   activitySessions: X3ActivitySession[];
   recoveryContributors: RecoveryContributors;
+  syncProgress: SyncProgressState;
+  stravaActivities: StravaActivitySummary[];
+  todayNaps: Array<{
+    id: string;
+    startTime: string;
+    endTime: string;
+    deepMin: number;
+    lightMin: number;
+    remMin: number;
+    awakeMin: number;
+    napScore: number | null;
+    totalMin: number;
+    segments: SleepSegment[];
+  }>;
+  totalNapMinutesToday: number;
+  unifiedSleepSessions: Array<{ segments: SleepSegment[]; bedTime: Date; wakeTime: Date; label: string }>;
+  totalSleepMinutes: number;
 }
 
   // Data that we cache (subset of HomeData that makes sense to persist)
@@ -121,10 +142,12 @@ interface CachedData {
   };
   activity: ActivityData;
   ringBattery: number;
+  isRingCharging: boolean;
   overallScore: number;
   strain: number;
   readiness: number;
   cachedAt: number;
+  stravaActivities?: StravaActivitySummary[];
 }
 
 // Basal + adjusted active calorie estimation using static profile (to be made dynamic later)
@@ -151,6 +174,23 @@ const getEmptyFeatureAvailability = (): FeatureAvailability => ({
   osaEov: false,
   ppi: false,
 });
+
+const INITIAL_METRICS: MetricSyncState[] = [
+  { key: 'sleep', label: 'Sleep', status: 'pending' },
+  { key: 'battery', label: 'Battery', status: 'pending' },
+  { key: 'heartRate', label: 'Heart Rate', status: 'pending' },
+  { key: 'hrv', label: 'HRV', status: 'pending' },
+  { key: 'steps', label: 'Steps', status: 'pending' },
+  { key: 'vitals', label: 'SpO₂ & Temp', status: 'pending' },
+  { key: 'cloud', label: 'Cloud Sync', status: 'pending' },
+];
+
+function updateMetric(prev: SyncProgressState, key: MetricKey, status: MetricStatus): SyncProgressState {
+  return {
+    ...prev,
+    metrics: prev.metrics.map(m => m.key === key ? { ...m, status } : m),
+  };
+}
 
 const getEmptyRecoveryContributors = (): RecoveryContributors => ({
   hrvBalance: null,
@@ -449,10 +489,12 @@ async function saveToCache(data: HomeData): Promise<void> {
       },
       activity: data.activity,
       ringBattery: data.ringBattery,
+      isRingCharging: data.isRingCharging,
       overallScore: data.overallScore,
       strain: data.strain,
       readiness: data.readiness,
       cachedAt: Date.now(),
+      stravaActivities: data.stravaActivities,
     };
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cached));
     console.log('😴 [useHomeData] Data cached successfully');
@@ -492,9 +534,11 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
       },
       activity: sanitizeActivity(data.activity),
       ringBattery: data.ringBattery,
+      isRingCharging: data.isRingCharging ?? false,
       overallScore: data.overallScore,
       strain: data.strain,
       readiness: data.readiness,
+      stravaActivities: (data.stravaActivities as StravaActivitySummary[]) ?? [],
     };
   } catch (error) {
     console.log('😴 [useHomeData] Failed to load cache:', error);
@@ -518,6 +562,37 @@ function mapSleepType(type: number): SleepStage {
   }
 }
 
+/**
+ * Build SleepSegment[] from a nap's detail_json.
+ * Uses rawQualityRecords if available, otherwise synthesizes a single 'core' segment.
+ */
+function buildNapSegments(detailJson: any, startTimeIso: string, endTimeIso: string): SleepSegment[] {
+  const startDate = new Date(startTimeIso);
+  const endDate = new Date(endTimeIso);
+
+  if (detailJson?.rawQualityRecords?.length) {
+    const segments: SleepSegment[] = [];
+    for (const rec of detailJson.rawQualityRecords) {
+      const unit = (rec.sleepUnitLength || 1) * 60000;
+      let cursor = rec.startTimestamp ?? startDate.getTime();
+      for (const q of (rec.arraySleepQuality || [])) {
+        const stage = mapSleepType(Number(q));
+        const segStart = new Date(cursor);
+        const segEnd = new Date(cursor + unit);
+        if (segments.length && segments[segments.length - 1].stage === stage) {
+          segments[segments.length - 1].endTime = segEnd;
+        } else {
+          segments.push({ stage, startTime: segStart, endTime: segEnd });
+        }
+        cursor += unit;
+      }
+    }
+    if (segments.length > 0) return segments;
+  }
+
+  // Fallback: single core segment spanning the full nap
+  return [{ stage: 'core', startTime: startDate, endTime: endDate }];
+}
 
 /**
  * Parse "YYYY.MM.DD HH:MM:SS" string timestamps from raw SDK records.
@@ -609,7 +684,7 @@ function extractSleepVitalsFromRaw(rawRecords: any[]): { restingHR: number; resp
  * builds a continuous 1-min timeline, and chooses the most recent sleep block.
  * Ported from testing.tsx (the cheatsheet).
  */
-function deriveFromRaw(rawRecords: any[]): SleepData | null {
+function deriveFromRaw(rawRecords: any[]): { night: SleepData; ringNaps: RingNapBlock[] } | null {
   if (!rawRecords || rawRecords.length === 0) return null;
   const extractedVitals = extractSleepVitalsFromRaw(rawRecords);
 
@@ -646,16 +721,69 @@ function deriveFromRaw(rawRecords: any[]): SleepData | null {
   if (block) blocks.push(block);
   if (blocks.length === 0) return null;
 
-  // Use the most recent sleep block
-  const chosen = blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
-  const earliestStart = chosen.start;
-  const latestEnd = chosen.end;
-  const totalMinutes = Math.max(0, Math.round((latestEnd - earliestStart) / 60000));
-  if (totalMinutes === 0) return null;
+  // Pick most recent night-length block (≥180min), fallback to most recent overall
+  const NIGHT_THRESHOLD_MS = 180 * 60 * 1000; // 3 hours
+  const nightCandidates = blocks.filter(b => (b.end - b.start) >= NIGHT_THRESHOLD_MS);
+  const chosen = nightCandidates.length > 0
+    ? nightCandidates.reduce((acc, b) => (b.end > acc.end ? b : acc), nightCandidates[0])
+    : blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
+  console.log(`🛏️ [deriveFromRaw] ${blocks.length} blocks, ${nightCandidates.length} night candidates → chosen: ${new Date(chosen.start).toLocaleString()} → ${new Date(chosen.end).toLocaleString()} (${Math.round((chosen.end - chosen.start) / 60000)}min)`);
 
+  const nightResult = buildBlockResult(chosen, extractedVitals);
+  if (!nightResult) return null;
+
+  // Remaining blocks are ring-detected nap candidates
+  // Only include blocks from TODAY that are short (<180min = nap threshold from NapClassifierService)
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+  const MAX_NAP_DURATION_MS = 180 * 60 * 1000; // 3 hours
+
+  const ringNaps: RingNapBlock[] = blocks
+    .filter(b => b !== chosen)
+    .filter(b => {
+      const dur = b.end - b.start;
+      const isToday = b.start >= todayStartMs;
+      const isShort = dur <= MAX_NAP_DURATION_MS;
+      return isToday && isShort;
+    })
+    .map(b => {
+      const segs = buildBlockSegments(b);
+      const totalMin = Math.max(0, Math.round((b.end - b.start) / 60000));
+      let deepMin = 0, lightMin = 0, remMin = 0, awakeMin = 0;
+      for (const seg of segs) {
+        const durMin = Math.round((seg.endTime.getTime() - seg.startTime.getTime()) / 60000);
+        if (seg.stage === 'deep') deepMin += durMin;
+        else if (seg.stage === 'core') lightMin += durMin;
+        else if (seg.stage === 'rem') remMin += durMin;
+        else awakeMin += durMin;
+      }
+      return { startMs: b.start, endMs: b.end, segments: segs, deepMin, lightMin, remMin, awakeMin, totalMin };
+    })
+    .filter(n => n.totalMin > 0);
+
+  console.log(`🛏️ [deriveFromRaw] ringNaps after filter: ${ringNaps.length}`);
+
+  return { night: nightResult, ringNaps };
+}
+
+interface RingNapBlock {
+  startMs: number;
+  endMs: number;
+  segments: SleepSegment[];
+  deepMin: number;
+  lightMin: number;
+  remMin: number;
+  awakeMin: number;
+  totalMin: number;
+}
+
+function buildBlockSegments(block: { start: number; end: number; records: Array<{ start: number | undefined; unit: number; arr: number[]; durationMin: number }> }): SleepSegment[] {
+  const totalMinutes = Math.max(0, Math.round((block.end - block.start) / 60000));
+  if (totalMinutes === 0) return [];
   const timeline: number[] = new Array(totalMinutes).fill(0);
-  for (const rec of chosen.records) {
-    const startOffset = Math.round((rec.start! - earliestStart) / 60000);
+  for (const rec of block.records) {
+    const startOffset = Math.round((rec.start! - block.start) / 60000);
     const unit = Math.max(1, rec.unit);
     rec.arr.forEach((val: number, idx: number) => {
       const stage = mapSleepType(Number(val));
@@ -666,18 +794,41 @@ function deriveFromRaw(rawRecords: any[]): SleepData | null {
       }
     });
   }
-
   const segments: SleepSegment[] = [];
   for (let i = 0; i < timeline.length; i++) {
     const val = timeline[i];
     const stage: SleepStage = val === 3 ? 'deep' : val === 2 ? 'rem' : val === 1 ? 'core' : 'awake';
-    const startMs = earliestStart + i * 60000;
+    const startMs = block.start + i * 60000;
     const endMs = startMs + 60000;
     if (segments.length && segments[segments.length - 1].stage === stage) {
       segments[segments.length - 1].endTime = new Date(endMs);
     } else {
       segments.push({ stage, startTime: new Date(startMs), endTime: new Date(endMs) });
     }
+  }
+  return segments;
+}
+
+function buildBlockResult(
+  block: { start: number; end: number; records: Array<{ start: number | undefined; unit: number; arr: number[]; durationMin: number }> },
+  extractedVitals: { restingHR: number; respiratoryRate: number },
+): SleepData | null {
+  const totalMinutes = Math.max(0, Math.round((block.end - block.start) / 60000));
+  if (totalMinutes === 0) return null;
+
+  const segments = buildBlockSegments(block);
+  const timeline = new Array(totalMinutes).fill(0);
+  for (const rec of block.records) {
+    const startOffset = Math.round((rec.start! - block.start) / 60000);
+    const unit = Math.max(1, rec.unit);
+    rec.arr.forEach((val: number, idx: number) => {
+      const stage = mapSleepType(Number(val));
+      const stageVal = stage === 'deep' ? 3 : stage === 'rem' ? 2 : stage === 'core' ? 1 : 0;
+      for (let k = 0; k < unit; k++) {
+        const pos = startOffset + idx * unit + k;
+        if (pos >= 0 && pos < timeline.length) timeline[pos] = stageVal;
+      }
+    });
   }
 
   const hours = Math.floor(totalMinutes / 60);
@@ -693,11 +844,11 @@ function deriveFromRaw(rawRecords: any[]): SleepData | null {
     score,
     timeAsleep: `${hours}h ${minutes}m`,
     timeAsleepMinutes: totalMinutes,
-    restingHR: extractedVitals.restingHR, // overwritten by HR stream when available
+    restingHR: extractedVitals.restingHR,
     respiratoryRate: extractedVitals.respiratoryRate,
     segments,
-    bedTime: new Date(earliestStart),
-    wakeTime: new Date(latestEnd),
+    bedTime: new Date(block.start),
+    wakeTime: new Date(block.end),
   };
 }
 
@@ -768,6 +919,7 @@ const getEmptyData = (): HomeData => ({
     workouts: [],
   },
   ringBattery: 0,
+  isRingCharging: false,
   streakDays: 0,
   insight: '',
   insightType: 'general',
@@ -785,6 +937,15 @@ const getEmptyData = (): HomeData => ({
   featureAvailability: getEmptyFeatureAvailability(),
   activitySessions: [],
   recoveryContributors: getEmptyRecoveryContributors(),
+  syncProgress: {
+    phase: 'idle',
+    metrics: [...INITIAL_METRICS],
+  },
+  stravaActivities: [],
+  todayNaps: [],
+  totalNapMinutesToday: 0,
+  unifiedSleepSessions: [],
+  totalSleepMinutes: 0,
 });
 
 // Hook
@@ -798,6 +959,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
   const hasLoadedRealData = useRef(false); // Track if we've successfully loaded real data
   const hasLoadedCache = useRef(false); // Track if we've loaded cached data
   const isFetchingData = useRef(false); // Track if we're currently fetching to prevent concurrent fetches
+  const lastSyncCompletedAt = useRef<number>(0); // Timestamp of last successful sync (for foreground cooldown)
   const currentVitalsRef = useRef<TodayVitals>(getEmptyTodayVitals());
   const baselinesRef = useRef<MetricBaselines>(getEmptyBaselines());
   const delayedVitalsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -981,71 +1143,160 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       }
       lastFetchTime.current = now;
 
-      setData(prev => ({ ...prev, isSyncing: true, error: null }));
+      // ── Sync progress tracking ──
+      let sp: SyncProgressState = {
+        phase: 'connecting',
+        metrics: [...INITIAL_METRICS],
+      };
+      const updateSP = (update: Partial<SyncProgressState> | ((prev: SyncProgressState) => SyncProgressState)) => {
+        sp = typeof update === 'function' ? update(sp) : { ...sp, ...update };
+        setData(prev => ({ ...prev, syncProgress: sp }));
+      };
 
-      // user display name
-      const { data: { user } } = await supabase.auth.getUser();
-      const userName = user?.user_metadata?.display_name || '';
+      setData(prev => ({ ...prev, isSyncing: true, error: null, syncProgress: sp }));
 
-      let alreadyConnected = false;
-      try {
-        const status = await UnifiedSmartRingService.isConnected();
-        alreadyConnected = status.connected;
-      } catch {
-        alreadyConnected = false;
-      }
+      // Run connection check and auth in parallel (both are fast)
+      const [statusResult, authResult] = await Promise.all([
+        UnifiedSmartRingService.isConnected().catch(() => ({ connected: false })),
+        supabase.auth.getUser(),
+      ]);
+      const alreadyConnected = (statusResult as any).connected ?? false;
+      const userName = authResult.data?.user?.user_metadata?.display_name || '';
+      const userId = authResult.data?.user?.id;
 
-      // 1. autoReconnect only if not already connected.
+      // Fire reconnect immediately if needed (don't await yet)
+      const reconnectPromise: Promise<{ success: boolean }> = alreadyConnected
+        ? Promise.resolve({ success: true })
+        : UnifiedSmartRingService.autoReconnect();
       if (!alreadyConnected) {
         console.log('🔄 [useHomeData] autoReconnect...');
-        const reconnectResult = await UnifiedSmartRingService.autoReconnect();
+      }
+
+      // Fetch Strava + naps in parallel while ring connects
+      let stravaActivities: StravaActivitySummary[] = [];
+      let todayNaps: HomeData['todayNaps'] = [];
+      if (userId) {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0); // local midnight
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+
+        const [stravaResult, napResult] = await Promise.all([
+          supabase
+            .from('strava_activities')
+            .select('id, name, sport_type, start_date, distance_m, moving_time_sec, average_heartrate, max_heartrate, suffer_score, calories, splits_metric_json, zones_json')
+            .eq('user_id', userId)
+            .gte('start_date', sevenDaysAgo.toISOString())
+            .order('start_date', { ascending: false }),
+          supabase
+            .from('sleep_sessions')
+            .select('id, start_time, end_time, deep_min, light_min, rem_min, awake_min, nap_score, detail_json')
+            .eq('user_id', userId)
+            .eq('session_type', 'nap')
+            .gte('start_time', todayStart.toISOString())
+            .lte('start_time', todayEnd.toISOString())
+            .order('start_time', { ascending: true }),
+        ]);
+        stravaActivities = (stravaResult.data as unknown as StravaActivitySummary[]) ?? [];
+        todayNaps = ((napResult.data as any[]) ?? []).map(s => ({
+          id: s.id,
+          startTime: s.start_time,
+          endTime: s.end_time,
+          deepMin: s.deep_min || 0,
+          lightMin: s.light_min || 0,
+          remMin: s.rem_min || 0,
+          awakeMin: s.awake_min || 0,
+          napScore: s.nap_score,
+          totalMin: (s.deep_min || 0) + (s.light_min || 0) + (s.rem_min || 0),
+          segments: buildNapSegments(s.detail_json, s.start_time, s.end_time),
+        }));
+      }
+
+      // Await reconnect (likely already done since Strava fetch ran concurrently)
+      const reconnectResult = await reconnectPromise;
+      if (!alreadyConnected) {
         if (!reconnectResult.success) {
-          setData(prev => ({ ...prev, userName, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.' }));
+          updateSP({ phase: 'idle' });
+          setData(prev => ({ ...prev, userName, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.', syncProgress: sp }));
           return;
         }
+        updateSP({ phase: 'connected' });
+        await new Promise(r => setTimeout(r, 50));
       } else {
         console.log('✅ [useHomeData] already connected, skipping autoReconnect');
       }
+      updateSP({ phase: 'syncing' });
       console.log('✅ [useHomeData] connected');
 
       // 2. Sleep — getSleepData() raw + deriveFromRaw() (EXACT testing.tsx pattern)
       //    First call always times out (~10 s) while BLE transfers data from ring.
       //    Second call returns immediately from native cache. We retry automatically.
       let finalSleepData: SleepData | null = null;
+      let ringNaps: RingNapBlock[] = [];
 
+      updateSP(prev => updateMetric(prev, 'sleep', 'loading'));
       for (let attempt = 1; attempt <= 3 && !finalSleepData; attempt++) {
         try {
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt}...`);
           const rawResult = await JstyleService.getSleepData();
           const rawRecords: any[] = (rawResult as any).data || (rawResult as any).records || [];
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt} records:`, rawRecords.length);
-          finalSleepData = deriveFromRaw(rawRecords);
-          if (finalSleepData) console.log('✅ [useHomeData] sleep derived:', finalSleepData.score, finalSleepData.timeAsleep);
+          const derived = deriveFromRaw(rawRecords);
+          if (derived) {
+            finalSleepData = derived.night;
+            ringNaps = derived.ringNaps;
+            console.log('✅ [useHomeData] sleep derived:', derived.night.score, derived.night.timeAsleep, 'ringNaps:', ringNaps.length);
+          }
         } catch (e: any) {
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt} failed:`, e?.message);
           // Brief pause before retry so native SDK can settle (mirrors time between user taps in testing.tsx)
           if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
         }
       }
+      updateSP(prev => updateMetric(prev, 'sleep', finalSleepData ? 'done' : 'error'));
 
       if (finalSleepData) hasLoadedRealData.current = true;
 
       // 3. Battery (testing.tsx pattern)
       let ringBattery = 0;
+      let isRingCharging = false;
+      updateSP(prev => updateMetric(prev, 'battery', 'loading'));
       try {
         const batt = await UnifiedSmartRingService.getBattery();
         ringBattery = batt.battery;
-        console.log('✅ [useHomeData] battery:', ringBattery);
-      } catch (e) { console.log('⚠️ [useHomeData] battery failed:', e); }
+        isRingCharging = batt.isCharging ?? false;
+        console.log('✅ [useHomeData] battery:', ringBattery, 'charging:', isRingCharging);
+        updateSP(prev => updateMetric(prev, 'battery', 'done'));
+      } catch (e) {
+        console.log('⚠️ [useHomeData] battery failed:', e);
+        updateSP(prev => updateMetric(prev, 'battery', 'error'));
+      }
 
       // 4. Continuous HR → resting HR + hrChartData (testing.tsx pattern)
       let restingHR = 0;
       const hrChartData: Array<{ timeMinutes: number; heartRate: number }> = [];
+      updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
       const hrRaw = await JstyleService.getContinuousHeartRate();
-      const firstRec = hrRaw.records?.[0];
-      console.log('RAW_HR records:', hrRaw.records?.length, 'first keys:', JSON.stringify(Object.keys(firstRec || {})), 'dynLen:', firstRec?.arrayDynamicHR?.length, 'contLen:', firstRec?.arrayContinuousHR?.length);
+      console.log('📊 [useHomeData] HR raw records:', hrRaw.records?.length, hrRaw.records?.map((r: any) => ({
+        date: r.date,
+        ts: r.startTimestamp,
+        dynLen: r.arrayDynamicHR?.length,
+      })));
       const samples: number[] = [];
+      const now = new Date();
+      const todayDateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
+      const isRecordFromToday = (rec: any): boolean => {
+        const ts = rec.startTimestamp;
+        if (typeof ts === 'number' && ts > 1e10) {
+          const d = new Date(ts);
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+        }
+        const dateStr = typeof rec.date === 'string' ? rec.date : '';
+        return dateStr.startsWith(todayDateStr);
+      };
       const parseX3DateToMinutes = (value?: string): number | undefined => {
         if (!value || typeof value !== 'string') return undefined;
         const [datePart, timePart] = value.trim().split(/\s+/);
@@ -1053,18 +1304,19 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         const [y, m, d] = datePart.split('.').map(Number);
         const [hh, mm, ss] = (timePart || '00:00:00').split(':').map(Number);
         if ([y, m, d, hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
-        const ts = new Date(y, m - 1, d, hh, mm, ss).getTime();
-        if (!Number.isFinite(ts) || ts <= 0) return undefined;
-        return Math.round((ts % 86400000) / 60000);
+        const ts = new Date(y, m - 1, d, hh, mm, ss);
+        if (!Number.isFinite(ts.getTime()) || ts.getTime() <= 0) return undefined;
+        return ts.getHours() * 60 + ts.getMinutes();
       };
       for (const rec of hrRaw.records || []) {
+        if (!isRecordFromToday(rec)) continue;
         const arr = Array.isArray(rec.arrayDynamicHR)
           ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
           : [];
         // startTimestamp: if > 1e10 it's epoch ms, else treat as seconds-since-midnight
         const ts = rec.startTimestamp;
         const startMin = typeof ts === 'number'
-          ? (ts > 1e10 ? Math.round((ts % 86400000) / 60000) : Math.round(ts / 60))
+          ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
           : (parseX3DateToMinutes(rec.date) ?? 0);
         arr.forEach((v: number, idx: number) => {
           if (v > 0) {
@@ -1089,41 +1341,94 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           }
         }
       }
+      // If continuous HR is empty, try single/static HR as secondary source
+      if (samples.length === 0) {
+        try {
+          const singleHR = await JstyleService.getSingleHeartRate();
+          console.log('📊 [useHomeData] Single HR records:', singleHR.records?.length);
+          for (const rec of singleHR.records || []) {
+            if (!isRecordFromToday(rec)) continue;
+            const arr = Array.isArray(rec.arrayDynamicHR)
+              ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
+              : [];
+            const ts = rec.startTimestamp;
+            const startMin = typeof ts === 'number'
+              ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
+              : (parseX3DateToMinutes(rec.date) ?? 0);
+            arr.forEach((v: number, idx: number) => {
+              if (v > 0) {
+                samples.push(v);
+                hrChartData.push({ timeMinutes: startMin + idx, heartRate: v });
+              }
+            });
+          }
+        } catch (e2) {
+          console.log('⚠️ [useHomeData] Single HR fetch failed:', e2);
+        }
+      }
       if (samples.length > 0) restingHR = Math.min(...samples);
       console.log(samples.length > 0
         ? `✅ [useHomeData] restingHR: ${restingHR} (${samples.length} samples, ${hrChartData.length} chart pts)`
-        : `⚠️ [useHomeData] HR: ${hrRaw.records?.length} records but all empty - will use HRV fallback`);
-      } catch (e) { console.log('⚠️ [useHomeData] HR failed:', e); }
+        : `⚠️ [useHomeData] HR: no continuous or single HR data - will use HRV fallback`);
+      updateSP(prev => updateMetric(prev, 'heartRate', 'done'));
+      } catch (e) {
+        console.log('⚠️ [useHomeData] HR failed:', e);
+        updateSP(prev => updateMetric(prev, 'heartRate', 'error'));
+      }
 
       // 5. HRV (testing.tsx pattern)
       let hrvSdnn = 0;
       const hrvHrPoints: Array<{ timeMinutes: number; heartRate: number }> = [];
+      updateSP(prev => updateMetric(prev, 'hrv', 'loading'));
       try {
       const hrvNorm = await JstyleService.getHRVDataNormalized();
       const valid = hrvNorm.filter(h => (h.sdnn ?? 0) > 0);
       console.log('RAW_HRV count:', hrvNorm.length, 'valid:', valid.length, 'first:', JSON.stringify(hrvNorm[0]));
       if (valid.length > 0) {
-        hrvSdnn = valid[valid.length - 1].sdnn || 0;
-        console.log('✅ [useHomeData] HRV sdnn:', hrvSdnn);
-        // Extract HR readings from HRV records as fallback for the daily HR chart
-        for (const h of hrvNorm) {
+        // Filter to today/overnight window (noon yesterday → now) for representative values
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+        const overnightCutoff = todayStart.getTime() - 12 * 3600000; // noon yesterday
+        const todayHrv = valid.filter(h => typeof h.timestamp === 'number' && h.timestamp >= overnightCutoff);
+        const hrvSource = todayHrv.length > 0 ? todayHrv : valid; // fallback to all if no today data
+
+        // Compute median SDNN (more robust than mean for HRV, matches Oura approach)
+        const sdnnValues = hrvSource.map(h => h.sdnn || 0).filter(v => v > 0).sort((a, b) => a - b);
+        if (sdnnValues.length > 0) {
+          const mid = Math.floor(sdnnValues.length / 2);
+          hrvSdnn = sdnnValues.length % 2 === 0
+            ? Math.round((sdnnValues[mid - 1] + sdnnValues[mid]) / 2)
+            : sdnnValues[mid];
+        }
+        console.log(`✅ [useHomeData] HRV sdnn: ${hrvSdnn} (median of ${sdnnValues.length} readings, ${todayHrv.length} today)`);
+
+        // Extract HR readings from today's HRV records only for the daily HR chart fallback
+        for (const h of hrvSource) {
           const hr = h.heartRate ?? 0;
           if (hr > 0 && typeof h.timestamp === 'number' && h.timestamp > 0) {
-            const timeMinutes = Math.round((h.timestamp % 86400000) / 60000);
+            const _d = new Date(h.timestamp);
+            const timeMinutes = _d.getHours() * 60 + _d.getMinutes();
             hrvHrPoints.push({ timeMinutes, heartRate: hr });
           }
         }
         console.log('📊 [useHomeData] HRV-derived HR points:', hrvHrPoints.length, hrvHrPoints.slice(0,3));
       }
-      } catch (e) { console.log('⚠️ [useHomeData] HRV failed:', e); }
+      updateSP(prev => updateMetric(prev, 'hrv', 'done'));
+      } catch (e) {
+        console.log('⚠️ [useHomeData] HRV failed:', e);
+        updateSP(prev => updateMetric(prev, 'hrv', 'error'));
+      }
 
       if (restingHR === 0 && hrvHrPoints.length > 0) {
-        restingHR = Math.min(...hrvHrPoints.map(p => p.heartRate));
-        console.log(`✅ [useHomeData] restingHR fallback from HRV: ${restingHR}`);
+        // Use 10th percentile instead of absolute min to avoid outliers
+        const sortedHR = hrvHrPoints.map(p => p.heartRate).sort((a, b) => a - b);
+        const p10Index = Math.max(0, Math.floor(sortedHR.length * 0.1));
+        restingHR = sortedHR[p10Index];
+        console.log(`✅ [useHomeData] restingHR fallback from HRV: ${restingHR} (10th pct of ${sortedHR.length} pts)`);
       }
 
       // 6. Steps
       let activity: ActivityData = sanitizeActivity();
+      updateSP(prev => updateMetric(prev, 'steps', 'loading'));
       try {
       const stepsData = await UnifiedSmartRingService.getSteps();
       activity = sanitizeActivity({
@@ -1135,7 +1440,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         workouts: [],
       });
       console.log('✅ [useHomeData] steps:', stepsData.steps);
-      } catch (e) { console.log('⚠️ [useHomeData] steps failed:', e); }
+      updateSP(prev => updateMetric(prev, 'steps', 'done'));
+      } catch (e) {
+        console.log('⚠️ [useHomeData] steps failed:', e);
+        updateSP(prev => updateMetric(prev, 'steps', 'error'));
+      }
 
       const featureAvailability = UnifiedSmartRingService.getFeatureAvailability();
 
@@ -1173,6 +1482,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
       };
 
+      updateSP(prev => updateMetric(prev, 'vitals', 'loading'));
       if (!sleep.respiratoryRate || sleep.respiratoryRate <= 0) {
         try {
           const respiratoryRate = await UnifiedSmartRingService.getRespiratoryRateNightly(0);
@@ -1184,6 +1494,10 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           console.log('⚠️ [useHomeData] respiratory rate fetch failed:', e);
         }
       }
+      updateSP(prev => updateMetric(prev, 'vitals', 'done'));
+
+      updateSP({ phase: 'complete' });
+      updateSP(prev => updateMetric(prev, 'cloud', 'loading'));
 
       const { insight, type } = generateInsight(sleep.score, activity.score);
       const overallScore = calculateOverallScore(sleep.score, activity.score);
@@ -1191,7 +1505,70 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const restingHRScore = restingHR > 0 ? Math.max(0, Math.min(100, Math.round(((90 - restingHR) / 50) * 100))) : 50;
       const readiness = Math.max(0, Math.min(100, Math.round(sleep.score * 0.50 + restingHRScore * 0.30 + Math.max(0, 100 - activity.score) * 0.20)));
       const calStrain = Math.max(0, Math.min(100, Math.round(((activity.adjustedActiveCalories - 300) / 900) * 100)));
-      const strain = Math.max(0, Math.min(100, Math.round(calStrain * 0.60 + activity.score * 0.40)));
+
+      // Blend Strava suffer_score into strain if present today
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayStrava = stravaActivities.filter(a => a.start_date?.startsWith(todayIso));
+      const stravaStrain = todayStrava.length > 0
+        ? Math.min(100, todayStrava.reduce((sum, a) => sum + (a.suffer_score ?? 0), 0) / 2)
+        : null;
+      const strain = Math.max(0, Math.min(100, stravaStrain != null
+        ? Math.round(stravaStrain * 0.65 + calStrain * 0.35)
+        : Math.round(calStrain * 0.60 + activity.score * 0.40)));
+
+      // Merge ring-detected naps with Supabase naps (dedup by time overlap)
+      console.log(`🛏️ [useHomeData] pre-merge: supabaseNaps=${todayNaps.length}, ringNaps=${ringNaps.length}`);
+      for (const rn of ringNaps) {
+        const rnStart = rn.startMs;
+        const rnEnd = rn.endMs;
+        const rnDur = rnEnd - rnStart;
+        const overlaps = todayNaps.some(sn => {
+          const snStart = new Date(sn.startTime).getTime();
+          const snEnd = new Date(sn.endTime).getTime();
+          const overlapStart = Math.max(rnStart, snStart);
+          const overlapEnd = Math.min(rnEnd, snEnd);
+          const overlapMs = Math.max(0, overlapEnd - overlapStart);
+          return overlapMs > rnDur * 0.5;
+        });
+        if (!overlaps) {
+          todayNaps.push({
+            id: `ring-nap-${rn.startMs}`,
+            startTime: new Date(rn.startMs).toISOString(),
+            endTime: new Date(rn.endMs).toISOString(),
+            deepMin: rn.deepMin,
+            lightMin: rn.lightMin,
+            remMin: rn.remMin,
+            awakeMin: rn.awakeMin,
+            napScore: null,
+            totalMin: rn.totalMin,
+            segments: rn.segments,
+          });
+        }
+      }
+      const totalNapMinutesUpdated = todayNaps.reduce((s, n) => s + n.totalMin, 0);
+      console.log(`🛏️ [useHomeData] post-merge: totalNaps=${todayNaps.length}, totalNapMin=${totalNapMinutesUpdated}`);
+
+      // Build unified sleep sessions (night + naps) for hypnogram
+      const unifiedSleepSessions: HomeData['unifiedSleepSessions'] = [];
+      if (sleep.segments.length > 0) {
+        unifiedSleepSessions.push({
+          segments: sleep.segments,
+          bedTime: sleep.bedTime,
+          wakeTime: sleep.wakeTime,
+          label: 'Night',
+        });
+        for (const nap of todayNaps) {
+          if (nap.segments.length > 0) {
+            unifiedSleepSessions.push({
+              segments: nap.segments,
+              bedTime: nap.segments[0].startTime,
+              wakeTime: nap.segments[nap.segments.length - 1].endTime,
+              label: 'Nap',
+            });
+          }
+        }
+      }
+      const totalSleepMinutes = sleep.timeAsleepMinutes + totalNapMinutesUpdated;
 
       setData(prev => {
       // Keep previously fetched hrChartData if the new fetch returned nothing.
@@ -1223,7 +1600,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
                 )
               : null,
           overnightSpo2: prev.todayVitals.lastSpo2 ?? prev.todayVitals.minSpo2,
-          sleepImpact: sleep.timeAsleepMinutes > 0 ? clampScore((sleep.timeAsleepMinutes / 480) * 100) : null,
+          sleepImpact: totalSleepMinutes > 0 ? clampScore((totalSleepMinutes / 480) * 100) : null,
         };
 
         const contributors = buildContributors(
@@ -1241,6 +1618,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           lastNightSleep: sleep,
           activity,
           ringBattery,
+          isRingCharging,
           streakDays: 0,
           insight, insightType: type,
           isLoading: false, isSyncing: false, error: null,
@@ -1255,6 +1633,12 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           featureAvailability,
           activitySessions,
           recoveryContributors,
+          syncProgress: sp,
+          stravaActivities,
+          todayNaps,
+          totalNapMinutesToday: totalNapMinutesUpdated,
+          unifiedSleepSessions,
+          totalSleepMinutes,
         };
 
         baselinesRef.current = {
@@ -1272,10 +1656,17 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         };
         void saveMetricBaselines(baselinesRef.current);
 
+        lastSyncCompletedAt.current = Date.now();
         console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: ringBattery, hrPts: finalHrChartData.length });
         saveToCache(newData);
         // Push all ring data (7 days of sleep + vitals) to Supabase in the background
-        void dataSyncService.syncAllData();
+        void dataSyncService.syncAllData()
+          .then(() => {
+            setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'cloud', 'done') }));
+          })
+          .catch(() => {
+            setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'cloud', 'error') }));
+          });
         return newData;
       });
       void refreshMissingCardData(hydrationReason);
@@ -1287,6 +1678,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         isLoading: false,
         isSyncing: false,
         error: message,
+        syncProgress: { ...prev.syncProgress, phase: 'idle' },
       }));
     } finally {
       isFetchingData.current = false;
@@ -1335,6 +1727,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
             isRingConnected: false,
             todayVitals: prev.todayVitals,
             cardDataStatus: getCardDataStatusFromVitals(prev.todayVitals),
+            syncProgress: { phase: 'idle', metrics: [...INITIAL_METRICS] },
           }));
         });
       }
@@ -1345,16 +1738,33 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     };
   }, [refreshMissingCardData]);
 
+  // Reactively update battery level and charging state from passive ring notifications
+  useEffect(() => {
+    const unsubscribe = UnifiedSmartRingService.onBatteryReceived((batt) => {
+      setData(prev => ({
+        ...prev,
+        ringBattery: batt.battery,
+        isRingCharging: batt.isCharging ?? false,
+      }));
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Listen for app state changes (foreground/background)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       // App came to foreground from background
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        console.log('😴 [useHomeData] App came to foreground - syncing data');
-        // Reset the real data flag so we try to fetch fresh data
-        hasLoadedRealData.current = false;
-        fetchData(true, 'foreground'); // Force refresh
-        void refreshMissingCardData('foreground');
+        const elapsed = Date.now() - lastSyncCompletedAt.current;
+        if (lastSyncCompletedAt.current > 0 && elapsed < SYNC_COOLDOWN_MS) {
+          console.log(`⏳ [useHomeData] Foreground sync skipped — last sync ${Math.round(elapsed / 1000)}s ago (cooldown ${SYNC_COOLDOWN_MS / 1000}s)`);
+          void refreshMissingCardData('foreground');
+        } else {
+          console.log('😴 [useHomeData] App came to foreground - syncing data');
+          hasLoadedRealData.current = false;
+          fetchData(true, 'foreground');
+          void refreshMissingCardData('foreground');
+        }
       }
       appState.current = nextAppState;
     });

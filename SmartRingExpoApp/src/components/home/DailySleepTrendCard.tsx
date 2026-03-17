@@ -9,14 +9,21 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 // dayOfWeek index (0=Sun..6=Sat) → bar position in S M T W T F S layout
 type SleepDay = { barIndex: number; minutes: number };
 
-const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
 type DailySleepTrendCardProps = {
   headerRight?: React.ReactNode;
 };
 
 export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = {}) {
   const { t } = useTranslation();
+  const DAY_LABELS = [
+    t('sleep_trend.day_sun'),
+    t('sleep_trend.day_mon'),
+    t('sleep_trend.day_tue'),
+    t('sleep_trend.day_wed'),
+    t('sleep_trend.day_thu'),
+    t('sleep_trend.day_fri'),
+    t('sleep_trend.day_sat'),
+  ];
   const [sleepDays, setSleepDays] = useState<SleepDay[]>([]);
   const [retryNonce, setRetryNonce] = useState(0);
   const homeData = useHomeDataContext();

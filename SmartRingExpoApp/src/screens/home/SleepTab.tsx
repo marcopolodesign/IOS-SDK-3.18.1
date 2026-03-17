@@ -1,16 +1,20 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated, FlatList, ImageBackground, Dimensions } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
 import { SleepHypnogram } from '../../components/home/SleepHypnogram';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
 import DailySleepTrendCard from '../../components/home/DailySleepTrendCard';
+import SleepDebtCard from '../../components/home/SleepDebtCard';
+import SleepBaselineTierCard from '../../components/home/SleepBaselineTierCard';
+import NapCard from '../../components/home/NapCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getSleepMessage } from '../../hooks/useHomeData';
-import { spacing, fontSize, fontFamily } from '../../theme/colors';
+import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 
 type SleepTabProps = {
@@ -42,12 +46,17 @@ function DropIcon() {
   );
 }
 
+const TIP_CARD_WIDTH = Dimensions.get('window').width * 0.75;
+
 export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd, isActive = false }: SleepTabProps) {
   const homeData = useHomeDataContext();
+  const { t } = useTranslation();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshCount, setRefreshCount] = React.useState(0);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
+    setRefreshCount((c) => c + 1);
     await homeData.refresh();
     setRefreshing(false);
   }, [homeData.refresh]);
@@ -67,6 +76,12 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
     homeData.refreshMissingCardData,
   ]);
 
+  const scrollRef = React.useRef<any>(null);
+
+  useEffect(() => {
+    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [isActive]);
+
   const sleepMessage = getSleepMessage(homeData.sleepScore);
   const sleep = homeData.lastNightSleep;
   const sleepInsight =
@@ -74,15 +89,29 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       ? homeData.insight
       : 'Your deep sleep was above average last night. Deep sleep is crucial for physical recovery and memory consolidation.';
 
+  const tips = useMemo(() => {
+    if (sleep.score >= 70) {
+      return [
+        { key: 'great_1', text: t('sleep.tip_great_1'), image: require('../../assets/backgrounds/night.jpg') },
+        { key: 'great_2', text: t('sleep.tip_great_2'), image: require('../../assets/backgrounds/dawn.jpg') },
+      ];
+    }
+    return [
+      { key: 'improve_1', text: t('sleep.tip_improve_1'), image: require('../../assets/backgrounds/sleep.jpg') },
+      { key: 'improve_2', text: t('sleep.tip_improve_2'), image: require('../../assets/backgrounds/dusk.jpg') },
+      { key: 'improve_3', text: t('sleep.tip_improve_3'), image: require('../../assets/backgrounds/night.jpg') },
+    ];
+  }, [sleep.score, t]);
+
   // HRV-derived stress classification
   const sdnn = homeData.hrvSdnn ?? 0;
-  const stressLabel = sdnn >= 50 ? 'Low' : sdnn >= 30 ? 'Moderate' : sdnn > 0 ? 'High' : '--';
+  const stressLabel = sdnn >= 50 ? t('sleep.hrv_low') : sdnn >= 30 ? t('sleep.hrv_moderate') : sdnn > 0 ? t('sleep.hrv_high') : '--';
   const stressColor = sdnn >= 50 ? '#4ADE80' : sdnn >= 30 ? '#FFD700' : sdnn > 0 ? '#FF6B6B' : 'rgba(255,255,255,0.5)';
 
   // SpO2 status
   const lastSpO2 = homeData.todayVitals.lastSpo2;
   const spo2Status = lastSpO2
-    ? lastSpO2 >= 95 ? 'Normal' : lastSpO2 >= 90 ? 'Low' : 'Seek care'
+    ? lastSpO2 >= 95 ? t('sleep.spo2_status_normal') : lastSpO2 >= 90 ? t('sleep.spo2_status_low') : t('sleep.spo2_status_seek_care')
     : null;
   const spo2Color = lastSpO2
     ? lastSpO2 >= 95 ? '#4ADE80' : lastSpO2 >= 90 ? '#FFD700' : '#FF6B6B'
@@ -90,6 +119,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
 
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -107,7 +137,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       {homeData.isSyncing && (
         <View style={styles.syncingBanner}>
           <ActivityIndicator size="small" color="rgba(255,255,255,0.8)" />
-          <Text style={styles.syncingText}>Syncing with ring...</Text>
+          <Text style={styles.syncingText}>{t('sleep.syncing')}</Text>
         </View>
       )}
 
@@ -115,7 +145,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       <View style={styles.gaugeSection}>
         <SemiCircularGauge
           score={sleep.score}
-          label="LAST NIGHT"
+          label={t('sleep.last_night')}
           animated={!homeData.isLoading}
         />
         <View style={styles.gaugeInfoBtn}>
@@ -128,25 +158,14 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       <View style={styles.metricsInsightSection}>
         <MetricInsightCard
           metrics={[
-            { label: 'Duration', value: sleep.timeAsleep || '--' },
-            { label: 'Rest HR', value: sleep.restingHR || '--' },
+            { label: t('sleep.time_asleep'), value: sleep.timeAsleep || '--' },
+            { label: t('sleep.resting_hr'), value: sleep.restingHR || '--' },
             { label: 'Resp', value: sleep.respiratoryRate || '--' },
           ]}
           insight={sleepInsight}
           backgroundImage={require('../../assets/backgrounds/insights/violet-insight.jpg')}
         />
       </View>
-      {homeData.contributors.sleep.length > 0 && (
-        <View style={styles.contributorRow}>
-          {homeData.contributors.sleep.slice(0, 3).map((chip) => (
-            <View key={chip.key} style={styles.contributorChip}>
-              <Text style={styles.contributorLabel}>{chip.label}</Text>
-              <Text style={styles.contributorValue}>{chip.display}</Text>
-              <Text style={styles.contributorMeta}>{chip.confidence}</Text>
-            </View>
-          ))}
-        </View>
-      )}
 
       {/* Sleep Stats
       <View style={styles.statsSection}>
@@ -157,30 +176,43 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         />
       </View> */}
 
-      {/* Sleep Stages Hypnogram */}
-      {sleep.segments.length > 0 && (
+      {/* Sleep Stages Hypnogram (unified: night + naps) */}
+      {sleep.segments.length > 0 && (() => {
+        const allSessions = homeData.unifiedSleepSessions;
+        const hasNaps = allSessions.length > 1;
+
+        return (
+          <View style={styles.gradientCardSection}>
+            <GradientInfoCard
+              icon={<SleepScoreIcon />}
+              title={hasNaps ? t('sleep.stages') + ' + Nap' : t('sleep.stages')}
+              showArrow
+              onHeaderPress={() => router.push('/detail/sleep-detail')}
+              gradientStops={[
+                { offset: 0, color: '#7100C2', opacity: 1 },
+                { offset: 0.55, color: '#7100C2', opacity: 0.2 },
+              ]}
+              gradientCenter={{ x: 0.51, y: -0.86 }}
+              gradientRadii={{ rx: '80%', ry: '300%' }}
+              headerRight={<InfoButton metricKey="sleep_deep" />}
+            >
+              <SleepHypnogram
+                segments={sleep.segments}
+                bedTime={sleep.bedTime}
+                wakeTime={sleep.wakeTime}
+                sessions={hasNaps ? allSessions : undefined}
+                onTouchStart={onHypnogramTouchStart}
+                onTouchEnd={onHypnogramTouchEnd}
+              />
+            </GradientInfoCard>
+          </View>
+        );
+      })()}
+
+      {/* Nap summary card — lightweight when naps are in hypnogram, full otherwise */}
+      {homeData.todayNaps.length > 0 && (
         <View style={styles.gradientCardSection}>
-          <GradientInfoCard
-            icon={<SleepScoreIcon />}
-            title="Sleep Stages"
-            showArrow
-            onHeaderPress={() => router.push('/detail/sleep-detail')}
-            gradientStops={[
-              { offset: 0, color: '#7100C2', opacity: 1 },
-              { offset: 0.55, color: '#7100C2', opacity: 0.2 },
-            ]}
-            gradientCenter={{ x: 0.51, y: -0.86 }}
-            gradientRadii={{ rx: '80%', ry: '300%' }}
-            headerRight={<InfoButton metricKey="sleep_deep" />}
-          >
-            <SleepHypnogram
-              segments={sleep.segments}
-              bedTime={sleep.segments[0].startTime}
-              wakeTime={sleep.segments[sleep.segments.length - 1].endTime}
-              onTouchStart={onHypnogramTouchStart}
-              onTouchEnd={onHypnogramTouchEnd}
-            />
-          </GradientInfoCard>
+          <NapCard naps={homeData.todayNaps} totalMinutes={homeData.totalNapMinutesToday} />
         </View>
       )}
 
@@ -188,9 +220,9 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       <View style={styles.gradientCardSection}>
         <GradientInfoCard
           icon={<BrainIcon />}
-          title="HRV & Stress"
+          title={t('sleep.hrv_stress')}
           headerValue={sdnn > 0 ? String(sdnn) : '--'}
-          headerSubtitle={sdnn > 0 ? 'SDNN · ms' : 'No data'}
+          headerSubtitle={sdnn > 0 ? 'SDNN · ms' : t('sleep.hrv_no_data')}
           gradientStops={[
             { offset: 0, color: 'rgba(0, 130, 120, 0.99)' },
             { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -204,29 +236,29 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           <View style={styles.hrvBody}>
             <View style={styles.hrvRow}>
               <View style={styles.hrvMetric}>
-                <Text style={styles.hrvMetricLabel}>Stress</Text>
+                <Text style={styles.hrvMetricLabel}>{t('sleep.label_stress')}</Text>
                 <Text style={[styles.hrvMetricValue, { color: stressColor }]}>{stressLabel}</Text>
               </View>
               <View style={styles.hrvDivider} />
               <View style={styles.hrvMetric}>
-                <Text style={styles.hrvMetricLabel}>Recovery</Text>
+                <Text style={styles.hrvMetricLabel}>{t('sleep.label_recovery')}</Text>
                 <Text style={styles.hrvMetricValue}>
-                  {sdnn > 0 ? (sdnn >= 50 ? 'Optimal' : sdnn >= 30 ? 'Fair' : 'Poor') : '--'}
+                  {sdnn > 0 ? (sdnn >= 50 ? t('sleep.recovery_optimal') : sdnn >= 30 ? t('sleep.recovery_fair') : t('sleep.recovery_poor')) : '--'}
                 </Text>
               </View>
               <View style={styles.hrvDivider} />
               <View style={styles.hrvMetric}>
-                <Text style={styles.hrvMetricLabel}>SDNN</Text>
+                <Text style={styles.hrvMetricLabel}>{t('sleep.label_sdnn')}</Text>
                 <Text style={styles.hrvMetricValue}>{sdnn > 0 ? `${sdnn} ms` : '--'}</Text>
               </View>
             </View>
             {sdnn > 0 && (
               <Text style={styles.hrvNote}>
                 {sdnn >= 50
-                  ? 'Excellent recovery. Your nervous system is well-balanced.'
+                  ? t('sleep.hrv_note_excellent')
                   : sdnn >= 30
-                  ? 'Moderate recovery. Consider light activity today.'
-                  : 'Low HRV. Prioritize rest and stress reduction.'}
+                  ? t('sleep.hrv_note_moderate')
+                  : t('sleep.hrv_note_poor')}
               </Text>
             )}
           </View>
@@ -237,9 +269,9 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       <View style={styles.gradientCardSection}>
         <GradientInfoCard
           icon={<DropIcon />}
-          title="Blood Oxygen"
+          title={t('sleep.blood_oxygen')}
           headerValue={lastSpO2 ? `${lastSpO2}%` : '--'}
-          headerSubtitle={spo2Status ?? 'No overnight data'}
+          headerSubtitle={spo2Status ?? t('sleep.no_overnight_data')}
           gradientStops={[
             { offset: 0, color: 'rgba(23, 90, 190, 0.99)' },
             { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -260,16 +292,16 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
               <Text style={styles.spo2Note}>
                 {lastSpO2
                   ? lastSpO2 >= 95
-                    ? 'Healthy oxygen saturation while sleeping.'
+                    ? t('sleep.spo2_healthy')
                     : lastSpO2 >= 90
-                    ? 'Slightly below normal. Monitor over the next few nights.'
-                    : 'Very low. Consider consulting a physician.'
-                  : 'Sync your ring to see overnight SpO2 data.'}
+                    ? t('sleep.spo2_slightly_low')
+                    : t('sleep.spo2_very_low_note')
+                  : t('sleep.spo2_sync_hint')}
               </Text>
             </View>
             <View style={styles.spo2Scale}>
-              <Text style={styles.spo2ScaleLabel}>Normal: 95–100%</Text>
-              <Text style={styles.spo2ScaleLabel}>Low: 90–94%</Text>
+              <Text style={styles.spo2ScaleLabel}>{t('sleep.spo2_normal_range')}</Text>
+              <Text style={styles.spo2ScaleLabel}>{t('sleep.spo2_low_range')}</Text>
             </View>
           </View>
         </GradientInfoCard>
@@ -280,43 +312,41 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         <DailySleepTrendCard headerRight={<InfoButton metricKey="sleep_trend_7d" />} />
       </View>
 
+      {/* Sleep Baseline Tier */}
+      <View style={styles.gradientCardSection}>
+        <SleepBaselineTierCard refreshTrigger={refreshCount} />
+      </View>
+
+      {/* Sleep Debt */}
+      <View style={styles.gradientCardSection}>
+        <SleepDebtCard refreshTrigger={refreshCount} />
+      </View>
+
       {/* Sleep Tips Section (conditional) */}
       <View style={styles.tipsSection}>
         <Text style={styles.tipsTitle}>
-          {sleep.score >= 70 ? 'Keep it up' : 'Sleep Tips'}
+          {sleep.score >= 70 ? t('sleep.tips_great') : t('sleep.tips_improve')}
         </Text>
-        {sleep.score >= 70 ? (
-          <>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                ⭐ Great sleep! Your consistent schedule is paying off.
-              </Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                💪 Recovery looks solid — you're ready for today's activity.
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                💤 Maintain a consistent sleep schedule, even on weekends
-              </Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                🌙 Create a relaxing bedtime routine 30–60 minutes before sleep
-              </Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                📱 Avoid screens at least 1 hour before bedtime
-              </Text>
-            </View>
-          </>
-        )}
+        <FlatList
+          data={tips}
+          keyExtractor={(item) => item.key}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={TIP_CARD_WIDTH + spacing.md}
+          decelerationRate="fast"
+          contentContainerStyle={{ paddingHorizontal: spacing.lg }}
+          renderItem={({ item, index }) => (
+            <ImageBackground
+              source={item.image}
+              style={[styles.tipCard, index < tips.length - 1 && { marginRight: spacing.md }]}
+              imageStyle={styles.tipCardImage}
+            >
+              <View style={styles.tipCardOverlay}>
+                <Text style={styles.tipText}>{item.text}</Text>
+              </View>
+            </ImageBackground>
+          )}
+        />
       </View>
 
       {/* Spacer for bottom padding */}
@@ -418,7 +448,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   tipsSection: {
-    paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   tipsTitle: {
@@ -426,18 +455,28 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontFamily: fontFamily.demiBold,
     marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   tipCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    width: TIP_CARD_WIDTH,
+    height: TIP_CARD_WIDTH,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+  },
+  tipCardImage: {
+    borderRadius: borderRadius.lg,
+  },
+  tipCardOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    padding: spacing.lg,
   },
   tipText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-    lineHeight: 22,
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
+    lineHeight: 24,
   },
   bottomSpacer: {
     height: 50,

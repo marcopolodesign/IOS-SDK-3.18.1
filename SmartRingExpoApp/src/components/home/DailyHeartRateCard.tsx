@@ -13,15 +13,21 @@ type Props = {
   /** Pre-fetched data — skips the internal BLE fetch when provided */
   preloadedData?: Array<{ timeMinutes: number; heartRate: number }>;
   headerRight?: React.ReactNode;
+  onTouchStart?: () => void;
+  onTouchEnd?: () => void;
 };
 
-export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
+export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, onTouchEnd }: Props = {}) {
   const { t } = useTranslation();
   const [hourlyHrRanges, setHourlyHrRanges] = useState<HourRange[]>([]);
   const [selectedHrIndex, setSelectedHrIndex] = useState<number | null>(null);
   const isMockData = UnifiedSmartRingService.isUsingMockData();
   const chartWidthRef = useRef(0);
   const handleTouchRef = useRef<(x: number) => void>(() => {});
+  const onTouchStartRef = useRef(onTouchStart);
+  const onTouchEndRef   = useRef(onTouchEnd);
+  onTouchStartRef.current = onTouchStart;
+  onTouchEndRef.current   = onTouchEnd;
 
   const parseX3DateToMinutes = (value?: string): number | undefined => {
     if (!value || typeof value !== 'string') return undefined;
@@ -30,9 +36,9 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
     const [y, m, d] = datePart.split('.').map(Number);
     const [hh, mm, ss] = (timePart || '00:00:00').split(':').map(Number);
     if ([y, m, d, hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
-    const ts = new Date(y, m - 1, d, hh, mm, ss).getTime();
-    if (!Number.isFinite(ts) || ts <= 0) return undefined;
-    return Math.round((ts % 86400000) / 60000);
+    const dt = new Date(y, m - 1, d, hh, mm, ss);
+    if (!Number.isFinite(dt.getTime()) || dt.getTime() <= 0) return undefined;
+    return dt.getHours() * 60 + dt.getMinutes();
   };
 
   const buildRanges = (data: Array<{ timeMinutes: number; heartRate: number }>) => {
@@ -81,7 +87,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
             : [];
           const ts = rec.startTimestamp;
           const startMin = typeof ts === 'number'
-            ? (ts > 1e10 ? Math.round((ts % 86400000) / 60000) : Math.round(ts / 60))
+            ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
             : (parseX3DateToMinutes(rec.date) ?? 0);
           arr.forEach((v: number, idx: number) => {
             if (v > 0) points.push({ timeMinutes: startMin + idx, heartRate: v });
@@ -156,6 +162,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
+        onTouchStartRef.current?.();
         handleTouchRef.current(evt.nativeEvent.locationX);
       },
       onPanResponderMove: (evt) => {
@@ -163,9 +170,11 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
       },
       onPanResponderRelease: () => {
         setSelectedHrIndex(null);
+        onTouchEndRef.current?.();
       },
       onPanResponderTerminate: () => {
         setSelectedHrIndex(null);
+        onTouchEndRef.current?.();
       },
     })
   ).current;
@@ -189,7 +198,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
       showArrow
       headerRight={headerRight}
     >
-      <View style={styles.hrChart}>
+      <View style={styles.hrChart} {...pan.panHandlers}>
         {noData ? (
           <View style={styles.noDataContainer}>
             <Text style={styles.noDataText}>{t('hr_daily.empty_no_data')}</Text>
@@ -205,7 +214,6 @@ export function DailyHeartRateCard({ preloadedData, headerRight }: Props = {}) {
               onLayout={(e) => {
                 chartWidthRef.current = e.nativeEvent.layout.width;
               }}
-              {...pan.panHandlers}
             >
               {hourlyHrRanges.map((item, idx) => {
                 const hasData = item.hasData;

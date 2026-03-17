@@ -4,33 +4,42 @@
 -- ============================================
 
 -- Unique constraints (required for ON CONFLICT upserts)
-ALTER TABLE heart_rate_readings
-  ADD CONSTRAINT IF NOT EXISTS heart_rate_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+-- Using DO blocks because ADD CONSTRAINT IF NOT EXISTS is not valid PostgreSQL syntax
 
-ALTER TABLE steps_readings
-  ADD CONSTRAINT IF NOT EXISTS steps_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+DO $$ BEGIN
+  ALTER TABLE heart_rate_readings
+    ADD CONSTRAINT heart_rate_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE sleep_sessions
-  ADD CONSTRAINT IF NOT EXISTS sleep_sessions_user_start_unique
-  UNIQUE (user_id, start_time);
+DO $$ BEGIN
+  ALTER TABLE steps_readings
+    ADD CONSTRAINT steps_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE spo2_readings
-  ADD CONSTRAINT IF NOT EXISTS spo2_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+DO $$ BEGIN
+  ALTER TABLE sleep_sessions
+    ADD CONSTRAINT sleep_sessions_user_start_unique UNIQUE (user_id, start_time);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE hrv_readings
-  ADD CONSTRAINT IF NOT EXISTS hrv_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+DO $$ BEGIN
+  ALTER TABLE spo2_readings
+    ADD CONSTRAINT spo2_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE temperature_readings
-  ADD CONSTRAINT IF NOT EXISTS temperature_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+DO $$ BEGIN
+  ALTER TABLE hrv_readings
+    ADD CONSTRAINT hrv_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE stress_readings
-  ADD CONSTRAINT IF NOT EXISTS stress_readings_user_recorded_unique
-  UNIQUE (user_id, recorded_at);
+DO $$ BEGIN
+  ALTER TABLE temperature_readings
+    ADD CONSTRAINT temperature_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE stress_readings
+    ADD CONSTRAINT stress_readings_user_recorded_unique UNIQUE (user_id, recorded_at);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Additional optimized DESC indexes for recent-data queries
 CREATE INDEX IF NOT EXISTS idx_hr_user_date_desc ON heart_rate_readings(user_id, recorded_at DESC);

@@ -66,12 +66,27 @@ class SupabaseService {
       .eq('id', userId)
       .select()
       .single();
-    
+
     if (error) {
       console.error('Error updating profile:', error);
       return null;
     }
     return data;
+  }
+
+  async updateSleepBaselineTier(userId: string, tier: string, avgScore: number): Promise<void> {
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        sleep_baseline_tier: tier,
+        sleep_baseline_avg_score: avgScore,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.warn('[SupabaseService] updateSleepBaselineTier error:', error);
+    }
   }
 
   // ============================================
@@ -177,6 +192,49 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching sleep sessions:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // ============================================
+  // NAP / SESSION TYPE QUERIES
+  // ============================================
+
+  async getLatestNightSessionEndTime(userId: string): Promise<Date | null> {
+    const { data, error } = await supabase
+      .from('sleep_sessions')
+      .select('end_time')
+      .eq('user_id', userId)
+      .eq('session_type', 'night')
+      .order('end_time', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) return null;
+    return new Date(data.end_time);
+  }
+
+  async getNapSessionsForDate(
+    userId: string,
+    date: Date
+  ): Promise<SleepSession[]> {
+    const dateStr = date.toISOString().split('T')[0];
+    const startOfDay = new Date(dateStr);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const { data, error } = await supabase
+      .from('sleep_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('session_type', 'nap')
+      .gte('start_time', startOfDay.toISOString())
+      .lte('start_time', endOfDay.toISOString())
+      .order('start_time', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching nap sessions:', error);
       return [];
     }
     return data || [];
@@ -422,7 +480,9 @@ class SupabaseService {
       recorded_at: string;
     }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('blood_pressure_readings').insert(readings);
+    const { error } = await supabase
+      .from('blood_pressure_readings')
+      .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting BP readings:', error);
       return false;
@@ -467,7 +527,9 @@ class SupabaseService {
       raw_data?: Record<string, unknown>;
     }[]
   ): Promise<boolean> {
-    const { error } = await supabase.from('sport_records').insert(records);
+    const { error } = await supabase
+      .from('sport_records')
+      .upsert(records, { onConflict: 'user_id,start_time', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting sport records:', error);
       return false;

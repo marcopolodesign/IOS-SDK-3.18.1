@@ -2,9 +2,11 @@ import { useLayoutEffect } from 'react';
 import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 import { router } from 'expo-router';
 import { DynamicColorIOS, Platform } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useOnboarding } from '../../src/context/OnboardingContext';
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   const { isAuthenticated, hasConnectedDevice, isLoading } = useOnboarding();
 
   useLayoutEffect(() => {
@@ -36,12 +38,12 @@ export default function TabLayout() {
     >
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
-        <Label>Today</Label>
+        <Label>{t('tabs.today')}</Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="health">
         <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
-        <Label>Health</Label>
+        <Label>{t('tabs.health')}</Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="settings">
@@ -49,7 +51,7 @@ export default function TabLayout() {
           default: require('../../assets/coach-icon.png'),
           selected: require('../../assets/coach-icon-selected.png'),
         }} />
-        <Label>Coach</Label>
+        <Label>{t('tabs.coach')}</Label>
       </NativeTabs.Trigger>
 
       {/* 4th slot — role="search" for native layout, + icon triggers add overlay */}

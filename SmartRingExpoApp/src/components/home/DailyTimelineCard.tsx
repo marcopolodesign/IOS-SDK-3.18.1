@@ -18,7 +18,8 @@ type TimelineEventKind =
   | 'recovery'
   | 'meal'
   | 'manual_activity'
-  | 'strava_activity';
+  | 'strava_activity'
+  | 'nap';
 
 interface TimelineEvent {
   id: string;
@@ -73,6 +74,7 @@ const EVENT_CONFIG: Record<
   meal:            { icon: 'restaurant-outline',    color: '#FF9F6B' },
   manual_activity: { icon: 'bicycle-outline',       color: '#00D4AA' },
   strava_activity: { icon: 'trophy-outline',         color: '#FC4C02' },
+  nap:             { icon: 'moon-outline',           color: '#B16BFF' },
 };
 
 function recoveryIcon(subtype: RecoverySubtype | string): React.ComponentProps<typeof Ionicons>['name'] {
@@ -155,6 +157,12 @@ interface DailyTimelineCardProps {
   activitySessions: X3ActivitySession[];
   manualEntries: TimelineEntry[];
   stravaActivities?: StravaActivitySummary[];
+  todayNaps?: Array<{
+    id: string;
+    startTime: string;
+    endTime: string;
+    totalMin: number;
+  }>;
   onAddPress?: () => void;
 }
 
@@ -165,6 +173,7 @@ export default function DailyTimelineCard({
   activitySessions,
   manualEntries,
   stravaActivities = [],
+  todayNaps = [],
   onAddPress,
 }: DailyTimelineCardProps) {
   const { t } = useTranslation();
@@ -244,6 +253,20 @@ export default function DailyTimelineCard({
       });
     });
 
+    // Nap events
+    todayNaps.forEach(nap => {
+      const startMs = new Date(nap.startTime).getTime();
+      const endMs = new Date(nap.endTime).getTime();
+      list.push({
+        id: `nap_${nap.id}`,
+        kind: 'nap',
+        time: startMs,
+        endTime: endMs,
+        label: t('timeline.event_nap'),
+        durationSecs: Math.round((endMs - startMs) / 1000),
+      });
+    });
+
     // Strava activities — today only, inserted by start_date time
     const todayIso = new Date().toISOString().slice(0, 10);
     stravaActivities.forEach((activity) => {
@@ -264,11 +287,11 @@ export default function DailyTimelineCard({
     });
 
     return list.sort((a, b) => a.time - b.time);
-  }, [sleep, activitySessions, manualEntries, stravaActivities]);
+  }, [sleep, activitySessions, manualEntries, stravaActivities, todayNaps]);
 
   // Kinds that get the metrics chip row instead of plain detail text
   const isMetricKind = (kind: TimelineEventKind) =>
-    kind === 'activity' || kind === 'recovery' || kind === 'manual_activity' || kind === 'strava_activity';
+    kind === 'activity' || kind === 'recovery' || kind === 'manual_activity' || kind === 'strava_activity' || kind === 'nap';
 
   return (
     <View style={styles.container}>

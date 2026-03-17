@@ -20,6 +20,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { GradientInfoCard } from '../components/common/GradientInfoCard';
 import { LiveHeartRateCard } from '../components/home/LiveHeartRateCard';
+import SleepBaselineTierCard from '../components/home/SleepBaselineTierCard';
 import { useHomeDataContext } from '../context/HomeDataContext';
 import { colors, spacing, fontSize, fontFamily } from '../theme/colors';
 
@@ -455,6 +456,11 @@ export function StyledHealthScreen() {
             <RangeIndicatorBar score={sleepScore} color="#6B8EFF" />
             <SubMetricsRow metrics={sleepSubMetrics} />
           </GradientInfoCard>
+        </View>
+
+        {/* Sleep Baseline Tier */}
+        <View style={styles.cardWrap}>
+          <SleepBaselineTierCard />
         </View>
 
         {/* Activity Card */}

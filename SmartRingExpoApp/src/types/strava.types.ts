@@ -187,6 +187,89 @@ export type StravaActivityType =
   | 'Workout'
   | 'Yoga';
 
+// ─── Detail types (from /activities/{id} and /activities/{id}/zones) ────────
+
+export interface StravaSplit {
+  distance: number;           // meters (usually 1000)
+  elapsed_time: number;       // seconds
+  moving_time: number;
+  average_speed: number;      // m/s → convert to min/km
+  average_heartrate?: number;
+  pace_zone?: number;         // 1–5
+  average_cadence?: number;
+}
+
+export interface StravaLap {
+  id: number;
+  name: string;
+  elapsed_time: number;
+  moving_time: number;
+  distance: number;
+  average_speed: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_cadence?: number;
+  lap_index: number;
+}
+
+export interface StravaBestEffort {
+  name: string;          // "1 kilometer", "1 mile", "5k", "10k", etc.
+  distance: number;      // meters
+  elapsed_time: number;  // seconds
+  is_kom?: boolean;
+}
+
+export interface StravaHRZone {
+  min: number;
+  max: number;
+  time: number;  // seconds in this zone
+}
+
+export interface StravaHRZones {
+  heart_rate?: {
+    custom_zones: boolean;
+    zones: StravaHRZone[];
+  };
+}
+
+export interface StravaActivityDetail extends StravaActivity {
+  suffer_score?: number;
+  average_cadence?: number;
+  pr_count?: number;
+  splits_metric?: StravaSplit[];
+  laps?: StravaLap[];
+  best_efforts?: StravaBestEffort[];
+}
+
+// Row shape returned from Supabase strava_activities table (with detail columns)
+export interface StravaActivitySummary {
+  id: number;
+  user_id: string;
+  name: string | null;
+  sport_type: string | null;
+  distance_m: number | null;
+  moving_time_sec: number | null;
+  elapsed_time_sec: number | null;
+  total_elevation_gain_m: number | null;
+  start_date: string | null;
+  average_heartrate: number | null;
+  max_heartrate: number | null;
+  calories: number | null;
+  suffer_score: number | null;
+  average_cadence: number | null;
+  average_speed: number | null;
+  max_speed: number | null;
+  pr_count: number | null;
+  elev_high: number | null;
+  elev_low: number | null;
+  zones_json: StravaHRZones | null;
+  splits_metric_json: StravaSplit[] | null;
+  laps_json: StravaLap[] | null;
+  best_efforts_json: StravaBestEffort[] | null;
+  detail_fetched_at: string | null;
+  created_at?: string;
+}
+
 // Sport types (new Strava categorization)
 export type StravaSportType =
   | 'AlpineSki'

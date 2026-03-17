@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
@@ -17,12 +18,26 @@ import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import NightTimeIcon from '../../assets/icons/NightTimeIcon';
 import WakeTimeIcon from '../../assets/icons/WakeTimeIcon';
 import { InfoButton } from '../../components/common/InfoButton';
+import { useSleepDebt } from '../../hooks/useSleepDebt';
+import type { SleepDebtCategory } from '../../types/sleepDebt.types';
+
+const DEBT_COLORS: Record<SleepDebtCategory, string> = {
+  none: '#4ADE80',
+  low: '#FFD700',
+  moderate: '#FF6B35',
+  high: '#FF4444',
+};
 
 type OverviewTabProps = {
   onScroll?: Animated.AnimatedEvent<any>;
+  onChartTouchStart?: () => void;
+  onChartTouchEnd?: () => void;
+  onSleepPress?: () => void;
+  isActive?: boolean;
 };
 
-export function OverviewTab({ onScroll }: OverviewTabProps) {
+export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSleepPress, isActive = false }: OverviewTabProps) {
+  const { t } = useTranslation();
   const homeData = useHomeDataContext();
   const { setActionHandler, showOverlay } = useAddOverlay();
   const { entries: timelineEntries, addEntry } = useTimelineEntries();
@@ -50,6 +65,13 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
     return () => setActionHandler(null);
   }, [setActionHandler, handleOverlayAction]);
 
+  const scrollRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [isActive]);
+
+  const { sleepDebt } = useSleepDebt();
   const scoreMessage = getScoreMessage(homeData.overallScore);
   const sleepMessage = getSleepMessage(homeData.sleepScore);
   const sleep = homeData.lastNightSleep;
@@ -67,6 +89,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
   return (
     <>
     <Animated.ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -84,7 +107,7 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
       <View style={styles.gaugeSection}>
         <SemiCircularGauge
           score={homeData.overallScore}
-          label="OVERALL SCORE"
+          label={t('overview.overall_score')}
           animated={!homeData.isLoading}
         />
         <View style={styles.gaugeInfoBtn}>
@@ -97,29 +120,14 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
       <TouchableOpacity style={styles.metricsInsightSection} activeOpacity={0.85} onPress={() => router.push('/detail/recovery-detail')}>
         <MetricInsightCard
           metrics={[
-            { label: 'Strain', value: homeData.strain },
-            { label: 'Readiness', value: homeData.readiness },
-            { label: 'Sleep', value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
+            { label: t('overview.strain'), value: homeData.strain },
+            { label: t('overview.readiness'), value: homeData.readiness },
+            { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
           ]}
           insight={homeData.insight}
           backgroundImage={require('../../assets/backgrounds/insights/blue-insight.jpg')}
         />
       </TouchableOpacity>
-      {homeData.contributors.recovery.length > 0 && (
-        <View style={styles.contributorRow}>
-          {homeData.contributors.recovery.slice(0, 3).map((chip) => (
-            <View key={chip.key} style={styles.contributorChip}>
-              <Text style={styles.contributorLabel}>{chip.label}</Text>
-              <Text style={styles.contributorValue}>{chip.display}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-      {homeData.contributors.recommendations[0] && (
-        <View style={styles.recommendationWrap}>
-          <Text style={styles.recommendationText}>{homeData.contributors.recommendations[0]}</Text>
-        </View>
-      )}
 
       {/* Sleep Preview
       <View style={styles.previewSection}>
@@ -136,11 +144,11 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
       <View style={styles.gradientCardSection}>
         <GradientInfoCard
           icon={<SleepScoreIcon />}
-          title="Sleep Score"
+          title={t('overview.sleep_score')}
           headerValue={sleep.score || 0}
           headerSubtitle={sleepMessage}
           showArrow
-          onHeaderPress={() => router.push('/detail/sleep-detail')}
+          onHeaderPress={onSleepPress}
           gradientStops={[
             { offset: 0, color: '#7100C2', opacity: 1 },
             { offset: 0.55, color: '#7100C2', opacity: 0.2 },
@@ -163,14 +171,25 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
 
           <View style={styles.sleepStatsRow}>
             <Text style={styles.sleepStatText}>{sleep.timeAsleep || '—'}</Text>
-            <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} BPM` : '—'}</Text>
+            <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} ${t('overview.bpm_unit')}` : '—'}</Text>
           </View>
+
+          {sleepDebt.isReady && (
+            <View style={styles.debtRow}>
+              <View style={[styles.debtDot, { backgroundColor: DEBT_COLORS[sleepDebt.category] }]} />
+              <Text style={styles.debtText}>
+                {t('sleep_debt.debt_label')}: {sleepDebt.totalDebtMin < 30
+                  ? t('sleep_debt.category_none')
+                  : `${Math.floor(sleepDebt.totalDebtMin / 60)}h ${Math.round(sleepDebt.totalDebtMin % 60)}m`}
+              </Text>
+            </View>
+          )}
         </GradientInfoCard>
       </View>
 
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>
-        <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} />
+        <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} onTouchStart={onChartTouchStart} onTouchEnd={onChartTouchEnd} />
       </View>
 
       {/* Caloric deficit */}
@@ -184,6 +203,8 @@ export function OverviewTab({ onScroll }: OverviewTabProps) {
           sleep={sleep}
           activitySessions={homeData.activitySessions}
           manualEntries={timelineEntries}
+          stravaActivities={homeData.stravaActivities}
+          todayNaps={homeData.todayNaps}
           onAddPress={() => showOverlay()}
         />
       </View>
@@ -316,6 +337,22 @@ const styles = StyleSheet.create({
   },
   sleepStatText: {
     color: 'rgba(255,255,255,0.85)',
+    fontFamily: fontFamily.regular,
+  },
+  debtRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  debtDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  debtText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
     fontFamily: fontFamily.regular,
   },
   bottomSpacer: {

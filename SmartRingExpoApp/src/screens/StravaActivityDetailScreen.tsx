@@ -25,7 +25,7 @@ import {
 const STRAVA_ORANGE = '#FC4C02';
 
 const ZONE_COLORS = ['#6B8EFF', '#00D4AA', '#FFD700', '#FC4C02', '#FF2D2D'];
-const ZONE_NAMES = ['Z1 Recovery', 'Z2 Endurance', 'Z3 Tempo', 'Z4 Threshold', 'Z5 Anaerobic'];
+const ZONE_KEYS = ['zone_z1', 'zone_z2', 'zone_z3', 'zone_z4', 'zone_z5'] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ function HRZonesCard({ zones }: { zones: StravaHRZones }) {
           const color = ZONE_COLORS[i] ?? '#888';
           return (
             <View key={i} style={styles.zoneRow}>
-              <Text style={[styles.zoneLabel, { color }]}>{ZONE_NAMES[i] ?? `Z${i + 1}`}</Text>
+              <Text style={[styles.zoneLabel, { color }]}>{ZONE_KEYS[i] ? t(`strava_detail.${ZONE_KEYS[i]}`) : `Z${i + 1}`}</Text>
               <View style={styles.zoneBarBg}>
                 <View
                   style={[

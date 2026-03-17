@@ -100,6 +100,7 @@ RCT_EXPORT_MODULE();
         @"onBluetoothStateChanged",
         @"onRealTimeData",
         @"onMeasurementResult",
+        @"onBatteryData",
         @"onError",
         @"onDebugLog"
     ];
@@ -526,6 +527,38 @@ RCT_EXPORT_METHOD(getHeartRateData:(RCTPromiseResolveBlock)resolve
                       characteristicUUID:kJstyleWriteCharUUID
                                        p:self.connectedPeripheral
                                     data:cmd];
+}
+
+RCT_EXPORT_METHOD(getSingleHeartRateData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    if ([self rejectIfBusyForOperation:@"getSingleHeartRateData" rejecter:reject]) {
+        return;
+    }
+
+    [self debugLog:@"Getting single/static heart rate data"];
+
+    [self.accumulatedHRData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:StaticHR_X3];
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetSingleHRDataWithMode:0 withStartDate:nil];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
+}
+
+RCT_EXPORT_METHOD(enableAutoHRMonitoring:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) {
+        reject(@"NOT_CONNECTED", @"No device connected", nil);
+        return;
+    }
+    [self enableAutomaticHRMonitoring];
+    resolve(@{@"success": @YES});
 }
 
 RCT_EXPORT_METHOD(getSpO2Data:(RCTPromiseResolveBlock)resolve
@@ -1061,6 +1094,36 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
         self.pendingConnectResolver = nil;
         self.pendingConnectRejecter = nil;
     }
+
+    // Auto-enable continuous HR monitoring on connection (24/7, every 5 min, all days)
+    [self enableAutomaticHRMonitoring];
+}
+
+- (void)enableAutomaticHRMonitoring {
+    if (!self.connectedPeripheral) return;
+    [self debugLog:@"Enabling automatic HR monitoring (24/7, 5min interval)"];
+
+    MyAutomaticMonitoring_X3 config;
+    config.mode = 2;             // interval within time period
+    config.dataType = 1;         // 1 = heartRate
+    config.startTime_Hour = 0;
+    config.startTime_Minutes = 0;
+    config.endTime_Hour = 23;
+    config.endTime_Minutes = 59;
+    config.intervalTime = 5;     // every 5 minutes (minimum)
+    config.weeks.sunday = YES;
+    config.weeks.monday = YES;
+    config.weeks.Tuesday = YES;
+    config.weeks.Wednesday = YES;
+    config.weeks.Thursday = YES;
+    config.weeks.Friday = YES;
+    config.weeks.Saturday = YES;
+
+    NSMutableData *cmd = [[BleSDK_X3 sharedManager] SetAutomaticHRMonitoring:config];
+    [[NewBle sharedManager] writeValue:kJstyleServiceUUID
+                      characteristicUUID:kJstyleWriteCharUUID
+                                       p:self.connectedPeripheral
+                                    data:cmd];
 }
 
 - (void)Disconnect:(NSError *)error {
@@ -1228,6 +1291,10 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
             [self handleFactoryResetResponse:parsed];
             break;
 
+        case SetAutomaticMonitoring_X3:
+            [self debugLog:@"Automatic HR monitoring configured successfully"];
+            break;
+
         case DataError_X3:
             [self handleDataError:parsed];
             break;
@@ -1253,9 +1320,17 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
 
 - (void)handleBatteryData:(DeviceData_X3 *)parsed {
     NSNumber *battery = parsed.dicData[@"battery"] ?: parsed.dicData[@"batteryLevel"];
+    NSNumber *charging = parsed.dicData[@"charging"] ?: parsed.dicData[@"chargeStatus"] ?: parsed.dicData[@"isCharging"] ?: @NO;
+
+    NSDictionary *payload = @{@"battery": battery ?: @0, @"isCharging": charging};
+
+    // Always emit so JS can reactively update charging state
+    if (_hasListeners) {
+        [self sendEventWithName:@"onBatteryData" body:payload];
+    }
 
     if (self.pendingDataResolver && self.pendingDataType == GetDeviceBattery_X3) {
-        self.pendingDataResolver(@{@"battery": battery ?: @0});
+        self.pendingDataResolver(payload);
         [self clearPendingDataRequest];
     }
 }
@@ -1351,8 +1426,11 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
         [self.accumulatedHRData addObject:parsed.dicData];
     }
 
+    BOOL isDynamic = self.pendingDataType == DynamicHR_X3;
+    BOOL isStatic = self.pendingDataType == StaticHR_X3;
+
     if (parsed.dataEnd) {
-        if (self.pendingDataResolver && self.pendingDataType == DynamicHR_X3) {
+        if (self.pendingDataResolver && (isDynamic || isStatic)) {
             NSArray *hrDataCopy = [self.accumulatedHRData copy];
             self.pendingDataResolver(@{@"data": hrDataCopy});
             [self clearPendingDataRequest];
@@ -1360,8 +1438,13 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
 
         [self.accumulatedHRData removeAllObjects];
     } else {
-        if (self.pendingDataResolver && self.pendingDataType == DynamicHR_X3) {
-            NSMutableData *cmd = [[BleSDK_X3 sharedManager] GetContinuousHRDataWithMode:2 withStartDate:nil];
+        if (self.pendingDataResolver && (isDynamic || isStatic)) {
+            NSMutableData *cmd;
+            if (isDynamic) {
+                cmd = [[BleSDK_X3 sharedManager] GetContinuousHRDataWithMode:2 withStartDate:nil];
+            } else {
+                cmd = [[BleSDK_X3 sharedManager] GetSingleHRDataWithMode:2 withStartDate:nil];
+            }
             [[NewBle sharedManager] writeValue:kJstyleServiceUUID
                               characteristicUUID:kJstyleWriteCharUUID
                                                p:self.connectedPeripheral

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import { RingIcon, BandIcon, DeviceType } from '../../assets/icons';
 
@@ -8,6 +9,7 @@ interface HomeHeaderProps {
   userName?: string;
   streakDays?: number;
   ringBattery?: number;
+  isCharging?: boolean;
   avatarUrl?: string;
   onAvatarPress?: () => void;
   deviceType?: DeviceType;
@@ -124,10 +126,19 @@ function RefreshButton({ onPress, spinning }: { onPress?: () => void; spinning: 
   );
 }
 
+function ChargingBoltIcon() {
+  return (
+    <Svg width={8} height={12} viewBox="0 0 8 12" fill="none">
+      <Path d="M5 0L0 7h4l-1 5 5-7H4l1-5z" fill="rgba(255,255,255,0.9)" />
+    </Svg>
+  );
+}
+
 export function HomeHeader({
   userName = 'there',
   streakDays = 0,
   ringBattery = 100,
+  isCharging = false,
   avatarUrl,
   onAvatarPress,
   deviceType = 'ring',
@@ -137,6 +148,8 @@ export function HomeHeader({
   isSyncing = false,
   onRefresh,
 }: HomeHeaderProps) {
+  const { t } = useTranslation();
+
   const getBatteryColor = (level: number): string => {
     if (level < 5) return '#EF4444';
     if (level < 10) return '#FF6B6B';
@@ -146,9 +159,9 @@ export function HomeHeader({
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return t('home.greeting_morning');
+    if (hour < 17) return t('home.greeting_afternoon');
+    return t('home.greeting_evening');
   };
 
   const batteryColor = getBatteryColor(ringBattery);
@@ -180,7 +193,7 @@ export function HomeHeader({
             disabled={isReconnecting}
           >
             <ReconnectIcon />
-            <Text style={styles.reconnectText}>Reconnect</Text>
+            <Text style={styles.reconnectText}>{t('home.reconnect')}</Text>
           </TouchableOpacity>
         ) : (
           <>
@@ -196,15 +209,18 @@ export function HomeHeader({
               {isReconnecting ? (
                 <View style={styles.syncingContainer}>
                   <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
-                  <Text style={styles.syncingText}>Connecting</Text>
+                  <Text style={styles.syncingText}>{t('home.connecting')}</Text>
                 </View>
               ) : isSyncing ? (
                 <View style={styles.syncingContainer}>
                   <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
-                  <Text style={styles.syncingText}>Syncing</Text>
+                  <Text style={styles.syncingText}>{t('home.syncing')}</Text>
                 </View>
               ) : (
-                <Text style={[styles.batteryText, { color: batteryColor }]}>{ringBattery}%</Text>
+                <View style={styles.batteryValueRow}>
+                  {isCharging && <ChargingBoltIcon />}
+                  <Text style={[styles.batteryText, { color: batteryColor }]}>{ringBattery}%</Text>
+                </View>
               )}
               {isConnected && !isReconnecting && onRefresh && (
                 <RefreshButton onPress={onRefresh} spinning={isSyncing} />
@@ -288,6 +304,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  batteryValueRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 3,
   },
   batteryText: {
     color: 'rgba(255, 255, 255, 0.7)',

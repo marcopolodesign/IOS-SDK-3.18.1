@@ -342,14 +342,14 @@ export const useSmartRing = (): UseSmartRingReturn => {
     }
 
     // Determine SDK type from device and set it on the unified service
-    const sdkType = device.sdkType || 'qcband';
+    const sdkType = device.sdkType || 'jstyle';
     console.log('🔗 [useSmartRing] Device sdkType:', sdkType);
     UnifiedSmartRingService.setConnectedSDKType(sdkType);
 
     try {
       // Jstyle native bridge expects the CoreBluetooth peripheral UUID (device.id),
-      // not the MAC address. QCBand uses MAC.
-      const connectId = sdkType === 'jstyle' ? device.id : mac;
+      // not the MAC address.
+      const connectId = device.id;
       console.log('🔗 [useSmartRing] Calling UnifiedSmartRingService.connect() with:', connectId);
       const startTime = Date.now();
 

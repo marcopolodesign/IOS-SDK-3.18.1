@@ -1,5 +1,4 @@
 import { supabase, supabaseService } from './SupabaseService';
-import { authService } from './AuthService';
 import UnifiedSmartRingService from './UnifiedSmartRingService';
 import { stravaService } from './StravaService';
 import {
@@ -12,6 +11,7 @@ import {
   TemperatureData,
   BatteryData,
 } from '../types/sdk.types';
+import { classifySleepSession, calculateNapScore } from './NapClassifierService';
 
 interface SyncStatus {
   lastSyncAt: Date | null;
@@ -84,7 +84,8 @@ class DataSyncService {
   // ============================================
 
   async syncAllData(): Promise<{ success: boolean; error?: string }> {
-    const userId = authService.currentUser?.id;
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
     if (!userId) {
       return { success: false, error: 'Not authenticated' };
     }
@@ -243,20 +244,26 @@ class DataSyncService {
             ? new Date(sleepData.startTime)
             : new Date(endTime.getTime() - totalMinutes * 60 * 1000);
 
-          // Parse segment details from SDK
-          let detailJson = null;
-          if (sleepData.detail) {
-            try {
-              detailJson = JSON.parse(sleepData.detail);
-            } catch (e) {
-              console.error('[Sync] Failed to parse sleep detail:', e);
-            }
-          }
+          // Use rawQualityRecords for hypnogram rendering (detail is a plain string, not JSON)
+          const detailJson = sleepData.rawQualityRecords
+            ? { rawQualityRecords: sleepData.rawQualityRecords }
+            : null;
 
-          // Include rawQualityRecords in detailJson for hypnogram rendering
-          if (!detailJson && sleepData.rawQualityRecords) {
-            detailJson = { rawQualityRecords: sleepData.rawQualityRecords };
-          }
+          // Classify as night or nap
+          const totalSleepMin = sleepData.deep + sleepData.light + (sleepData.rem || 0);
+          const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
+          const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
+
+          // Compute nap score if it's a nap
+          const napScore = classification.sessionType === 'nap'
+            ? calculateNapScore(
+                totalSleepMin,
+                sleepData.deep,
+                sleepData.light,
+                sleepData.rem || 0,
+                sleepData.awake || 0,
+              )
+            : null;
 
           await supabaseService.insertSleepSession({
             user_id: userId,
@@ -268,6 +275,8 @@ class DataSyncService {
             awake_min: sleepData.awake || null,
             sleep_score: null,
             detail_json: detailJson,
+            session_type: classification.sessionType,
+            nap_score: napScore,
           });
           console.log(`[Sync] Sleep day ${dayIndex} synced (${startTime.toISOString().split('T')[0]})`);
         }
@@ -406,7 +415,7 @@ class DataSyncService {
       ] = await Promise.all([
         supabaseService.getHeartRateReadings(userId, startOfDay, endOfDay),
         supabaseService.getStepsReadings(userId, startOfDay, endOfDay),
-        supabaseService.getSleepSessions(userId, startOfDay, endOfDay),
+        supabaseService.getSleepSessions(userId, new Date(startOfDay.getTime() - 12 * 60 * 60 * 1000), endOfDay),
         supabaseService.getStravaActivities(userId, startOfDay, endOfDay),
         supabaseService.getSpO2Readings(userId, startOfDay, endOfDay),
         supabaseService.getHRVReadings(userId, startOfDay, endOfDay),
@@ -426,11 +435,17 @@ class DataSyncService {
       const totalDistance = steps.reduce((sum, r) => sum + (r.distance_m || 0), 0);
       const totalCalories = steps.reduce((sum, r) => sum + (r.calories || 0), 0);
 
-      // Sleep data
-      const latestSleep = sleep[0];
+      // Sleep data — separate night vs nap
+      const nightSessions = sleep.filter(s => s.session_type !== 'nap');
+      const napSessions = sleep.filter(s => s.session_type === 'nap');
+      const latestSleep = nightSessions[0] || sleep[0];
       const sleepTotalMin = latestSleep
         ? (latestSleep.deep_min || 0) + (latestSleep.light_min || 0) + (latestSleep.rem_min || 0)
         : null;
+      const napTotalMin = napSessions.reduce(
+        (sum, s) => sum + (s.deep_min || 0) + (s.light_min || 0) + (s.rem_min || 0),
+        0,
+      ) || null;
 
       // Calculate SpO2 average
       const spo2Values = spo2Readings.map(r => r.spo2);
@@ -470,6 +485,7 @@ class DataSyncService {
         sleep_deep_min: latestSleep?.deep_min || null,
         sleep_light_min: latestSleep?.light_min || null,
         sleep_rem_min: latestSleep?.rem_min || null,
+        nap_total_min: napTotalMin,
         hr_avg: hrAvg,
         hr_min: hrMin,
         hr_max: hrMax,

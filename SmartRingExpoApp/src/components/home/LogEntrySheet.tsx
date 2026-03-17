@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useTranslation } from 'react-i18next';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import type { TimelineEntry, RecoverySubtype, MealSubtype } from '../../types/timeline.types';
 
@@ -80,6 +81,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 const SHEET_HEIGHT = 420;
 
 export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEntrySheetProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
 
@@ -123,10 +125,10 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
 
     if (mode === 'recovery') {
       const subtypeLabels: Record<RecoverySubtype, string> = {
-        sauna: 'Sauna',
-        ice_bath: 'Ice Bath',
-        compression_boots: 'Compression Boots',
-        other: 'Recovery',
+        sauna: t('log_entry.subtype_sauna'),
+        ice_bath: t('log_entry.subtype_ice_bath'),
+        compression_boots: t('log_entry.subtype_boots'),
+        other: t('log_entry.subtype_recovery'),
       };
       const startMs = parseTimeToMs(recoveryTime);
       const durationMs = recoveryDuration
@@ -142,10 +144,10 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
       });
     } else if (mode === 'meal') {
       const subtypeLabels: Record<MealSubtype, string> = {
-        breakfast: 'Breakfast',
-        lunch: 'Lunch',
-        dinner: 'Dinner',
-        snack: 'Snack',
+        breakfast: t('log_entry.subtype_breakfast'),
+        lunch: t('log_entry.subtype_lunch'),
+        dinner: t('log_entry.subtype_dinner'),
+        snack: t('log_entry.subtype_snack'),
       };
       onSave({
         date,
@@ -163,7 +165,7 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
         date,
         type: 'manual_activity',
         subtype: 'manual',
-        title: activityName.trim() || 'Activity',
+        title: activityName.trim() || t('log_entry.default_activity'),
         startTime: startMs,
         endTime: durationMs > 0 ? startMs + durationMs : undefined,
       });
@@ -172,7 +174,7 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
     onClose();
   }, [mode, recoverySubtype, recoveryTime, recoveryDuration, mealSubtype, mealTime, activityName, activityTime, activityDuration, onSave, onClose]);
 
-  const modeTitle = mode === 'recovery' ? 'Log Recovery' : mode === 'meal' ? 'Log Meal' : 'Log Activity';
+  const modeTitle = mode === 'recovery' ? t('log_entry.header_recovery') : mode === 'meal' ? t('log_entry.header_meal') : t('log_entry.header_activity');
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -205,13 +207,18 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
             <ScrollView showsVerticalScrollIndicator={false}>
               {mode === 'recovery' && (
                 <>
-                  <FieldLabel>Type</FieldLabel>
+                  <FieldLabel>{t('log_entry.type_label')}</FieldLabel>
                   <View style={styles.chipRow}>
                     {(['sauna', 'ice_bath', 'compression_boots', 'other'] as RecoverySubtype[]).map(
                       (sub) => (
                         <Chip
                           key={sub}
-                          label={sub === 'ice_bath' ? 'Ice Bath' : sub === 'compression_boots' ? 'Boots' : sub.charAt(0).toUpperCase() + sub.slice(1)}
+                          label={
+                            sub === 'sauna' ? t('log_entry.subtype_sauna') :
+                            sub === 'ice_bath' ? t('log_entry.subtype_ice_bath') :
+                            sub === 'compression_boots' ? t('log_entry.subtype_boots_chip') :
+                            t('log_entry.subtype_recovery')
+                          }
                           selected={recoverySubtype === sub}
                           onPress={() => setRecoverySubtype(sub)}
                         />
@@ -219,23 +226,23 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
                     )}
                   </View>
 
-                  <FieldLabel>Start time (HH:MM)</FieldLabel>
+                  <FieldLabel>{t('log_entry.start_time_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={recoveryTime}
                     onChangeText={setRecoveryTime}
-                    placeholder="21:30"
+                    placeholder={t('log_entry.start_time_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="numbers-and-punctuation"
                     keyboardAppearance="dark"
                   />
 
-                  <FieldLabel>Duration (minutes)</FieldLabel>
+                  <FieldLabel>{t('log_entry.duration_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={recoveryDuration}
                     onChangeText={setRecoveryDuration}
-                    placeholder="20"
+                    placeholder={t('log_entry.duration_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="number-pad"
                     keyboardAppearance="dark"
@@ -245,24 +252,29 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
 
               {mode === 'meal' && (
                 <>
-                  <FieldLabel>Meal</FieldLabel>
+                  <FieldLabel>{t('log_entry.meal_label')}</FieldLabel>
                   <View style={styles.chipRow}>
                     {(['breakfast', 'lunch', 'dinner', 'snack'] as MealSubtype[]).map((sub) => (
                       <Chip
                         key={sub}
-                        label={sub.charAt(0).toUpperCase() + sub.slice(1)}
+                        label={
+                          sub === 'breakfast' ? t('log_entry.subtype_breakfast') :
+                          sub === 'lunch' ? t('log_entry.subtype_lunch') :
+                          sub === 'dinner' ? t('log_entry.subtype_dinner') :
+                          t('log_entry.subtype_snack')
+                        }
                         selected={mealSubtype === sub}
                         onPress={() => setMealSubtype(sub)}
                       />
                     ))}
                   </View>
 
-                  <FieldLabel>Time (HH:MM)</FieldLabel>
+                  <FieldLabel>{t('log_entry.time_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={mealTime}
                     onChangeText={setMealTime}
-                    placeholder="08:00"
+                    placeholder={t('log_entry.time_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="numbers-and-punctuation"
                     keyboardAppearance="dark"
@@ -272,33 +284,33 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
 
               {mode === 'activity' && (
                 <>
-                  <FieldLabel>Activity name</FieldLabel>
+                  <FieldLabel>{t('log_entry.activity_name_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={activityName}
                     onChangeText={setActivityName}
-                    placeholder="e.g. Yoga, Swim…"
+                    placeholder={t('log_entry.activity_name_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardAppearance="dark"
                   />
 
-                  <FieldLabel>Start time (HH:MM)</FieldLabel>
+                  <FieldLabel>{t('log_entry.start_time_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={activityTime}
                     onChangeText={setActivityTime}
-                    placeholder="07:00"
+                    placeholder={t('log_entry.activity_time_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="numbers-and-punctuation"
                     keyboardAppearance="dark"
                   />
 
-                  <FieldLabel>Duration (minutes)</FieldLabel>
+                  <FieldLabel>{t('log_entry.duration_label')}</FieldLabel>
                   <TextInput
                     style={styles.input}
                     value={activityDuration}
                     onChangeText={setActivityDuration}
-                    placeholder="45"
+                    placeholder={t('log_entry.activity_duration_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="number-pad"
                     keyboardAppearance="dark"
@@ -307,7 +319,7 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
               )}
 
               <Pressable style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveText}>Save</Text>
+                <Text style={styles.saveText}>{t('log_entry.save')}</Text>
               </Pressable>
             </ScrollView>
           </View>

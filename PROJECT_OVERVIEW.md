@@ -1,12 +1,14 @@
 # Smart Ring iOS SDK 3.18.1 - Project Overview
 
+> **Active SDK: Jstyle/X3 only.** QCBand SDK is present but NOT used. All ring communication goes through `JstyleBridge.m` → `JstyleService.ts`.
+
 ## 📋 Quick Summary
 
 This repository contains a **complete iOS SDK integration** for a Smart Ring device, including:
 
-- **Native iOS SDK** (CRPSmartBand.framework v3.18.1) - Vendor-provided SDK
+- **Native iOS SDK** (CRPSmartBand.framework v3.18.1 — Jstyle/X3, active) - Vendor-provided SDK
 - **React Native/Expo App** - Modern cross-platform UI application
-- **Native Bridge** - Objective-C module connecting SDK to React Native
+- **Native Bridge** - Objective-C module: `SmartRingExpoApp/ios/JstyleBridge/JstyleBridge.m`
 - **Demo Projects** - Reference implementations in Objective-C and Swift
 
 ---

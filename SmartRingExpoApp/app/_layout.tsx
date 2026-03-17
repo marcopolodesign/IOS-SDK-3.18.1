@@ -1,3 +1,4 @@
+import '../src/i18n'; // i18n side-effect init — must be first
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -45,6 +46,7 @@ export default function RootLayout() {
           <Stack.Screen name="detail/temperature-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/activity-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/recovery-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/sleep-debt-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="profile" options={{ animation: 'slide_from_bottom' }} />
         </Stack>

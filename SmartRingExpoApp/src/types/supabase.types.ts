@@ -16,6 +16,9 @@ export interface Database {
           gender: 'male' | 'female' | 'other' | null;
           strava_athlete_id: number | null;
           ring_mac_address: string | null;
+          sleep_target_min: number | null;
+          sleep_baseline_tier: string | null;
+          sleep_baseline_avg_score: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -30,6 +33,9 @@ export interface Database {
           gender?: 'male' | 'female' | 'other' | null;
           strava_athlete_id?: number | null;
           ring_mac_address?: string | null;
+          sleep_target_min?: number | null;
+          sleep_baseline_tier?: string | null;
+          sleep_baseline_avg_score?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -44,6 +50,9 @@ export interface Database {
           gender?: 'male' | 'female' | 'other' | null;
           strava_athlete_id?: number | null;
           ring_mac_address?: string | null;
+          sleep_target_min?: number | null;
+          sleep_baseline_tier?: string | null;
+          sleep_baseline_avg_score?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -182,6 +191,8 @@ export interface Database {
           awake_min: number | null;
           sleep_score: number | null;
           detail_json: Record<string, unknown> | null;
+          session_type: string | null;
+          nap_score: number | null;
           created_at: string;
         };
         Insert: {
@@ -195,6 +206,8 @@ export interface Database {
           awake_min?: number | null;
           sleep_score?: number | null;
           detail_json?: Record<string, unknown> | null;
+          session_type?: string | null;
+          nap_score?: number | null;
           created_at?: string;
         };
         Update: {
@@ -208,6 +221,8 @@ export interface Database {
           awake_min?: number | null;
           sleep_score?: number | null;
           detail_json?: Record<string, unknown> | null;
+          session_type?: string | null;
+          nap_score?: number | null;
           created_at?: string;
         };
       };
@@ -333,6 +348,18 @@ export interface Database {
           max_heartrate: number | null;
           calories: number | null;
           raw_data: Record<string, unknown> | null;
+          suffer_score: number | null;
+          average_cadence: number | null;
+          average_speed: number | null;
+          max_speed: number | null;
+          pr_count: number | null;
+          elev_high: number | null;
+          elev_low: number | null;
+          zones_json: Record<string, unknown> | null;
+          splits_metric_json: unknown[] | null;
+          laps_json: unknown[] | null;
+          best_efforts_json: unknown[] | null;
+          detail_fetched_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -349,6 +376,18 @@ export interface Database {
           max_heartrate?: number | null;
           calories?: number | null;
           raw_data?: Record<string, unknown> | null;
+          suffer_score?: number | null;
+          average_cadence?: number | null;
+          average_speed?: number | null;
+          max_speed?: number | null;
+          pr_count?: number | null;
+          elev_high?: number | null;
+          elev_low?: number | null;
+          zones_json?: Record<string, unknown> | null;
+          splits_metric_json?: unknown[] | null;
+          laps_json?: unknown[] | null;
+          best_efforts_json?: unknown[] | null;
+          detail_fetched_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -365,6 +404,18 @@ export interface Database {
           max_heartrate?: number | null;
           calories?: number | null;
           raw_data?: Record<string, unknown> | null;
+          suffer_score?: number | null;
+          average_cadence?: number | null;
+          average_speed?: number | null;
+          max_speed?: number | null;
+          pr_count?: number | null;
+          elev_high?: number | null;
+          elev_low?: number | null;
+          zones_json?: Record<string, unknown> | null;
+          splits_metric_json?: unknown[] | null;
+          laps_json?: unknown[] | null;
+          best_efforts_json?: unknown[] | null;
+          detail_fetched_at?: string | null;
           created_at?: string;
         };
       };
@@ -453,6 +504,7 @@ export interface Database {
           sleep_deep_min: number | null;
           sleep_light_min: number | null;
           sleep_rem_min: number | null;
+          nap_total_min: number | null;
           hr_avg: number | null;
           hr_min: number | null;
           hr_max: number | null;
@@ -477,6 +529,7 @@ export interface Database {
           sleep_deep_min?: number | null;
           sleep_light_min?: number | null;
           sleep_rem_min?: number | null;
+          nap_total_min?: number | null;
           hr_avg?: number | null;
           hr_min?: number | null;
           hr_max?: number | null;
@@ -501,6 +554,7 @@ export interface Database {
           sleep_deep_min?: number | null;
           sleep_light_min?: number | null;
           sleep_rem_min?: number | null;
+          nap_total_min?: number | null;
           hr_avg?: number | null;
           hr_min?: number | null;
           hr_max?: number | null;

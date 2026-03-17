@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { HeroLinearGauge } from '../../components/home/HeroLinearGauge';
 import { GlassCard } from '../../components/home/GlassCard';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
@@ -10,6 +11,44 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
+import type { StravaActivitySummary } from '../../types/strava.types';
+
+function formatStravaWorkoutMeta(activity: StravaActivitySummary): string {
+  const parts: string[] = [];
+  if (activity.distance_m) parts.push(`${(activity.distance_m / 1000).toFixed(1)} km`);
+  if (activity.moving_time_sec) {
+    const mins = Math.round(activity.moving_time_sec / 60);
+    if (mins >= 60) {
+      parts.push(`${Math.floor(mins / 60)}h ${mins % 60}m`);
+    } else {
+      parts.push(`${mins}m`);
+    }
+  }
+  if (activity.calories) parts.push(`${activity.calories} kcal`);
+  return parts.join(' · ');
+}
+
+function StravaWorkoutCard({ activity }: { activity: StravaActivitySummary }) {
+  const { t } = useTranslation();
+  const STRAVA_ORANGE = '#FC4C02';
+  const sportEmojis: Record<string, string> = {
+    Run: '🏃', TrailRun: '🥾', Ride: '🚴', Hike: '🥾', Swim: '🏊', Walk: '🚶',
+  };
+  const emoji = sportEmojis[activity.sport_type || ''] ?? '🏅';
+
+  return (
+    <View style={styles.workoutCard}>
+      <View style={[styles.workoutIconContainer, { backgroundColor: 'rgba(252,76,2,0.12)' }]}>
+        <Text style={{ fontSize: 18 }}>{emoji}</Text>
+      </View>
+      <View style={styles.workoutInfo}>
+        <Text style={styles.workoutName}>{activity.name || activity.sport_type || t('activity.default_workout')}</Text>
+        <Text style={styles.workoutMeta}>{formatStravaWorkoutMeta(activity)}</Text>
+      </View>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: STRAVA_ORANGE, marginLeft: 8 }} />
+    </View>
+  );
+}
 
 // Workout type icons
 function WorkoutIcon({ type }: { type: string }) {
@@ -58,6 +97,7 @@ function WorkoutIcon({ type }: { type: string }) {
 }
 
 function WorkoutCard({ workout }: { workout: Workout }) {
+  const { t } = useTranslation();
   const formatDate = (date: Date) => {
     const today = new Date();
     const isToday = date.toDateString() === today.toDateString();
@@ -65,9 +105,9 @@ function WorkoutCard({ workout }: { workout: Workout }) {
     yesterday.setDate(yesterday.getDate() - 1);
     const isYesterday = date.toDateString() === yesterday.toDateString();
 
-    if (isToday) return 'Today';
-    if (isYesterday) return 'Yesterday';
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    if (isToday) return t('last_run.date_today');
+    if (isYesterday) return t('last_run.date_yesterday');
+    return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   return (
@@ -112,7 +152,13 @@ function OxygenIcon() {
 
 export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const homeData = useHomeDataContext();
+  const { t } = useTranslation();
   const [refreshing, setRefreshing] = React.useState(false);
+  const scrollRef = React.useRef<any>(null);
+
+  useEffect(() => {
+    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [isActive]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -147,13 +193,13 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   // Temperature status
   const tempC = homeData.todayVitals.temperatureC ?? 0;
   const tempF = tempC > 0 ? Math.round(tempC * 9 / 5 + 32) : null;
-  const tempStatus = tempC >= 36.1 && tempC <= 37.2 ? 'Normal' : tempC > 37.2 ? 'Elevated' : tempC > 0 ? 'Low' : null;
+  const tempStatus = tempC >= 36.1 && tempC <= 37.2 ? t('activity.temp_normal') : tempC > 37.2 ? t('activity.temp_elevated') : tempC > 0 ? t('activity.temp_low') : null;
   const tempColor = tempStatus === 'Normal' ? '#4ADE80' : tempStatus === 'Elevated' ? '#FF6B6B' : '#FFD700';
 
   // SpO2 status
   const minSpo2 = homeData.todayVitals.minSpo2;
   const spo2Status = minSpo2
-    ? minSpo2 >= 95 ? 'Normal' : minSpo2 >= 90 ? 'Low' : 'Very low'
+    ? minSpo2 >= 95 ? t('activity.temp_normal') : minSpo2 >= 90 ? t('activity.temp_low') : t('activity.spo2_very_low')
     : null;
   const spo2Color = minSpo2
     ? minSpo2 >= 95 ? '#4ADE80' : minSpo2 >= 90 ? '#FFD700' : '#FF6B6B'
@@ -161,6 +207,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
 
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -177,7 +224,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
       {/* Activity Hero Gauge */}
       <View style={styles.gaugeSection}>
         <HeroLinearGauge
-          label="ACTIVE CALORIES"
+          label={t('activity.active_calories')}
           value={caloriesRounded}
           goal={calorieGoal}
           message={activityMessage}
@@ -191,28 +238,18 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
       <TouchableOpacity style={styles.insightSection} activeOpacity={0.85} onPress={() => router.push('/detail/activity-detail')}>
         <MetricInsightCard
           metrics={[
-            { label: 'Steps', value: stepsRounded },
-            { label: 'Est. Km', value: distanceKmRounded },
-            { label: 'Active kcal', value: caloriesRounded },
+            { label: t('activity.steps'), value: stepsRounded },
+            { label: t('activity.est_km'), value: distanceKmRounded },
+            { label: t('activity.active_kcal'), value: caloriesRounded },
           ]}
           insight={activityMessage}
           backgroundImage={require('../../assets/backgrounds/insights/red-insight.jpg')}
         />
       </TouchableOpacity>
-      {homeData.contributors.activity.length > 0 && (
-        <View style={styles.contributorRow}>
-          {homeData.contributors.activity.slice(0, 3).map((chip) => (
-            <View key={chip.key} style={styles.contributorChip}>
-              <Text style={styles.contributorLabel}>{chip.label}</Text>
-              <Text style={styles.contributorValue}>{chip.display}</Text>
-            </View>
-          ))}
-        </View>
-      )}
 
       {/* Recent Workouts */}
       <View style={styles.workoutsSection}>
-        <Text style={styles.sectionTitle}>Recent Workouts</Text>
+        <Text style={styles.sectionTitle}>{t('activity.recent_workouts')}</Text>
         <GlassCard style={styles.workoutsCard} noPadding>
           {activity.workouts.length > 0 ? (
             activity.workouts.map((workout, index) => (
@@ -221,10 +258,17 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
                 {index < activity.workouts.length - 1 && <View style={styles.workoutDivider} />}
               </React.Fragment>
             ))
+          ) : homeData.stravaActivities?.length > 0 ? (
+            homeData.stravaActivities.slice(0, 5).map((stravaActivity, index) => (
+              <React.Fragment key={stravaActivity.id}>
+                <StravaWorkoutCard activity={stravaActivity} />
+                {index < Math.min(homeData.stravaActivities.length, 5) - 1 && <View style={styles.workoutDivider} />}
+              </React.Fragment>
+            ))
           ) : (
             <View style={styles.emptyWorkouts}>
-              <Text style={styles.emptyText}>No recent workouts</Text>
-              <Text style={styles.emptySubtext}>Connect Strava to sync your activities</Text>
+              <Text style={styles.emptyText}>{t('activity.no_workouts')}</Text>
+              <Text style={styles.emptySubtext}>{t('activity.no_workouts_hint')}</Text>
             </View>
           )}
         </GlassCard>
@@ -232,16 +276,16 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
 
       {/* Goals Progress */}
       <View style={styles.goalsSection}>
-        <Text style={styles.sectionTitle}>Daily Goals</Text>
+        <Text style={styles.sectionTitle}>{t('activity.daily_goals')}</Text>
         <View style={styles.goalsGrid}>
           <GoalCard
-            title="Steps"
+            title={t('activity.steps')}
             current={activity.steps}
             goal={10000}
             color="#FF6B35"
           />
           <GoalCard
-            title="Calories"
+            title={t('activity.calories')}
             current={activity.calories}
             goal={600}
             color="#4ADE80"
@@ -251,13 +295,13 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
 
       {/* Body Temperature Card */}
       <View style={styles.vitalsSection}>
-        <Text style={styles.sectionTitle}>Body Vitals</Text>
+        <Text style={styles.sectionTitle}>{t('activity.body_vitals')}</Text>
         <View style={styles.vitalsRow}>
           <GradientInfoCard
             icon={<ThermometerIcon />}
-            title="Temperature"
+            title={t('activity.temperature')}
             headerValue={tempC > 0 ? `${tempC.toFixed(1)}°` : '--'}
-            headerSubtitle={tempStatus ?? 'No data'}
+            headerSubtitle={tempStatus ?? t('activity.no_data')}
             gradientStops={[
               { offset: 0, color: 'rgba(200, 80, 20, 0.99)' },
               { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -280,17 +324,17 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
               )}
               <Text style={styles.vitalNote}>
                 {tempC > 0
-                  ? 'Normal range: 36.1–37.2°C'
-                  : 'Sync ring to see temperature'}
+                  ? t('activity.temp_normal_range')
+                  : t('activity.temp_sync_hint')}
               </Text>
             </View>
           </GradientInfoCard>
 
           <GradientInfoCard
             icon={<OxygenIcon />}
-            title="Min SpO2"
+            title={t('activity.min_spo2')}
             headerValue={minSpo2 ? `${minSpo2}%` : '--'}
-            headerSubtitle={spo2Status ?? 'No data'}
+            headerSubtitle={spo2Status ?? t('activity.no_data')}
             gradientStops={[
               { offset: 0, color: 'rgba(23, 90, 190, 0.99)' },
               { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -310,8 +354,8 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
               )}
               <Text style={styles.vitalNote}>
                 {minSpo2
-                  ? 'Lowest reading today'
-                  : 'Sync ring to see SpO2'}
+                  ? t('activity.spo2_lowest_today')
+                  : t('activity.spo2_sync_hint')}
               </Text>
             </View>
           </GradientInfoCard>
@@ -321,7 +365,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
       {/* Recent Sessions (X3 parity additive section) */}
       {homeData.featureAvailability.activitySessions && (
         <View style={styles.sessionsSection}>
-          <Text style={styles.sectionTitle}>Recent Sessions</Text>
+          <Text style={styles.sectionTitle}>{t('activity.recent_sessions')}</Text>
           <GlassCard style={styles.sessionsCard} noPadding>
             {homeData.activitySessions.length > 0 ? (
               homeData.activitySessions.slice(0, 4).map((session, index) => (
@@ -345,8 +389,8 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
               ))
             ) : (
               <View style={styles.emptyWorkouts}>
-                <Text style={styles.emptyText}>No recent ring sessions</Text>
-                <Text style={styles.emptySubtext}>Sessions will appear after sport-mode sync</Text>
+                <Text style={styles.emptyText}>{t('activity.no_sessions')}</Text>
+                <Text style={styles.emptySubtext}>{t('activity.no_sessions_hint')}</Text>
               </View>
             )}
           </GlassCard>

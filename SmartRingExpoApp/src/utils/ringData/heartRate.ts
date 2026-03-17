@@ -3,7 +3,6 @@
  */
 
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
-import QCBandService from '../../services/QCBandService';
 
 export interface HeartRateInfo {
   heartRate: number;    // bpm
@@ -51,7 +50,7 @@ export async function startHeartRateMeasurement(): Promise<{ success: boolean }>
  */
 export async function stopHeartRateMeasurement(): Promise<void> {
   console.log('💓 [RingData] Stopping HR measurement...');
-  await QCBandService.stopHeartRateMeasuring();
+  UnifiedSmartRingService.stopHeartRateMonitoring();
 }
 
 /**
@@ -60,15 +59,12 @@ export async function stopHeartRateMeasurement(): Promise<void> {
  * @returns Unsubscribe function
  */
 export function onHeartRateData(
-  callback: (data: { 
-    heartRate: number; 
-    timestamp: number; 
-    isRealTime?: boolean; 
-    isMeasuring?: boolean; 
-    isFinal?: boolean;
+  callback: (data: {
+    heartRate: number;
+    timestamp: number;
   }) => void
 ): () => void {
-  return QCBandService.onHeartRateData(callback);
+  return UnifiedSmartRingService.onHeartRateReceived(callback);
 }
 
 /**
@@ -112,7 +108,7 @@ export async function getOvernightHeartRate(dayIndex: number = 0): Promise<{
   console.log(`💓 [RingData] Fetching overnight HR for day ${dayIndex}...`);
   
   // Get all scheduled HR measurements for the day
-  const data = await QCBandService.getScheduledHeartRate([dayIndex]);
+  const data = await UnifiedSmartRingService.getScheduledHeartRateRaw([dayIndex]);
   
   if (!data || data.length === 0) {
     console.log('💓 [RingData] No HR data available');

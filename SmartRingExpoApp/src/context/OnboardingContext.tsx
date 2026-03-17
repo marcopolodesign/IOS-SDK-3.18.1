@@ -42,10 +42,14 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       setIsDeviceCurrentlyConnected(state === 'connected');
     });
 
-    // Check initial connection status
+    // Check initial connection status and proactively reconnect early
     UnifiedSmartRingService.isConnected().then((status) => {
       console.log('📱 OnboardingContext: Initial connection status:', status.connected);
       setIsDeviceCurrentlyConnected(status.connected);
+      // Fire-and-forget early reconnect so ring is ready before fetchData starts
+      if (!status.connected) {
+        void UnifiedSmartRingService.autoReconnect().catch(() => {});
+      }
     });
 
     return () => unsubscribe();

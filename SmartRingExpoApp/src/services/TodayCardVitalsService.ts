@@ -150,47 +150,13 @@ class TodayCardVitalsService {
     return partial;
   }
 
-  private async fetchQcbandVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
-    const partial: Partial<TodayVitals> = {};
-    const wantsTemperature = missing.includes('temperatureC');
-    const wantsSpo2 = missing.includes('minSpo2') || missing.includes('lastSpo2');
-
-    if (wantsTemperature) {
-      try {
-        const temp = await UnifiedSmartRingService.getTemperature();
-        const temperatureC = Number(temp.temperature);
-        if (isValidTemperature(temperatureC)) {
-          partial.temperatureC = temperatureC;
-        }
-      } catch (error) {
-        console.log('[TodayCardVitalsService] qcband temperature fetch failed:', error);
-      }
-    }
-
-    if (wantsSpo2) {
-      try {
-        const spo2Data = await UnifiedSmartRingService.getSpO2();
-        const spo2 = Number(spo2Data.spo2);
-        if (isValidSpo2(spo2)) {
-          // QCBand fallback path usually surfaces one most-recent reading.
-          partial.minSpo2 = spo2;
-          partial.lastSpo2 = spo2;
-        }
-      } catch (error) {
-        console.log('[TodayCardVitalsService] qcband spo2 fetch failed:', error);
-      }
-    }
-
-    return partial;
+  private async fetchRingVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
+    return this.fetchJstyleVitals(missing);
   }
 
   private async fetchMissingVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
     const sdkType = UnifiedSmartRingService.getConnectedSDKType();
     if (sdkType === 'jstyle') return this.fetchJstyleVitals(missing);
-    if (sdkType === 'qcband') return this.fetchQcbandVitals(missing);
-
-    const activeSDK = UnifiedSmartRingService.getActiveSDK();
-    if (activeSDK === 'qcband') return this.fetchQcbandVitals(missing);
 
     try {
       const jstyleStatus = await JstyleService.isConnected();

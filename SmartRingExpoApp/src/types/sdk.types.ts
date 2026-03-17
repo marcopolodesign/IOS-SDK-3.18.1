@@ -8,7 +8,7 @@ export interface DeviceInfo {
   rssi: number;
   ver?: string;
   isConnected?: boolean;
-  sdkType?: 'qcband' | 'jstyle'; // Which SDK this device uses
+  sdkType?: 'jstyle'; // Which SDK this device uses
 }
 
 export interface StepsData {

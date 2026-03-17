@@ -4,12 +4,14 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/SupabaseService';
 import {
   loadBaselines,
   saveBaselines,
   updateBaselines,
+  bootstrapBaselinesFromSupabase,
   computeReadiness,
   computeIllnessWatch,
   computeLastRunContext,
@@ -56,6 +58,12 @@ export function useFocusData(): FocusState {
     setIsLoading(true);
     setError(null);
 
+    // Always load baselines first — local read, needed for recovery timeline card
+    try {
+      const earlyBaselines = await loadBaselines();
+      setBaselines(earlyBaselines);
+    } catch {}
+
     try {
       // 1. Try cache for instant render
       if (!skipCache) {
@@ -84,8 +92,11 @@ export function useFocusData(): FocusState {
       }
       const userId = user.id;
 
-      // 3. Load baselines
-      const storedBaselines = await loadBaselines();
+      // 3. Load baselines — bootstrap from history on first ever load
+      let storedBaselines = await loadBaselines();
+      if (storedBaselines.daysLogged === 0 && storedBaselines.updatedAt === null) {
+        storedBaselines = await bootstrapBaselinesFromSupabase(userId);
+      }
       setBaselines(storedBaselines);
 
       // 4. Fetch today's metrics from Supabase using recorded_at / start_time
@@ -209,9 +220,11 @@ export function useFocusData(): FocusState {
     }
   }, []);
 
-  useEffect(() => {
-    load(false);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load(true);
+    }, [load])
+  );
 
   // Bust cache when new Strava activities are synced
   useEffect(() => {
@@ -226,7 +239,7 @@ export function useFocusData(): FocusState {
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'strava_activities',
             filter: `user_id=eq.${user.id}`,

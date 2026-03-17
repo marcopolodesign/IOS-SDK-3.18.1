@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { METRIC_EXPLANATIONS } from '../../data/metricExplanations';
+import { useTranslation } from 'react-i18next';
+import { getMetricExplanations } from '../../data/metricExplanations';
 import type { MetricKey } from '../../data/metricExplanations';
 import { RangeBarChart } from './charts/RangeBarChart';
 import { ScoreArcChart } from './charts/ScoreArcChart';
@@ -15,7 +16,8 @@ interface ExplainerSheetContentProps {
 }
 
 export function ExplainerSheetContent({ metricKey, onClose }: ExplainerSheetContentProps) {
-  const data = METRIC_EXPLANATIONS[metricKey];
+  const { t } = useTranslation();
+  const data = getMetricExplanations(t)[metricKey];
   const { width } = useWindowDimensions();
 
   if (!data) return null;
@@ -68,7 +70,7 @@ export function ExplainerSheetContent({ metricKey, onClose }: ExplainerSheetCont
 
         {/* Got it button */}
         <Pressable style={[styles.button, { backgroundColor: data.accentColor }]} onPress={onClose}>
-          <Text style={styles.buttonText}>Got it</Text>
+          <Text style={styles.buttonText}>{t('explainer.button_got_it')}</Text>
         </Pressable>
       </BottomSheetScrollView>
     </View>

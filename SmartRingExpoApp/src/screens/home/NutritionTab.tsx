@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { spacing, fontSize } from '../../theme/colors';
 
 // Apple icon for nutrition
@@ -24,16 +25,8 @@ function AppleIcon() {
   );
 }
 
-// Coming soon badge
-function ComingSoonBadge() {
-  return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>COMING SOON</Text>
-    </View>
-  );
-}
-
 export function NutritionTab() {
+  const { t } = useTranslation();
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -43,27 +36,27 @@ export function NutritionTab() {
         </View>
 
         {/* Badge */}
-        <ComingSoonBadge />
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{t('nutrition.coming_soon')}</Text>
+        </View>
 
         {/* Title */}
-        <Text style={styles.title}>Nutrition Tracking</Text>
+        <Text style={styles.title}>{t('nutrition.tracking_title')}</Text>
 
         {/* Description */}
-        <Text style={styles.description}>
-          Track your meals, macros, and nutrition goals. Get personalized insights based on your activity and sleep data.
-        </Text>
+        <Text style={styles.description}>{t('nutrition.description')}</Text>
 
         {/* Feature list */}
         <View style={styles.featureList}>
-          <FeatureItem title="Calorie Tracking" description="Log meals and track daily intake" />
-          <FeatureItem title="Macro Goals" description="Set protein, carb, and fat targets" />
-          <FeatureItem title="AI Recommendations" description="Get personalized meal suggestions" />
-          <FeatureItem title="Recovery Nutrition" description="Optimize post-workout meals" />
+          <FeatureItem title={t('nutrition.feature_calories_title')} description={t('nutrition.feature_calories_desc')} />
+          <FeatureItem title={t('nutrition.feature_macros_title')} description={t('nutrition.feature_macros_desc')} />
+          <FeatureItem title={t('nutrition.feature_ai_title')} description={t('nutrition.feature_ai_desc')} />
+          <FeatureItem title={t('nutrition.feature_recovery_title')} description={t('nutrition.feature_recovery_desc')} />
         </View>
 
         {/* Notify button placeholder */}
         <View style={styles.notifyButton}>
-          <Text style={styles.notifyText}>🔔 Get Notified When Available</Text>
+          <Text style={styles.notifyText}>🔔 {t('nutrition.notify_button')}</Text>
         </View>
       </View>
     </View>

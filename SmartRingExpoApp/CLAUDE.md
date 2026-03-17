@@ -2,7 +2,7 @@
 
 This document provides context for Claude Code when working on this Expo/React Native project.
 
-> **📝 Important:** When completing tasks, **always update `catchup.md`** with a concise entry for what was implemented, and add a summary to the "Recent Changes" section below. `catchup.md` is the canonical implementation log — always write there first after every successful implementation.
+> **📝 MANDATORY:** After completing ANY implementation (feature, fix, refactor — anything that changes code), you MUST automatically update `catchup.md` with a concise entry of what was implemented. Do NOT ask the user — just do it. Also add a summary to the "Recent Changes" section below. This is non-negotiable and applies to every task, including plans that were executed.
 
 ## Project Overview
 
@@ -10,11 +10,61 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Active SDK
 
-> **CRITICAL: Only the Jstyle/X3 SDK is used.** QCBand SDK is present in the repo but is NOT active and must NOT be used. All ring communication goes through `JstyleBridge.m` (native) → `JstyleService.ts` → `UnifiedSmartRingService.ts`. Never add code paths for QCBand, never call `QCBandService`, never reference `QCBandBridge`.
+> **CRITICAL: Only the Jstyle/X3 SDK is used.** QCBand SDK is present in the repo but is NOT active and must NEVER be used, referenced, imported, or called. All ring communication goes through `JstyleBridge.m` (native) → `JstyleService.ts` → `UnifiedSmartRingService.ts`.
+>
+> **BLOCKLIST — never use any of these:**
+> - `QCBandService` / `QCBandBridge` / `QCBandSDK`
+> - Any file in `ios/Frameworks/QCBandSDK.framework`
+> - Any import or reference to QCBand anywhere in new code
 
 ## SDK Reference Rule
 
 > **IMPORTANT:** When implementing SDK features, fixing data issues, or adding new ring data types, **ALWAYS check the X3 demo project** at `IOS (X3)/Ble SDK Demo/` and the native bridge files at `ios/JstyleBridge/` for reference implementation patterns before writing code. The demo project contains working examples for all data types (sleep, steps, heart rate, HRV, SpO2, temperature, battery).
+
+## Design Conventions
+
+- **Feature inspiration:** Reference Oura Ring and Ultrahuman for design and feature patterns
+- **Design system:** Always check `design-system.md` for color tokens, spacing, and component patterns before creating UI
+- **Background colors:** Use `colors.background` (#0D0D0D), `colors.surface` (#1A1A2E), `colors.card` (#1E1E32) from `src/theme/colors.ts`
+- **Bottom sheets:** Use `@gorhom/bottom-sheet` for all modal/overlay content
+- **Cards:** Glass-morphism style — `rgba(255,255,255,0.07)` bg, `rgba(255,255,255,0.12)` border, `borderRadius.xl` (16px)
+- **Collapsible cards:** Use the same expand/collapse pattern as ReadinessCard, IllnessWatchCard
+
+## Data Architecture
+
+- **Supabase is source of truth** for historical data. Ring data is fallback when Supabase has no data.
+- **User ID:** Never use `authService.currentUser` (it's always undefined). Always use `supabase.auth.getUser()` directly.
+- **Sync services** must handle: no user ID, no data, JSON parse errors gracefully.
+- **Native bridge calls** must always use `withNativeTimeout()` wrapper to prevent hanging promises.
+- **Sleep quality enum:** SDK values are 1=awake, 2=light, 3=deep (not the reverse).
+
+## i18n Rules
+
+- All user-facing strings MUST use `t()` from `react-i18next`
+- Supported locales: `en`, `es` (fallback: `en`)
+- Keys use dot notation by domain: `sleep.title`, `activity.no_data`, `settings.language`
+- After any new feature, run `/translate` to audit for missed hardcoded strings
+- Spanish translations should be natural Latin American Spanish
+
+## File Naming Conventions
+
+- Components: `PascalCase.tsx` in `src/components/{domain}/`
+- Hooks: `useCamelCase.ts` in `src/hooks/`
+- Services: `PascalCaseService.ts` in `src/services/`
+- Types: `camelCase.types.ts` in `src/types/`
+- Migrations: `YYYYMMDD_description.sql` in `supabase/migrations/`
+
+## Native Rebuild Rule
+
+> After ANY change to files in `ios/JstyleBridge/`, `ios/SmartRing/`, `ios/Podfile`, or native plugins in `app.json`: notify the user that a native rebuild is needed, then automatically run `open ios/SmartRing.xcworkspace` to open Xcode. Hot reload does NOT pick up native changes.
+
+## Workflow
+
+- **ALWAYS** update `catchup.md` after completing any implementation. Do not skip this. Do not ask — just write the entry automatically.
+- Use conventional commits: `feat:`, `fix:`, `refactor:`, `chore:`
+- When debugging data issues, trace the full pipeline: Native Bridge → JstyleService → useHomeData → UI Component
+- **Migrations:** After creating any Supabase migration file, ALWAYS run `npx supabase db push` immediately. Do NOT tell the user to run it — just run it yourself.
+- **Explain changes from a frontend perspective.** When summarizing what was done, describe the user-visible result (what the user will see, how the UI behaves) — not just which files or functions changed.
 
 ## Recent Changes
 

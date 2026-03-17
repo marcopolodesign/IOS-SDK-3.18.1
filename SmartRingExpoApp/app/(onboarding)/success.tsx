@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useOnboarding } from '../../src/context/OnboardingContext';
 import UnifiedSmartRingService from '../../src/services/UnifiedSmartRingService';
-import QCBandService from '../../src/services/QCBandService';
 
 type DataPhase = 'syncing' | 'measuring_hr' | 'complete' | 'error';
 
@@ -111,19 +110,15 @@ export default function SuccessScreen() {
         setMeasuringHR(true);
 
         // Listen for HR data events
-        hrListener = QCBandService.onHeartRateData((data) => {
+        hrListener = UnifiedSmartRingService.onHeartRateReceived((data) => {
           console.log('💓 HR data received:', data);
-          if (data.isMeasuring && data.heartRate > 0) {
-            // Show intermediate value
+          if (data.heartRate > 0) {
             setHeartRate(data.heartRate);
-            setHrProgress(prev => Math.min(prev + 20, 80));
-          }
-          if (data.isFinal && data.heartRate > 0) {
-            // Final measurement complete
-            setHeartRate(data.heartRate);
-            setHrProgress(100);
-            setMeasuringHR(false);
-            setPhase('complete');
+            setHrProgress(prev => Math.min(prev + 20, 100));
+            if (data.heartRate > 0) {
+              setMeasuringHR(false);
+              setPhase('complete');
+            }
           }
         });
 

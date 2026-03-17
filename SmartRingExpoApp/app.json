@@ -1,5 +1,10 @@
 {
   "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "176a7f39-858f-4c21-97c5-7714f587c179"
+      }
+    },
     "name": "Smart Ring",
     "slug": "smart-ring-expo-app",
     "version": "1.0.0",
@@ -51,11 +56,16 @@
         }
       ],
       "expo-secure-store",
-      "expo-router"
+      "expo-router",
+      "expo-localization"
     ],
     "scheme": "smartring",
     "experiments": {
       "typedRoutes": true
+    },
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/176a7f39-858f-4c21-97c5-7714f587c179"
     }
   }
 }

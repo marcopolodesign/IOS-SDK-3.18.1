@@ -171,6 +171,12 @@ function parseSegmentsFromJson(
     })).filter(s => s.startTime && s.endTime);
   }
 
+  // If stored as { rawQualityRecords: [...] } (DataSyncService format)
+  if (Array.isArray(detailJson.rawQualityRecords)) {
+    const totalMin = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    return buildSegmentsFromRawQuality(detailJson.rawQualityRecords, startTime.getTime(), totalMin);
+  }
+
   return [];
 }
 
@@ -209,9 +215,23 @@ async function fetchSleepHistory(userId: string): Promise<Map<string, DaySleepDa
     const hours = Math.floor(totalMin / 60);
     const minutes = totalMin % 60;
 
+    const rawScore = row.sleep_score;
+    const calculatedScore = !rawScore
+      ? calculateSleepScore({
+          totalSleepMinutes: deepMin + lightMin + remMin,
+          deepMinutes: deepMin,
+          lightMinutes: lightMin,
+          remMinutes: remMin,
+          awakeMinutes: awakeMin,
+          totalNapMinutes: 0,
+          fallAsleepDuration: 0,
+          segments: [], napSegments: [], timestamp: 0, dayIndex: 0,
+        }).score
+      : rawScore;
+
     map.set(dateKey, {
       date: dateKey,
-      score: row.sleep_score || 0,
+      score: calculatedScore,
       timeAsleep: totalMin > 0 ? `${hours}h ${minutes}m` : '--',
       timeAsleepMinutes: totalMin,
       bedTime: startTime,

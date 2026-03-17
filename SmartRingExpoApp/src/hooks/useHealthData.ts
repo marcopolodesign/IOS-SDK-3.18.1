@@ -171,12 +171,11 @@ export const useHealthData = (): UseHealthDataReturn => {
   }, []);
 
   const startBloodPressureMonitoring = useCallback(() => {
-    UnifiedSmartRingService.startBloodPressureMonitoring();
+    // X3 doesn't have dedicated BP measurement; BP comes from HRV data
     setIsMonitoringBloodPressure(true);
   }, []);
 
   const stopBloodPressureMonitoring = useCallback(() => {
-    UnifiedSmartRingService.stopBloodPressureMonitoring();
     setIsMonitoringBloodPressure(false);
   }, []);
 

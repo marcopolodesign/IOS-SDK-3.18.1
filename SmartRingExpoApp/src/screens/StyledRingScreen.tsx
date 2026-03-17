@@ -24,7 +24,6 @@ import { useOnboarding } from '../context/OnboardingContext';
 import { GlassCard } from '../components/home/GlassCard';
 import { fontFamily } from '../theme/colors';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
-import QCBandService from '../services/QCBandService';
 import { SleepStageTimeline } from '../components/sleep/SleepStageTimeline';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -608,15 +607,11 @@ export function StyledRingScreen() {
     setHrProgress(0);
     
     // Set up listener for HR data
-    hrListenerRef.current = QCBandService.onHeartRateData((data) => {
+    hrListenerRef.current = UnifiedSmartRingService.onHeartRateReceived((data) => {
       console.log('💓 [RingScreen] HR data received:', data);
-      if (data.isMeasuring && data.heartRate > 0) {
+      if (data.heartRate > 0) {
         setLiveHR(data.heartRate);
-        setHrProgress(prev => Math.min(prev + 15, 85));
-      }
-      if (data.isFinal && data.heartRate > 0) {
-        setLiveHR(data.heartRate);
-        setHrProgress(100);
+        setHrProgress(prev => Math.min(prev + 15, 100));
         // Save as last measured result
         setLastMeasuredHR(data.heartRate);
         setLastMeasuredTime(new Date());
@@ -661,8 +656,8 @@ export function StyledRingScreen() {
       hrTimeoutRef.current = null;
     }
     
-    // Try to stop the native measurement
-    QCBandService.stopHeartRateMeasuring().catch(() => {});
+    // Stop the native measurement
+    UnifiedSmartRingService.stopHeartRateMonitoring();
   }, []);
   
   // Cleanup on unmount
