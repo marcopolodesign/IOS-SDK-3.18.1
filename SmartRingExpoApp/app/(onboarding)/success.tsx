@@ -8,7 +8,6 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useOnboarding } from '../../src/context/OnboardingContext';
@@ -27,24 +26,46 @@ export default function SuccessScreen() {
   const [measuringHR, setMeasuringHR] = useState(false);
   const [hrProgress, setHrProgress] = useState(0);
 
-  // Pulse animation for HR measuring
+  // Animations
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const checkOpacity = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const hrValueAnim = useRef(new Animated.Value(0)).current;
 
-  // Pulse animation while measuring
+  // Animate check icon in on mount
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(200),
+      Animated.parallel([
+        Animated.spring(checkScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(checkOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, []);
+
+  // Pulse animation while measuring HR
   useEffect(() => {
     if (measuringHR) {
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.15,
-            duration: 600,
+            toValue: 1.12,
+            duration: 700,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 600,
+            duration: 700,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
           }),
@@ -71,19 +92,14 @@ export default function SuccessScreen() {
     let hrListener: (() => void) | null = null;
 
     const fetchDeviceData = async () => {
-      // Connection promise now only resolves after SyncSuccess (state 6)
-      // Add small additional delay for SDK internal state to fully settle
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       try {
-        // Fetch sequentially to avoid overwhelming the SDK
-        // Battery first, then steps
         const batteryResult = await UnifiedSmartRingService.getBattery().catch((err) => {
           console.log('Battery fetch failed:', err);
           return null;
         });
 
-        // Small delay between requests
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const stepsResult = await UnifiedSmartRingService.getSteps().catch((err) => {
@@ -99,37 +115,34 @@ export default function SuccessScreen() {
           setCurrentSteps(stepsResult.steps);
         }
 
-        // If both failed, set error state but still allow continuing
         if (!batteryResult && !stepsResult) {
           setPhase('error');
           return;
         }
 
-        // Now start heart rate measurement
         setPhase('measuring_hr');
         setMeasuringHR(true);
 
-        // Listen for HR data events
         hrListener = UnifiedSmartRingService.onHeartRateReceived((data) => {
           console.log('💓 HR data received:', data);
-          if (data.heartRate > 0) {
+          if (data.isMeasuring && data.heartRate > 0) {
             setHeartRate(data.heartRate);
-            setHrProgress(prev => Math.min(prev + 20, 100));
-            if (data.heartRate > 0) {
-              setMeasuringHR(false);
-              setPhase('complete');
-            }
+            setHrProgress(prev => Math.min(prev + 20, 80));
+          }
+          if (data.isFinal && data.heartRate > 0) {
+            setHeartRate(data.heartRate);
+            setHrProgress(100);
+            setMeasuringHR(false);
+            setPhase('complete');
           }
         });
 
-        // Start measurement
         await new Promise(resolve => setTimeout(resolve, 500));
         console.log('💓 Starting heart rate measurement...');
         await UnifiedSmartRingService.measureHeartRate().catch(err => {
           console.log('HR measurement error:', err);
         });
 
-        // Timeout after 30 seconds if no final result
         setTimeout(() => {
           setMeasuringHR(prev => {
             if (prev) {
@@ -150,14 +163,11 @@ export default function SuccessScreen() {
     fetchDeviceData();
 
     return () => {
-      if (hrListener) {
-        hrListener();
-      }
+      if (hrListener) hrListener();
     };
   }, []);
 
   const handleContinue = async () => {
-    // Save device pairing and mark onboarding complete
     if (deviceMac) {
       await completeDeviceSetup(deviceMac);
     }
@@ -171,9 +181,9 @@ export default function SuccessScreen() {
   };
 
   const getBatteryColor = (level: number) => {
-    if (level >= 60) return '#10B981';
-    if (level >= 30) return '#F59E0B';
-    return '#EF4444';
+    if (level >= 60) return '#00D4AA';
+    if (level >= 30) return '#FFB84D';
+    return '#FF6B6B';
   };
 
   const isLoading = phase === 'syncing';
@@ -182,50 +192,44 @@ export default function SuccessScreen() {
   const isError = phase === 'error';
 
   return (
-    <LinearGradient
-      colors={['#0F0F1A', '#1A1A2E', '#16213E']}
-      style={styles.container}
-    >
-      {/* Background decoration */}
-      <View style={styles.bgDecoration}>
-        <View style={[styles.bgCircle, styles.bgCircle1]} />
-        <View style={[styles.bgCircle, styles.bgCircle2]} />
-      </View>
+    <View style={styles.container}>
+      {/* Ambient glow */}
+      <View style={styles.glowBg} />
 
       <View style={styles.content}>
-        {/* Success icon */}
-        <View style={styles.successIcon}>
-          <LinearGradient
-            colors={['#10B981', '#059669']}
-            style={styles.successGradient}
-          >
-            <Ionicons name="checkmark" size={60} color="#fff" />
-          </LinearGradient>
-        </View>
+        {/* Animated check mark */}
+        <Animated.View
+          style={[
+            styles.checkWrapper,
+            { opacity: checkOpacity, transform: [{ scale: checkScale }] },
+          ]}
+        >
+          <View style={styles.checkCircle}>
+            <Ionicons name="checkmark" size={40} color="#000000" />
+          </View>
+        </Animated.View>
 
-        <Text style={styles.title}>Connected!</Text>
+        <Text style={styles.title}>All set</Text>
         <Text style={styles.subtitle}>
-          Your {deviceName || 'Smart Ring'} is ready to use
+          {deviceName || 'Smart Ring'} is connected
         </Text>
 
-        {/* Stats container */}
-        <View style={styles.statsContainer}>
+        {/* Stats card */}
+        <View style={styles.statsCard}>
           {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#6366F1" />
-              <Text style={styles.loadingText}>Syncing with your ring...</Text>
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#00D4AA" />
+              <Text style={styles.loadingText}>Syncing with your ring…</Text>
             </View>
           ) : isError ? (
-            <View style={styles.errorContainer}>
-              <Ionicons name="information-circle" size={32} color="#6B7280" />
-              <Text style={styles.errorText}>
-                Could not fetch data right now.{'\n'}
-                Data will sync once you enter the app.
+            <View style={styles.errorRow}>
+              <Ionicons name="information-circle-outline" size={20} color="rgba(255,255,255,0.3)" />
+              <Text style={styles.errorInfoText}>
+                Data will sync when you open the app.
               </Text>
             </View>
           ) : (
-            <>
-              {/* Battery */}
+            <View style={styles.statsRow}>
               <View style={styles.statItem}>
                 <Ionicons
                   name={
@@ -237,62 +241,52 @@ export default function SuccessScreen() {
                           : 'battery-dead'
                       : 'battery-half'
                   }
-                  size={32}
-                  color={batteryLevel !== null ? getBatteryColor(batteryLevel) : '#6B7280'}
+                  size={24}
+                  color={batteryLevel !== null ? getBatteryColor(batteryLevel) : 'rgba(255,255,255,0.3)'}
                 />
                 <Text style={styles.statValue}>
-                  {batteryLevel !== null ? `${batteryLevel}%` : '--'}
+                  {batteryLevel !== null ? `${batteryLevel}%` : '—'}
                 </Text>
                 <Text style={styles.statLabel}>Battery</Text>
               </View>
 
               <View style={styles.statDivider} />
 
-              {/* Steps */}
               <View style={styles.statItem}>
-                <Ionicons name="footsteps" size={32} color="#6366F1" />
+                <Ionicons name="footsteps" size={24} color="#00D4AA" />
                 <Text style={styles.statValue}>
-                  {currentSteps !== null ? currentSteps.toLocaleString() : '--'}
+                  {currentSteps !== null ? currentSteps.toLocaleString() : '—'}
                 </Text>
-                <Text style={styles.statLabel}>Steps Today</Text>
+                <Text style={styles.statLabel}>Steps today</Text>
               </View>
-            </>
+            </View>
           )}
         </View>
 
-        {/* Heart Rate Measurement Section */}
+        {/* Heart Rate section */}
         {(isMeasuringPhase || isComplete) && (
-          <View style={styles.hrSection}>
+          <View style={styles.hrCard}>
             <Animated.View
               style={[
-                styles.hrIconContainer,
-                measuringHR && {
-                  transform: [{ scale: pulseAnim }],
-                },
+                styles.hrIconWrap,
+                measuringHR && { transform: [{ scale: pulseAnim }] },
               ]}
             >
-              <LinearGradient
-                colors={measuringHR ? ['#EF4444', '#DC2626'] : ['#EF4444', '#B91C1C']}
-                style={styles.hrIconGradient}
-              >
-                <Ionicons name="heart" size={36} color="#fff" />
-              </LinearGradient>
+              <Ionicons name="heart" size={20} color="#FF6B6B" />
             </Animated.View>
 
             <View style={styles.hrContent}>
               {measuringHR ? (
                 <>
-                  <View style={styles.hrMeasuringRow}>
-                    <Text style={styles.hrMeasuringText}>
-                      {heartRate && heartRate > 0 ? (
-                        <Text style={styles.hrLiveValue}>{heartRate}</Text>
-                      ) : (
-                        'Measuring...'
-                      )}
+                  <View style={styles.hrRow}>
+                    <Text style={styles.hrMeasuringLabel}>
+                      {heartRate && heartRate > 0
+                        ? <Text style={styles.hrLiveValue}>{heartRate}</Text>
+                        : 'Measuring…'}
                     </Text>
-                    <ActivityIndicator size="small" color="#EF4444" style={styles.hrSpinner} />
+                    <ActivityIndicator size="small" color="#FF6B6B" style={{ marginLeft: 8 }} />
                   </View>
-                  <Text style={styles.hrSubtext}>Keep your ring on for accurate reading</Text>
+                  <Text style={styles.hrHint}>Keep ring on for accurate reading</Text>
                   <View style={styles.hrProgressBar}>
                     <View style={[styles.hrProgressFill, { width: `${hrProgress}%` }]} />
                   </View>
@@ -305,272 +299,249 @@ export default function SuccessScreen() {
                       {
                         scale: hrValueAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0.5, 1],
+                          outputRange: [0.8, 1],
                         }),
                       },
                     ],
                   }}
                 >
                   <Text style={styles.hrFinalValue}>
-                    {heartRate && heartRate > 0 ? `${heartRate}` : '--'}
+                    {heartRate && heartRate > 0 ? `${heartRate}` : '—'}
                     <Text style={styles.hrUnit}> bpm</Text>
                   </Text>
-                  <Text style={styles.hrSubtext}>Heart Rate</Text>
+                  <Text style={styles.hrHint}>Heart Rate</Text>
                 </Animated.View>
               )}
             </View>
 
             {measuringHR && (
-              <TouchableOpacity onPress={handleSkipHR} style={styles.skipButton}>
-                <Text style={styles.skipButtonText}>Skip</Text>
+              <TouchableOpacity onPress={handleSkipHR} style={styles.skipBtn}>
+                <Text style={styles.skipText}>Skip</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
+      </View>
 
-        {/* Continue button */}
+      {/* Bottom CTA */}
+      <View style={styles.ctaContainer}>
         <TouchableOpacity
-          style={[styles.primaryButton, (isLoading || measuringHR) && styles.buttonDisabled]}
+          style={[
+            styles.continueButton,
+            (isLoading || measuringHR) && styles.buttonDisabled,
+          ]}
           onPress={handleContinue}
           disabled={isLoading || measuringHR}
+          activeOpacity={0.85}
         >
-          <LinearGradient
-            colors={['#6366F1', '#8B5CF6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.buttonGradient}
-          >
-            <Text style={styles.buttonText}>Continue to App</Text>
-            <Ionicons name="arrow-forward" size={24} color="#fff" style={styles.buttonIconRight} />
-          </LinearGradient>
+          <Text style={styles.continueButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
   },
-  bgDecoration: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
-  bgCircle: {
+  glowBg: {
     position: 'absolute',
-    borderRadius: 999,
-  },
-  bgCircle1: {
-    width: 400,
-    height: 400,
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
     top: -100,
-    right: -150,
-  },
-  bgCircle2: {
-    width: 300,
-    height: 300,
-    backgroundColor: 'rgba(99, 102, 241, 0.06)',
-    bottom: 100,
-    left: -100,
+    left: '50%',
+    marginLeft: -160,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(0, 212, 170, 0.07)',
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 90,
   },
-  successIcon: {
-    marginBottom: 32,
+
+  // Check
+  checkWrapper: {
+    marginBottom: 28,
   },
-  successGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
+  checkCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#00D4AA',
     alignItems: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
+    justifyContent: 'center',
   },
+
   title: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '700',
     color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 12,
     letterSpacing: -0.5,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    lineHeight: 24,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.4)',
     marginBottom: 32,
-    paddingHorizontal: 20,
   },
-  statsContainer: {
+
+  // Stats
+  statsCard: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 18,
+    padding: 22,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    minHeight: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 16,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    minHeight: 140,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
   },
   loadingText: {
     fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 12,
+    color: 'rgba(255,255,255,0.4)',
   },
-  errorContainer: {
+  errorRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
+    gap: 10,
+    paddingHorizontal: 4,
   },
-  errorText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
+  errorInfoText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.35)',
+    flex: 1,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    justifyContent: 'space-around',
   },
   statItem: {
-    flex: 1,
     alignItems: 'center',
+    flex: 1,
+    gap: 6,
   },
   statValue: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 8,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
   statDivider: {
     width: 1,
-    height: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    height: 44,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  hrSection: {
+
+  // HR
+  hrCard: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 24,
-    width: '100%',
+    backgroundColor: 'rgba(255, 107, 107, 0.06)',
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: 'rgba(255, 107, 107, 0.15)',
   },
-  hrIconContainer: {
-    marginRight: 16,
-  },
-  hrIconGradient: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
+  hrIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 107, 107, 0.12)',
     alignItems: 'center',
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    justifyContent: 'center',
+    marginRight: 14,
   },
   hrContent: {
     flex: 1,
   },
-  hrMeasuringRow: {
+  hrRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  hrMeasuringText: {
-    fontSize: 18,
+  hrMeasuringLabel: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
   },
   hrLiveValue: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
-    color: '#EF4444',
+    color: '#FF6B6B',
   },
-  hrSpinner: {
-    marginLeft: 8,
-  },
-  hrSubtext: {
+  hrHint: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: 'rgba(255,255,255,0.35)',
     marginTop: 4,
   },
   hrProgressBar: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 2,
     marginTop: 10,
     overflow: 'hidden',
   },
   hrProgressFill: {
     height: '100%',
-    backgroundColor: '#EF4444',
+    backgroundColor: '#FF6B6B',
     borderRadius: 2,
   },
   hrFinalValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   hrUnit: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '400',
-    color: '#9CA3AF',
+    color: 'rgba(255,255,255,0.4)',
   },
-  skipButton: {
-    paddingHorizontal: 12,
+  skipBtn: {
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  skipButtonText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
+  skipText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.3)',
   },
-  primaryButton: {
-    width: '100%',
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+
+  // CTA
+  ctaContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 50,
+    paddingTop: 16,
+  },
+  continueButton: {
+    backgroundColor: '#00D4AA',
+    borderRadius: 50,
+    paddingVertical: 17,
+    alignItems: 'center',
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.45,
   },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-  },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  buttonIconRight: {
-    marginLeft: 12,
+  continueButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

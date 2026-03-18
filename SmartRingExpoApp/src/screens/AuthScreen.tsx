@@ -10,12 +10,17 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/useAuth';
 import { colors, spacing, borderRadius, fontSize } from '../theme/colors';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
+
+const { width, height } = Dimensions.get('window');
+const RING_HERO = require('../../assets/images/ring-hero.png');
 
 type AuthMode = 'signIn' | 'signUp' | 'forgotPassword';
 
@@ -27,7 +32,7 @@ export function AuthScreen() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local loading state for button
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     setError(null);
@@ -70,15 +75,12 @@ export function AuthScreen() {
           setMode('signIn');
           setIsSubmitting(false);
         }
-        // If success without email confirmation, don't reset isSubmitting
-        // Navigation will happen and component will unmount
       } else {
         const result = await signIn(email, password);
         if (!result.success) {
           setError(result.error || t('auth.error_unexpected'));
           setIsSubmitting(false);
         }
-        // If success, don't reset isSubmitting - navigation will happen
       }
     } catch (e) {
       setError(t('auth.error_unexpected'));
@@ -95,7 +97,6 @@ export function AuthScreen() {
         setError(result.error || t('auth.error_unexpected'));
         setIsSubmitting(false);
       }
-      // If success, don't reset - navigation will happen
     } catch (e) {
       setError(t('auth.error_unexpected'));
       setIsSubmitting(false);
@@ -103,189 +104,175 @@ export function AuthScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[colors.background, '#1a1a2e', colors.background]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
+      {/* Ring hero */}
+      <View style={styles.heroSection}>
+        <Image source={RING_HERO} style={styles.ringImage} resizeMode="cover" />
+        <LinearGradient
+          colors={['transparent', '#000000']}
+          style={styles.heroFade}
+        />
+      </View>
+
+      {/* Brand */}
+      <View style={styles.brandSection}>
+        <Text style={styles.brandName}>{t('auth.logo_text')}</Text>
+        <Text style={styles.tagline}>{t('auth.tagline')}</Text>
+      </View>
+
+      {/* Form */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
+        style={styles.formWrapper}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <View style={styles.logoRing}>
-              <Svg width={80} height={80} viewBox="0 0 100 100">
-                <Circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  stroke={colors.primary}
-                  strokeWidth="6"
-                  fill="none"
-                />
-                <Circle
-                  cx="50"
-                  cy="50"
-                  r="25"
-                  stroke={colors.accent}
-                  strokeWidth="4"
-                  fill="none"
-                  opacity={0.6}
-                />
-              </Svg>
+          <Text style={styles.formTitle}>
+            {mode === 'signIn' && t('auth.title_sign_in')}
+            {mode === 'signUp' && t('auth.title_sign_up')}
+            {mode === 'forgotPassword' && t('auth.title_forgot_password')}
+          </Text>
+
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
             </View>
-            <Text style={styles.logoText}>{t('auth.logo_text')}</Text>
-            <Text style={styles.tagline}>{t('auth.tagline')}</Text>
-          </View>
+          )}
 
-          {/* Form */}
-          <View style={styles.formContainer}>
-            <Text style={styles.title}>
-              {mode === 'signIn' && t('auth.title_sign_in')}
-              {mode === 'signUp' && t('auth.title_sign_up')}
-              {mode === 'forgotPassword' && t('auth.title_forgot_password')}
-            </Text>
+          {mode === 'signUp' && (
+            <TextInput
+              style={styles.input}
+              placeholder={t('auth.placeholder_display_name')}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={displayName}
+              onChangeText={setDisplayName}
+              autoCapitalize="words"
+            />
+          )}
 
-            {error && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
+          <TextInput
+            style={styles.input}
+            placeholder={t('auth.placeholder_email')}
+            placeholderTextColor="rgba(255,255,255,0.3)"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+
+          {mode !== 'forgotPassword' && (
+            <TextInput
+              style={styles.input}
+              placeholder={t('auth.placeholder_password')}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+            />
+          )}
+
+          <TouchableOpacity
+            style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            activeOpacity={0.85}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={colors.textInverse} />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {mode === 'signIn' && t('auth.button_sign_in')}
+                {mode === 'signUp' && t('auth.button_sign_up')}
+                {mode === 'forgotPassword' && t('auth.button_reset')}
+              </Text>
             )}
+          </TouchableOpacity>
 
-            {mode === 'signUp' && (
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>{t('auth.label_display_name')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('auth.placeholder_display_name')}
-                  placeholderTextColor={colors.textMuted}
-                  value={displayName}
-                  onChangeText={setDisplayName}
-                  autoCapitalize="words"
-                />
+          {mode !== 'forgotPassword' && (
+            <>
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>{t('auth.divider_or')}</Text>
+                <View style={styles.dividerLine} />
               </View>
-            )}
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>{t('auth.label_email')}</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.placeholder_email')}
-                placeholderTextColor={colors.textMuted}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-              />
-            </View>
+              <TouchableOpacity
+                style={styles.githubButton}
+                onPress={handleGitHubSignIn}
+                disabled={isSubmitting}
+                activeOpacity={0.8}
+              >
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="#fff">
+                  <Path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                </Svg>
+                <Text style={styles.githubButtonText}>{t('auth.button_github')}</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
-            {mode !== 'forgotPassword' && (
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>{t('auth.label_password')}</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t('auth.placeholder_password')}
-                  placeholderTextColor={colors.textMuted}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoComplete="password"
-                />
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
-              onPress={handleSubmit}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color={colors.background} />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {mode === 'signIn' && t('auth.button_sign_in')}
-                  {mode === 'signUp' && t('auth.button_sign_up')}
-                  {mode === 'forgotPassword' && t('auth.button_reset')}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            {mode !== 'forgotPassword' && (
+          {/* Mode switcher */}
+          <View style={styles.modeSwitcher}>
+            {mode === 'signIn' && (
               <>
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>{t('auth.divider_or')}</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                <TouchableOpacity
-                  style={styles.githubButton}
-                  onPress={handleGitHubSignIn}
-                  disabled={isSubmitting}
-                >
-                  <Svg width={20} height={20} viewBox="0 0 24 24" fill={colors.text}>
-                    <Path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                  </Svg>
-                  <Text style={styles.githubButtonText}>{t('auth.button_github')}</Text>
+                <TouchableOpacity onPress={() => setMode('forgotPassword')}>
+                  <Text style={styles.linkText}>{t('auth.link_forgot')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMode('signUp')}>
+                  <Text style={styles.linkText}>{t('auth.link_create')}</Text>
                 </TouchableOpacity>
               </>
             )}
-
-            {/* Mode Switcher */}
-            <View style={styles.modeSwitcher}>
-              {mode === 'signIn' && (
-                <>
-                  <TouchableOpacity onPress={() => setMode('forgotPassword')}>
-                    <Text style={styles.linkText}>{t('auth.link_forgot')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setMode('signUp')}>
-                    <Text style={styles.linkText}>{t('auth.link_create')}</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              {mode === 'signUp' && (
-                <TouchableOpacity onPress={() => setMode('signIn')}>
-                  <Text style={styles.linkText}>{t('auth.link_sign_in')}</Text>
-                </TouchableOpacity>
-              )}
-              {mode === 'forgotPassword' && (
-                <TouchableOpacity onPress={() => setMode('signIn')}>
-                  <Text style={styles.linkText}>{t('auth.link_back')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            {mode === 'signUp' && (
+              <TouchableOpacity onPress={() => setMode('signIn')}>
+                <Text style={styles.linkText}>{t('auth.link_sign_in')}</Text>
+              </TouchableOpacity>
+            )}
+            {mode === 'forgotPassword' && (
+              <TouchableOpacity onPress={() => setMode('signIn')}>
+                <Text style={styles.linkText}>{t('auth.link_back')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
+
+const HERO_HEIGHT = height * 0.38;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
   },
-  keyboardView: {
-    flex: 1,
+  heroSection: {
+    height: HERO_HEIGHT,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: spacing.xl,
+  ringImage: {
+    width: '100%',
+    height: '100%',
   },
-  logoContainer: {
+  heroFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: HERO_HEIGHT * 0.5,
+  },
+  brandSection: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  logoRing: {
-    marginBottom: spacing.md,
-  },
-  logoText: {
+  brandName: {
     fontSize: fontSize.xxxl,
     fontWeight: '700',
     color: colors.text,
@@ -293,67 +280,62 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: fontSize.md,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    color: 'rgba(255,255,255,0.45)',
+    marginTop: 4,
+    letterSpacing: 0.3,
   },
-  formContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+  formWrapper: {
+    flex: 1,
   },
-  title: {
-    fontSize: fontSize.xxl,
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  formTitle: {
+    fontSize: fontSize.xl,
     fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.lg,
-    textAlign: 'center',
   },
   errorContainer: {
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.error,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
   },
   errorText: {
     color: colors.error,
     fontSize: fontSize.sm,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: spacing.md,
-  },
-  inputLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: borderRadius.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 16,
     fontSize: fontSize.md,
     color: colors.text,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.12)',
+    marginBottom: spacing.md,
   },
   primaryButton: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: 50,
+    paddingVertical: 17,
     alignItems: 'center',
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   primaryButtonText: {
-    color: colors.background,
+    color: colors.textInverse,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   divider: {
     flexDirection: 'row',
@@ -363,23 +345,24 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   dividerText: {
-    color: colors.textMuted,
+    color: 'rgba(255,255,255,0.3)',
     paddingHorizontal: spacing.md,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   githubButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: 50,
+    paddingVertical: 16,
     borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.sm,
+    borderColor: 'rgba(255,255,255,0.18)',
+    gap: spacing.md,
   },
   githubButtonText: {
     color: colors.text,
@@ -387,9 +370,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   modeSwitcher: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   linkText: {
     color: colors.primary,
@@ -398,6 +381,3 @@ const styles = StyleSheet.create({
 });
 
 export default AuthScreen;
-
-
-

@@ -1,4 +1,12 @@
 import '../src/i18n'; // i18n side-effect init — must be first
+import { Platform } from 'react-native';
+// Inject Figma capture script on web (removed after design capture)
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const s = document.createElement('script');
+  s.src = 'https://mcp.figma.com/mcp/html-to-design/capture.js';
+  s.async = true;
+  document.head.appendChild(s);
+}
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

@@ -7,6 +7,7 @@
     },
     "name": "Smart Ring",
     "slug": "smart-ring-expo-app",
+    "owner": "mateoaldao",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +22,7 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.smartring.app",
+      "bundleIdentifier": "com.focusring.app",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
         "NSBluetoothPeripheralUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
@@ -40,7 +41,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D0D0D"
       },
-      "package": "com.smartring.app"
+      "package": "com.focusring.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",

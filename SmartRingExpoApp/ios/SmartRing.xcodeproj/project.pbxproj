@@ -396,7 +396,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartRing/SmartRing.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KSWF3L58X;
+				DEVELOPMENT_TEAM = S6565PPGRT;
 				ENABLE_BITCODE = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -428,7 +428,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.smartring.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.focusring.app;
 				PRODUCT_NAME = SmartRing;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmartRing/SmartRing-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -446,7 +446,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SmartRing/SmartRing.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KSWF3L58X;
+				DEVELOPMENT_TEAM = S6565PPGRT;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SRCROOT)/Frameworks\"",
@@ -473,7 +473,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.smartring.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.focusring.app;
 				PRODUCT_NAME = SmartRing;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmartRing/SmartRing-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
