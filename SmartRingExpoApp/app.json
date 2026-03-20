@@ -8,7 +8,7 @@
     "name": "Focus",
     "slug": "smart-ring-expo-app",
     "owner": "mateoaldao",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -23,7 +23,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.focusring.app",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Focus needs Bluetooth to connect to your ring and sync health data",
         "NSBluetoothPeripheralUsageDescription": "Focus needs Bluetooth to connect to your ring and sync health data",
