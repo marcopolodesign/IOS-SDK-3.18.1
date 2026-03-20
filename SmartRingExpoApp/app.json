@@ -5,10 +5,10 @@
         "projectId": "176a7f39-858f-4c21-97c5-7714f587c179"
       }
     },
-    "name": "Smart Ring",
+    "name": "Focus",
     "slug": "smart-ring-expo-app",
     "owner": "mateoaldao",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -23,12 +23,12 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.focusring.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
-        "NSBluetoothPeripheralUsageDescription": "Smart Ring needs Bluetooth to connect to your ring and sync health data",
-        "NSHealthShareUsageDescription": "Smart Ring needs access to read your health data from Apple Health to provide comprehensive health insights",
-        "NSHealthUpdateUsageDescription": "Smart Ring needs access to write health data to Apple Health to keep your records synchronized",
+        "NSBluetoothAlwaysUsageDescription": "Focus needs Bluetooth to connect to your ring and sync health data",
+        "NSBluetoothPeripheralUsageDescription": "Focus needs Bluetooth to connect to your ring and sync health data",
+        "NSHealthShareUsageDescription": "Focus needs access to read your health data from Apple Health to provide comprehensive health insights",
+        "NSHealthUpdateUsageDescription": "Focus needs access to write health data to Apple Health to keep your records synchronized",
         "UIBackgroundModes": [
           "bluetooth-central"
         ]
@@ -59,7 +59,13 @@
       ],
       "expo-secure-store",
       "expo-router",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-notifications",
+        {
+          "iosDisplayInForeground": true
+        }
+      ]
     ],
     "scheme": "smartring",
     "experiments": {
@@ -67,7 +73,10 @@
     },
     "runtimeVersion": "1.0.0",
     "updates": {
-      "url": "https://u.expo.dev/176a7f39-858f-4c21-97c5-7714f587c179"
+      "url": "https://u.expo.dev/176a7f39-858f-4c21-97c5-7714f587c179",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }
