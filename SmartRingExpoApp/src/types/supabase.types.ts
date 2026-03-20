@@ -4,6 +4,29 @@
 export interface Database {
   public: {
     Tables: {
+      push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          token: string;
+          platform: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          token: string;
+          platform?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          token?: string;
+          platform?: string;
+          updated_at?: string;
+        };
+      };
       profiles: {
         Row: {
           id: string;

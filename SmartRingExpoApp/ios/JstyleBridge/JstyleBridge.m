@@ -12,6 +12,7 @@
 #import "DeviceData_X3.h"
 #import <React/RCTLog.h>
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <UserNotifications/UserNotifications.h>
 
 static NSString *const kJstyleServiceUUID = @"FFF0";
 static NSString *const kJstyleWriteCharUUID = @"FFF6";
@@ -54,6 +55,10 @@ static NSString *const kPairedDeviceNameKey = @"JstylePairedDeviceName";
 @property (nonatomic, assign) NSInteger reconnectionAttempts;
 @property (nonatomic, assign) NSTimeInterval reconnectionInterval;
 
+// Background notification state
+@property (nonatomic, strong) NSDate *lastHRAlertTime;
+@property (nonatomic, assign) NSInteger lastBatteryAlertThreshold; // 100 = none yet, decreases as alerts fire
+
 @end
 
 @implementation JstyleBridge
@@ -82,6 +87,9 @@ RCT_EXPORT_MODULE();
         _isDisconnecting = NO;
         _reconnectionAttempts = 0;
         _reconnectionInterval = 6.0;  // Match demo app: 6 seconds
+
+        // Notification state
+        _lastBatteryAlertThreshold = 100; // re-arms as battery crosses thresholds downward
 
         // Set delegate for BLE manager
         [[NewBle sharedManager] setDelegate:self];
@@ -1333,6 +1341,11 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
         self.pendingDataResolver(payload);
         [self clearPendingDataRequest];
     }
+
+    // Battery alert fires in background even when JS bridge is not listening
+    if (battery) {
+        [self maybeSendLowBatteryAlert:[battery integerValue]];
+    }
 }
 
 - (void)handleVersionData:(DeviceData_X3 *)parsed {
@@ -1667,9 +1680,83 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
     }
 }
 
+#pragma mark - Background Notifications
+
+- (void)sendLocalNotification:(NSString *)title
+                         body:(NSString *)body
+                     userInfo:(NSDictionary *)userInfo {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+    content.title = title;
+    content.body = body;
+    content.sound = [UNNotificationSound defaultSound];
+    if (userInfo) content.userInfo = userInfo;
+
+    NSString *typeKey = userInfo[@"type"] ?: @"alert";
+    NSString *identifier = [NSString stringWithFormat:@"focus.%@.%lld",
+                            typeKey, (long long)([[NSDate date] timeIntervalSince1970])];
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
+                                                                          content:content
+                                                                          trigger:nil];
+    [center addNotificationRequest:request withCompletionHandler:^(NSError *error) {
+        if (error) NSLog(@"JstyleBridge: Notification error: %@", error);
+    }];
+}
+
+- (void)maybeSendHighHRAlert:(NSInteger)bpm {
+    // Debounce: fire at most once per 10 minutes
+    if (self.lastHRAlertTime) {
+        NSTimeInterval elapsed = [[NSDate date] timeIntervalSinceDate:self.lastHRAlertTime];
+        if (elapsed < 600) return;
+    }
+    self.lastHRAlertTime = [NSDate date];
+
+    NSString *body = [NSString stringWithFormat:
+                      @"Your ring detected %ld BPM. Take a moment to rest.", (long)bpm];
+    [self sendLocalNotification:@"High Heart Rate ⚠️"
+                           body:body
+                       userInfo:@{@"type": @"hr_alert", @"bpm": @(bpm)}];
+}
+
+- (void)maybeSendLowBatteryAlert:(NSInteger)level {
+    // Re-arm when battery recovers above 30%
+    if (level > 30) {
+        self.lastBatteryAlertThreshold = 100;
+        return;
+    }
+
+    // Determine the highest un-fired threshold we've now crossed
+    NSInteger threshold = 0;
+    if (level <= 5  && self.lastBatteryAlertThreshold > 5)  threshold = 5;
+    else if (level <= 10 && self.lastBatteryAlertThreshold > 10) threshold = 10;
+    else if (level <= 20 && self.lastBatteryAlertThreshold > 20) threshold = 20;
+
+    if (threshold == 0) return;
+    self.lastBatteryAlertThreshold = level;
+
+    NSString *title = @"Low Ring Battery 🔋";
+    NSString *body;
+    if (threshold == 5) {
+        body = [NSString stringWithFormat:
+                @"Ring battery is critically low at %ld%%. Charge now!", (long)level];
+    } else {
+        body = [NSString stringWithFormat:
+                @"Ring battery is at %ld%%. Remember to charge it soon.", (long)level];
+    }
+    [self sendLocalNotification:title
+                           body:body
+                       userInfo:@{@"type": @"battery_alert", @"level": @(level)}];
+}
+
 - (void)handleRealTimeData:(DeviceData_X3 *)parsed {
     if (self.hasListeners && parsed.dicData) {
         [self sendEventWithName:@"onRealTimeData" body:parsed.dicData];
+    }
+
+    // HR alert fires in background even when JS bridge is not listening
+    NSNumber *hr = parsed.dicData[@"heartRate"];
+    if (hr && [hr integerValue] >= 150) {
+        [self maybeSendHighHRAlert:[hr integerValue]];
     }
 }
 
@@ -1829,6 +1916,33 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
         [self stopReconnectionTimer];
         self.reconnectionAttempts = 0;
     }
+}
+
+#pragma mark - Notification Permission & Scheduling
+
+RCT_EXPORT_METHOD(requestNotificationPermissions:(RCTPromiseResolveBlock)resolve
+                                         rejecter:(RCTPromiseRejectBlock)reject) {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert |
+                                             UNAuthorizationOptionSound |
+                                             UNAuthorizationOptionBadge)
+                          completionHandler:^(BOOL granted, NSError *error) {
+        if (error) {
+            reject(@"PERMISSION_ERROR", error.localizedDescription, error);
+        } else {
+            resolve(@(granted));
+        }
+    }];
+}
+
+RCT_EXPORT_METHOD(scheduleSleepAnalysisNotification:(RCTPromiseResolveBlock)resolve
+                                            rejecter:(RCTPromiseRejectBlock)reject) {
+    // Deeplink URL: opens Today tab and scrolls to Sleep sub-tab
+    NSString *deeplinkURL = @"smartring:///?tab=sleep";
+    [self sendLocalNotification:@"Your Sleep Analysis is Ready 🌙"
+                           body:@"Last night's sleep has been analyzed. Tap to see your insights."
+                       userInfo:@{@"type": @"sleep_ready", @"url": deeplinkURL}];
+    resolve(@{@"success": @YES});
 }
 
 @end

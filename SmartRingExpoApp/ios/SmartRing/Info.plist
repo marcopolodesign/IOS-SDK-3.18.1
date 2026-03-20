@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Smart Ring</string>
+	<string>Focus</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -58,15 +58,15 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Smart Ring needs Bluetooth to connect to your ring and sync health data</string>
+	<string>Focus needs Bluetooth to connect to your ring and sync health data</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Smart Ring needs Bluetooth to connect to your ring and sync health data</string>
+	<string>Focus needs Bluetooth to connect to your ring and sync health data</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Smart Ring needs access to read your health data from Apple Health to provide comprehensive health insights</string>
+	<string>Focus needs access to read your health data from Apple Health to provide comprehensive health insights</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Smart Ring needs access to write health data to Apple Health to keep your records synchronized</string>
+	<string>Focus needs access to write health data to Apple Health to keep your records synchronized</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

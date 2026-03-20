@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useURL } from 'expo-linking';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
 import { OverviewTab, SleepTab, NutritionTab, ActivityTab } from './home';
@@ -22,6 +23,7 @@ import { spacing, fontFamily } from '../theme/colors';
 import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
 import { BatteryAlertStorage } from '../utils/storage';
 import { SyncStatusSheet } from '../components/home/SyncStatusSheet';
+import { NotificationService } from '../services/NotificationService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -50,10 +52,11 @@ function NewHomeScreenContent() {
   const scrollViewRef = useRef<ScrollView>(null);
   const { autoConnect, isAutoConnecting } = useSmartRing();
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [hasScrolled, setHasScrolled] = useState(false);
   const [tabScrollEnabled, setTabScrollEnabled] = useState(true);
   const previousBatteryRef = useRef<number | null>(null);
   const shownBatteryAlertsRef = useRef<Set<number>>(new Set());
+  const prevSyncPhaseRef = useRef<string>('');
+  const url = useURL();
 
   useEffect(() => {
     BatteryAlertStorage.getShownThresholds().then(stored => {
@@ -75,23 +78,13 @@ function NewHomeScreenContent() {
       useNativeDriver: false,
       listener: (event: any) => {
         const y = event?.nativeEvent?.contentOffset?.y ?? 0;
-        if (!hasScrolled && y > 1) {
-          setHasScrolled(true);
-        } else if (hasScrolled && y <= 1) {
-          setHasScrolled(false);
-        }
+        borderAnim.setValue(y > 0 ? 1 : 0);
 
         const isFullyCollapsed = y >= collapseRange;
         if (isFullyCollapsed && !wasFullyCollapsed.current) {
           wasFullyCollapsed.current = true;
-          Animated.timing(borderAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
         } else if (!isFullyCollapsed && wasFullyCollapsed.current) {
           wasFullyCollapsed.current = false;
-          borderAnim.setValue(0);
         }
       },
     },
@@ -101,7 +94,6 @@ function NewHomeScreenContent() {
     headerAnim.setValue(0);
     borderAnim.setValue(0);
     wasFullyCollapsed.current = false;
-    setHasScrolled(false);
   }, [activeIndex]);
 
   const handleTabPress = (index: number) => {
@@ -201,6 +193,34 @@ function NewHomeScreenContent() {
     Alert.alert(t('battery.alert_low_title'), t('battery.alert_low_20_body', { battery }));
   }, [isConnected, homeData.ringBattery]);
 
+  // Register for push notifications on first authenticated mount (permission + Expo token → Supabase)
+  useEffect(() => {
+    NotificationService.setup().catch(() => {});
+  }, []);
+
+  // Deeplink: ?tab=sleep|activity|nutrition navigates to the correct sub-tab
+  useEffect(() => {
+    if (!url) return;
+    try {
+      const parsed = new URL(url);
+      const tab = parsed.searchParams.get('tab');
+      if (tab === 'sleep')     handleTabPress(1);
+      else if (tab === 'activity')   handleTabPress(2);
+      else if (tab === 'nutrition')  handleTabPress(3);
+    } catch {}
+  }, [url]);
+
+  // Fire "Sleep Analysis Ready" notification once per day after sync completes with sleep data
+  useEffect(() => {
+    const phase = homeData.syncProgress?.phase;
+    if (phase === 'complete' && prevSyncPhaseRef.current !== 'complete') {
+      if (homeData.sleepScore && homeData.sleepScore > 0) {
+        NotificationService.maybeSendSleepReadyNotification().catch(() => {});
+      }
+    }
+    if (phase) prevSyncPhaseRef.current = phase;
+  }, [homeData.syncProgress?.phase, homeData.sleepScore]);
+
   const iconScale = 1;
   const iconOpacity = headerAnim.interpolate({
     inputRange: [0, collapseRange],
@@ -291,30 +311,41 @@ function NewHomeScreenContent() {
                   >
                     <Animated.View
                       style={[
-                        styles.iconCircle,
-                        focused && styles.iconCircleFocused,
-                        { transform: [{ scale: iconScale }], opacity: iconOpacity },
-                      ]}
-                    >
-                      <tab.Icon focused={focused} />
-                    </Animated.View>
-                    
-                    <Animated.View
-                      style={[
-                        styles.labelContainer,
+                        styles.tabItemContent,
                         { transform: [{ translateY: labelTranslateY }] },
                       ]}
                     >
-                      <Text
+                      <Animated.View
                         style={[
-                          styles.tabLabel,
-                          focused && styles.tabLabelFocused,
-                          focused && hasScrolled && styles.tabLabelFocusedScrolled,
+                          styles.iconCircle,
+                          focused && styles.iconCircleFocused,
+                          { transform: [{ scale: iconScale }], opacity: iconOpacity },
                         ]}
                       >
-                        {tab.title}
-                      </Text>
-                      {focused && <View style={styles.underline} />}
+                        <tab.Icon focused={focused} />
+                      </Animated.View>
+                      <View style={styles.labelContainer}>
+                        <Animated.View
+                          style={focused ? [
+                            styles.pillWrapper,
+                            {
+                              backgroundColor: borderAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.4)'],
+                              }),
+                              borderColor: borderAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['rgba(255,255,255,0)', 'rgba(255,255,255,0.4)'],
+                              }),
+                            },
+                          ] : undefined}
+                        >
+                          <Text style={[styles.tabLabel, focused && styles.tabLabelFocused]}>
+                            {tab.title}
+                          </Text>
+                        </Animated.View>
+                        {focused && <View style={styles.underline} />}
+                      </View>
                     </Animated.View>
                   </TouchableOpacity>
                 );
@@ -396,6 +427,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flex: 1,
   },
+  tabItemContent: {
+    alignItems: 'center',
+  },
   iconCircle: {
     width: ICON_SIZE,
     height: ICON_SIZE,
@@ -429,11 +463,9 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.95)',
     fontFamily: fontFamily.demiBold,
   },
-  tabLabelFocusedScrolled: {
+  pillWrapper: {
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
     borderRadius: 100,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   underline: {
     // marginTop: 4,
