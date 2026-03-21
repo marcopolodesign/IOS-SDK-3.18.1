@@ -475,8 +475,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.focusring.app.dev;
-				PRODUCT_NAME = FocusDEV;
+				PRODUCT_BUNDLE_IDENTIFIER = com.focusring.app;
+				PRODUCT_NAME = Focus;
 				SWIFT_OBJC_BRIDGING_HEADER = "SmartRing/SmartRing-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

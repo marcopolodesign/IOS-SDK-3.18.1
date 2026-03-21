@@ -14,5 +14,11 @@
   <true/>
   <key>signingStyle</key>
   <string>automatic</string>
+  <key>authenticationKeyPath</key>
+  <string>/Users/mataldao/.appstoreconnect/private_keys/AuthKey_A93H45TYS3.p8</string>
+  <key>authenticationKeyID</key>
+  <string>A93H45TYS3</string>
+  <key>authenticationKeyIssuerID</key>
+  <string>befadbf1-4e14-4f57-b39f-0ca58dce537b</string>
 </dict>
 </plist>
