@@ -14,7 +14,7 @@ module.exports = {
     name,
     slug: 'smart-ring-expo-app',
     owner: 'mateoaldao',
-    version: '1.0.6',
+    version: '1.0.7',
     orientation: 'portrait',
     icon,
     userInterfaceStyle: 'dark',
@@ -27,7 +27,7 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: bundleId,
-      buildNumber: '7',
+      buildNumber: '8',
       infoPlist: {
         NSBluetoothAlwaysUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
         NSBluetoothPeripheralUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
@@ -73,6 +73,13 @@ module.exports = {
         {
           NSHealthShareUsageDescription: 'Focus reads your health data from Apple Health to provide comprehensive insights alongside your ring data.',
           NSHealthUpdateUsageDescription: 'Focus writes ring health data to Apple Health to keep your records synchronized.',
+        },
+      ],
+      [
+        '@sentry/react-native/expo',
+        {
+          organization: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
         },
       ],
     ],

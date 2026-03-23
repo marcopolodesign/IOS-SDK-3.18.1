@@ -1,15 +1,19 @@
 import '../src/i18n'; // i18n side-effect init — must be first
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import '../src/services/BackgroundSleepTask'; // register background fetch task — must be top-level
+import * as Sentry from '@sentry/react-native';
 
-// Show alert + play sound even when app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: 1.0,
+  _experiments: {
+    profilesSampleRate: 1.0,
+  },
+  enableAutoSessionTracking: true,
+  attachScreenshot: true,
+  debug: __DEV__,
+  enabled: !__DEV__,
 });
+import { Platform } from 'react-native';
 // Inject Figma capture script on web (removed after design capture)
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const s = document.createElement('script');
@@ -29,33 +33,48 @@ import { AddOverlayProvider } from '../src/context/AddOverlayContext';
 import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
-export default function RootLayout() {
+function RootLayout() {
   // Handle notification taps → deeplink into the app
   useEffect(() => {
-    // Tapped while app was running
-    const sub = Notifications.addNotificationResponseReceivedListener(response => {
-      const url = response.notification.request.content.data?.url as string | undefined;
-      if (!url) return;
-      try {
-        const parsed = new URL(url);
-        const tab = parsed.searchParams.get('tab');
-        if (tab) router.navigate({ pathname: '/', params: { tab } });
-      } catch {}
+
+    let sub: { remove: () => void } | null = null;
+
+    import('expo-notifications').catch(() => null).then(Notifications => {
+      if (!Notifications) return;
+      // Show alert + play sound even when app is in foreground
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+
+      // Tapped while app was running
+      sub = Notifications.addNotificationResponseReceivedListener(response => {
+        const url = response.notification.request.content.data?.url as string | undefined;
+        if (!url) return;
+        try {
+          const parsed = new URL(url);
+          const tab = parsed.searchParams.get('tab');
+          if (tab) router.navigate({ pathname: '/', params: { tab } });
+        } catch {}
+      });
+
+      // Tapped when app was killed — check last response on launch
+      Notifications.getLastNotificationResponseAsync().then(response => {
+        if (!response) return;
+        const url = response.notification.request.content.data?.url as string | undefined;
+        if (!url) return;
+        try {
+          const parsed = new URL(url);
+          const tab = parsed.searchParams.get('tab');
+          if (tab) router.navigate({ pathname: '/', params: { tab } });
+        } catch {}
+      });
     });
 
-    // Tapped when app was killed — check last response on launch
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (!response) return;
-      const url = response.notification.request.content.data?.url as string | undefined;
-      if (!url) return;
-      try {
-        const parsed = new URL(url);
-        const tab = parsed.searchParams.get('tab');
-        if (tab) router.navigate({ pathname: '/', params: { tab } });
-      } catch {}
-    });
-
-    return () => sub.remove();
+    return () => { sub?.remove(); };
   }, []);
 
   const [fontsLoaded] = useFonts({
@@ -105,6 +124,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
 
 const styles = StyleSheet.create({
   container: {
