@@ -14,7 +14,7 @@ module.exports = {
     name,
     slug: 'smart-ring-expo-app',
     owner: 'mateoaldao',
-    version: '1.0.9',
+    version: '1.0.10',
     orientation: 'portrait',
     icon,
     userInterfaceStyle: 'dark',
@@ -27,7 +27,7 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: bundleId,
-      buildNumber: '10',
+      buildNumber: '11',
       infoPlist: {
         NSBluetoothAlwaysUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
         NSBluetoothPeripheralUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
