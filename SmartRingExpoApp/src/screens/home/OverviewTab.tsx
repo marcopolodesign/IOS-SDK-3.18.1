@@ -7,7 +7,7 @@ import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
 import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
-import CalorieDeficitCard from '../../components/home/CalorieDeficitCard';
+
 import DailyTimelineCard from '../../components/home/DailyTimelineCard';
 import LogEntrySheet from '../../components/home/LogEntrySheet';
 import { useHomeDataContext } from '../../context/HomeDataContext';
@@ -19,6 +19,8 @@ import NightTimeIcon from '../../assets/icons/NightTimeIcon';
 import WakeTimeIcon from '../../assets/icons/WakeTimeIcon';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useSleepDebt } from '../../hooks/useSleepDebt';
+import { useBaselineMode } from '../../context/BaselineModeContext';
+import { BaselineProgressCard } from '../../components/home/BaselineProgressCard';
 import type { SleepDebtCategory } from '../../types/sleepDebt.types';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
@@ -42,7 +44,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   const { setActionHandler, showOverlay } = useAddOverlay();
   const { entries: timelineEntries, addEntry } = useTimelineEntries();
   const [refreshing, setRefreshing] = React.useState(false);
-  const [sheetMode, setSheetMode] = React.useState<'recovery' | 'meal' | 'activity' | null>(null);
+  const [sheetMode, setSheetMode] = React.useState<'recovery' | 'activity' | null>(null);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -53,8 +55,6 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   const handleOverlayAction = React.useCallback((label: string) => {
     if (label === 'Log Recovery') {
       setSheetMode('recovery');
-    } else if (label === 'Log Meal' || label === 'Capture Meal') {
-      setSheetMode('meal');
     } else if (label === 'Log Activity') {
       setSheetMode('activity');
     }
@@ -72,9 +72,12 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   }, [isActive]);
 
   const { sleepDebt } = useSleepDebt();
-  const scoreMessage = getScoreMessage(homeData.overallScore);
-  const sleepMessage = getSleepMessage(homeData.sleepScore);
+  const baseline = useBaselineMode();
+  const scoreMessage = getScoreMessage(homeData.overallScore, t);
+  const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
+
+  const isOnboarding = baseline.isInBaselineMode;
 
   const formatTime = (date?: Date) => {
     if (!date) return '--';
@@ -103,98 +106,87 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
         />
       }
     >
-      {/* Main Score Gauge */}
-      <View style={styles.gaugeSection}>
-        <SemiCircularGauge
-          score={homeData.overallScore}
-          label={t('overview.overall_score')}
-          animated={!homeData.isLoading}
-        />
-        <View style={styles.gaugeInfoBtn}>
-          <InfoButton metricKey="recovery_score" />
-        </View>
-        <Text style={styles.scoreMessage}>{scoreMessage}</Text>
-      </View>
-
-      {/* Metrics + Insight Card */}
-      <TouchableOpacity style={styles.metricsInsightSection} activeOpacity={0.85} onPress={() => router.push('/detail/recovery-detail')}>
-        <MetricInsightCard
-          metrics={[
-            { label: t('overview.strain'), value: homeData.strain },
-            { label: t('overview.readiness'), value: homeData.readiness },
-            { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
-          ]}
-          insight={homeData.insight}
-          backgroundImage={require('../../assets/backgrounds/insights/blue-insight.jpg')}
-        />
-      </TouchableOpacity>
-
-      {/* Sleep Preview
-      <View style={styles.previewSection}>
-        <PreviewCard
-          title="Last Night"
-          subtitle="Sleep Score"
-          value={homeData.sleepScore}
-          unit="%"
-          icon={<MoonIcon size={24} />}
-        />
-      </View> */}
-
-      {/* Sleep Score */}
-      <View style={styles.gradientCardSection}>
-        <GradientInfoCard
-          icon={<SleepScoreIcon />}
-          title={t('overview.sleep_score')}
-          headerValue={sleep.score || 0}
-          headerSubtitle={sleepMessage}
-          showArrow
-          onHeaderPress={onSleepPress}
-          gradientStops={[
-            { offset: 0, color: '#7100C2', opacity: 1 },
-            { offset: 0.55, color: '#7100C2', opacity: 0.2 },
-          ]}
-          gradientCenter={{ x: 0.51, y: -0.86 }}
-          gradientRadii={{ rx: '80%', ry: '300%' }}
-          headerRight={<InfoButton metricKey="sleep_score" />}
-        >
-          <View style={styles.sleepTimeline}>
-            <View style={styles.sleepTimeItem}>
-              <NightTimeIcon />
-              <Text style={styles.sleepTimeText}>{formatTime(sleep.bedTime)}</Text>
-            </View>
-            <View style={styles.sleepProgress} />
-            <View style={styles.sleepTimeItem}>
-              <WakeTimeIcon />
-              <Text style={styles.sleepTimeText}>{formatTime(sleep.wakeTime)}</Text>
+      {isOnboarding ? (
+        /* ── Baseline Progress Card ── */
+        <BaselineProgressCard />
+      ) : (
+        <>
+          {/* Main Score Gauge */}
+          <View style={styles.gaugeSection}>
+            <SemiCircularGauge
+              score={homeData.overallScore}
+              label={t('overview.overall_score')}
+              animated={!homeData.isLoading}
+            />
+            <View style={styles.gaugeInfoBtn}>
+              <InfoButton metricKey="recovery_score" />
             </View>
           </View>
 
-          <View style={styles.sleepStatsRow}>
-            <Text style={styles.sleepStatText}>{sleep.timeAsleep || '—'}</Text>
-            <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} ${t('overview.bpm_unit')}` : '—'}</Text>
-          </View>
+          {/* Metrics + Insight Card */}
+          <TouchableOpacity style={styles.metricsInsightSection} activeOpacity={0.85} onPress={() => router.push('/detail/recovery-detail')}>
+            <MetricInsightCard
+              metrics={[
+                { label: t('overview.strain'), value: homeData.strain },
+                { label: t('overview.readiness'), value: homeData.readiness },
+                { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
+              ]}
+              insight={[scoreMessage, homeData.insight].filter(Boolean).join(' ')}
+            />
+          </TouchableOpacity>
 
-          {sleepDebt.isReady && (
-            <View style={styles.debtRow}>
-              <View style={[styles.debtDot, { backgroundColor: DEBT_COLORS[sleepDebt.category] }]} />
-              <Text style={styles.debtText}>
-                {t('sleep_debt.debt_label')}: {sleepDebt.totalDebtMin < 30
-                  ? t('sleep_debt.category_none')
-                  : `${Math.floor(sleepDebt.totalDebtMin / 60)}h ${Math.round(sleepDebt.totalDebtMin % 60)}m`}
-              </Text>
-            </View>
-          )}
-        </GradientInfoCard>
-      </View>
+          {/* Sleep Score */}
+          <View style={styles.gradientCardSection}>
+            <GradientInfoCard
+              icon={<SleepScoreIcon />}
+              title={t('overview.sleep_score')}
+              headerValue={sleep.score || 0}
+              headerSubtitle={sleepMessage}
+              showArrow
+              onHeaderPress={onSleepPress}
+              gradientStops={[
+                { offset: 0, color: '#7100C2', opacity: 1 },
+                { offset: 0.55, color: '#7100C2', opacity: 0.2 },
+              ]}
+              gradientCenter={{ x: 0.51, y: -0.86 }}
+              gradientRadii={{ rx: '80%', ry: '300%' }}
+              headerRight={<InfoButton metricKey="sleep_score" />}
+            >
+              <View style={styles.sleepTimeline}>
+                <View style={styles.sleepTimeItem}>
+                  <NightTimeIcon />
+                  <Text style={styles.sleepTimeText}>{formatTime(sleep.bedTime)}</Text>
+                </View>
+                <View style={styles.sleepProgress} />
+                <View style={styles.sleepTimeItem}>
+                  <WakeTimeIcon />
+                  <Text style={styles.sleepTimeText}>{formatTime(sleep.wakeTime)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.sleepStatsRow}>
+                <Text style={styles.sleepStatText}>{sleep.timeAsleep || '—'}</Text>
+                <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} ${t('overview.bpm_unit')}` : '—'}</Text>
+              </View>
+
+              {sleepDebt.isReady && (
+                <View style={styles.debtRow}>
+                  <View style={[styles.debtDot, { backgroundColor: DEBT_COLORS[sleepDebt.category] }]} />
+                  <Text style={styles.debtText}>
+                    {t('sleep_debt.debt_label')}: {sleepDebt.totalDebtMin < 30
+                      ? t('sleep_debt.category_none')
+                      : `${Math.floor(sleepDebt.totalDebtMin / 60)}h ${Math.round(sleepDebt.totalDebtMin % 60)}m`}
+                  </Text>
+                </View>
+              )}
+            </GradientInfoCard>
+          </View>
+        </>
+      )}
 
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>
         <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} onTouchStart={onChartTouchStart} onTouchEnd={onChartTouchEnd} />
-      </View>
-
-      {/* Caloric deficit */}
-      <View style={styles.gradientCardSection}>
-        <CalorieDeficitCard activeCalories={homeData.activity.adjustedActiveCalories} headerRight={<InfoButton metricKey="calorie_deficit" />} />
       </View>
 
       {/* Daily Chronology Timeline */}
@@ -203,7 +195,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           sleep={sleep}
           activitySessions={homeData.activitySessions}
           manualEntries={timelineEntries}
-          stravaActivities={homeData.stravaActivities}
+          unifiedActivities={homeData.unifiedActivities}
           todayNaps={homeData.todayNaps}
           onAddPress={() => showOverlay()}
         />
@@ -233,7 +225,7 @@ const styles = StyleSheet.create({
   },
   gaugeSection: {
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
   },
   gaugeInfoBtn: {
     position: 'absolute',
@@ -285,14 +277,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontFamily: fontFamily.regular,
     lineHeight: 20,
-  },
-  scoreMessage: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: fontSize.md,
-    fontFamily: fontFamily.regular,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.xl,
   },
   statsSection: {
     marginBottom: spacing.lg,

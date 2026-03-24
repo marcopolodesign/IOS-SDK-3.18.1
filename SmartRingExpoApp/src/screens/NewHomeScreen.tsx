@@ -15,15 +15,17 @@ import { router } from 'expo-router';
 import { useURL } from 'expo-linking';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { AnimatedGradientBackground } from '../components/home/AnimatedGradientBackground';
-import { OverviewTab, SleepTab, NutritionTab, ActivityTab } from './home';
+import { OverviewTab, SleepTab, ActivityTab } from './home';
 import { TabType } from '../theme/gradients';
 import { useHomeDataContext } from '../context/HomeDataContext';
 import { useSmartRing } from '../hooks/useSmartRing';
 import { spacing, fontFamily } from '../theme/colors';
-import { OverviewIcon, SleepIcon, NutritionIcon, ActivityIcon } from '../assets/icons';
+import { OverviewIcon, SleepIcon, ActivityIcon } from '../assets/icons';
 import { BatteryAlertStorage } from '../utils/storage';
 import { SyncStatusSheet } from '../components/home/SyncStatusSheet';
+import { BaselineCompleteOverlay } from '../components/home/BaselineCompleteOverlay';
 import { NotificationService } from '../services/NotificationService';
+import { maybeSendSleepNotificationFromForeground } from '../services/BackgroundSleepTask';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -31,7 +33,7 @@ const ICON_SIZE = 65;
 const ICON_STROKE_WIDTH = 1.5;
 
 // Map tab index to TabType
-const tabIndexMap: TabType[] = ['overview', 'sleep', 'activity', 'nutrition'];
+const tabIndexMap: TabType[] = ['overview', 'sleep', 'activity'];
 
 function NewHomeScreenContent() {
   const insets = useSafeAreaInsets();
@@ -42,7 +44,6 @@ function NewHomeScreenContent() {
     { key: 'overview', title: t('overview.title'), Icon: OverviewIcon },
     { key: 'sleep',    title: t('sleep.title'),    Icon: SleepIcon },
     { key: 'activity', title: t('activity.title'), Icon: ActivityIcon },
-    { key: 'nutrition',title: t('nutrition.title'),Icon: NutritionIcon },
   ] as const;
   const [activeIndex, setActiveIndex] = useState(0);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -198,7 +199,7 @@ function NewHomeScreenContent() {
     NotificationService.setup().catch(() => {});
   }, []);
 
-  // Deeplink: ?tab=sleep|activity|nutrition navigates to the correct sub-tab
+  // Deeplink: ?tab=sleep|activity navigates to the correct sub-tab
   useEffect(() => {
     if (!url) return;
     try {
@@ -206,16 +207,15 @@ function NewHomeScreenContent() {
       const tab = parsed.searchParams.get('tab');
       if (tab === 'sleep')     handleTabPress(1);
       else if (tab === 'activity')   handleTabPress(2);
-      else if (tab === 'nutrition')  handleTabPress(3);
     } catch {}
   }, [url]);
 
-  // Fire "Sleep Analysis Ready" notification once per day after sync completes with sleep data
+  // Schedule "Sleep Analysis Ready" notification for wakeTime + 30 min (foreground fallback)
   useEffect(() => {
     const phase = homeData.syncProgress?.phase;
     if (phase === 'complete' && prevSyncPhaseRef.current !== 'complete') {
-      if (homeData.sleepScore && homeData.sleepScore > 0) {
-        NotificationService.maybeSendSleepReadyNotification().catch(() => {});
+      if (homeData.sleepScore && homeData.sleepScore > 0 && homeData.lastNightSleep?.wakeTime) {
+        maybeSendSleepNotificationFromForeground(homeData.lastNightSleep.wakeTime).catch(() => {});
       }
     }
     if (phase) prevSyncPhaseRef.current = phase;
@@ -378,9 +378,6 @@ function NewHomeScreenContent() {
             <View style={styles.page}>
               <ActivityTab onScroll={onVerticalScroll} isActive={activeIndex === 2} />
             </View>
-            <View style={styles.page}>
-              <NutritionTab />
-            </View>
           </Animated.ScrollView>
         </Animated.View>
       </View>
@@ -388,7 +385,9 @@ function NewHomeScreenContent() {
       <SyncStatusSheet
         syncProgress={homeData.syncProgress}
         isSyncing={homeData.isSyncing}
+        onFindRings={() => router.push('/(onboarding)/connect')}
       />
+      <BaselineCompleteOverlay />
     </AnimatedGradientBackground>
   );
 }

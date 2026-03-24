@@ -4,16 +4,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
-import JstyleService from '../../services/JstyleService';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
-// Get the eventEmitter directly so we can listen to onMeasurementResult
-let _emitter: NativeEventEmitter | null = null;
+// Get event emitters for both SDKs so we can listen to measurement results
+let _jstyleEmitter: NativeEventEmitter | null = null;
+let _v8Emitter: NativeEventEmitter | null = null;
 try {
   const JstyleBridge = NativeModules.JstyleBridge;
-  if (JstyleBridge) _emitter = new NativeEventEmitter(JstyleBridge);
+  if (JstyleBridge) _jstyleEmitter = new NativeEventEmitter(JstyleBridge);
+} catch {}
+try {
+  const V8Bridge = NativeModules.V8Bridge;
+  if (V8Bridge) _v8Emitter = new NativeEventEmitter(V8Bridge);
 } catch {}
 
 type MeasurementState = 'idle' | 'measuring' | 'done' | 'error';
@@ -123,8 +127,8 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
 
     let deviceId: string | null = null;
     try {
-      const conn = await JstyleService.isConnected();
-      deviceId = conn.deviceId;
+      const conn = await UnifiedSmartRingService.isConnected();
+      deviceId = conn.deviceMac;
     } catch {}
 
     const payload: LastLiveMeasurement = {
@@ -145,12 +149,12 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
     if (!nativeSessionActiveRef.current) return;
     nativeSessionActiveRef.current = false;
     try {
-      await JstyleService.stopHeartRateMeasuring();
+      await UnifiedSmartRingService.stopHeartRateMeasuring();
     } catch (e) {
       console.log('[LiveHR] stopHeartRateMeasuring error:', e);
     }
     try {
-      await JstyleService.stopRealTimeData();
+      await UnifiedSmartRingService.stopRealTimeData();
     } catch (e) {
       console.log('[LiveHR] stopRealTimeData error:', e);
     }
@@ -167,38 +171,47 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
     startPulse();
 
     // Primary source: realtime stream heartRate. Keep onMeasurementResult as fallback.
-    if (_emitter) {
-      const rtSub = _emitter.addListener('onRealTimeData', (data: any) => {
+    // Listen to both Jstyle and V8 event emitters — only the active SDK will fire.
+    const subs: Array<{ remove: () => void }> = [];
+
+    const handleHR = (hr: number) => {
+      if (hr > 0) {
+        currentHRRef.current = hr;
+        setCurrentHR(hr);
+      }
+    };
+
+    if (_jstyleEmitter) {
+      subs.push(_jstyleEmitter.addListener('onRealTimeData', (data: any) => {
         console.log('[LiveHR] RAW onRealTimeData:', JSON.stringify(data));
-        const hr = Number(data?.heartRate ?? 0);
-        if (hr > 0) {
-          currentHRRef.current = hr;
-          setCurrentHR(hr);
-        }
-      });
-      const measurementSub = _emitter.addListener('onMeasurementResult', (data: any) => {
+        handleHR(Number(data?.heartRate ?? 0));
+      }));
+      subs.push(_jstyleEmitter.addListener('onMeasurementResult', (data: any) => {
         console.log('[LiveHR] RAW onMeasurementResult:', JSON.stringify(data));
-        const hr = Number(data?.heartRate ?? data?.singleHR ?? data?.hr ?? 0);
-        if (hr > 0) {
-          currentHRRef.current = hr;
-          setCurrentHR(hr);
-        }
-      });
-      unsubRef.current = () => {
-        rtSub.remove();
-        measurementSub.remove();
-      };
+        handleHR(Number(data?.heartRate ?? data?.singleHR ?? data?.hr ?? 0));
+      }));
+    }
+
+    if (_v8Emitter) {
+      subs.push(_v8Emitter.addListener('V8MeasurementResult', (data: any) => {
+        console.log('[LiveHR] RAW V8MeasurementResult:', JSON.stringify(data));
+        if (data.type === 'heartRate') handleHR(Number(data?.heartRate ?? 0));
+      }));
+    }
+
+    if (subs.length > 0) {
+      unsubRef.current = () => subs.forEach(s => s.remove());
     }
 
     try {
       // Only reconnect when actually disconnected to avoid connection-state churn.
-      const conn = await JstyleService.isConnected();
+      const conn = await UnifiedSmartRingService.isConnected();
       if (!conn.connected) {
         const reconnResult = await UnifiedSmartRingService.autoReconnect();
         console.log('[LiveHR] autoReconnect result:', JSON.stringify(reconnResult));
       }
       nativeSessionActiveRef.current = true;
-      const startResult = await JstyleService.startHeartRateMeasuring();
+      const startResult = await UnifiedSmartRingService.startHeartRateMeasuring();
       console.log('[LiveHR] startHeartRateMeasuring result:', JSON.stringify(startResult));
     } catch (e) {
       console.log('[LiveHR] startMeasurement error:', e);
@@ -213,7 +226,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
       if (!nativeSessionActiveRef.current || currentHRRef.current) return;
       try {
         console.log('[LiveHR] No HR sample yet, retrying manual measurement start');
-        await JstyleService.startHeartRateMeasuring();
+        await UnifiedSmartRingService.startHeartRateMeasuring();
       } catch (e) {
         console.log('[LiveHR] retry startHeartRateMeasuring error:', e);
       }

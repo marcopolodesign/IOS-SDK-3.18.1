@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 
+import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../components/common/GradientInfoCard';
 import { LiveHeartRateCard } from '../components/home/LiveHeartRateCard';
 import SleepBaselineTierCard from '../components/home/SleepBaselineTierCard';
@@ -26,30 +27,22 @@ import { colors, spacing, fontSize, fontFamily } from '../theme/colors';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type ScoreLabel = 'OPTIMAL' | 'GOOD' | 'FAIR' | 'NEEDS REST';
+type ScoreTier = 'optimal' | 'good' | 'fair' | 'needs_rest';
 
-function getScoreLabel(score: number): ScoreLabel {
-  if (score >= 85) return 'OPTIMAL';
-  if (score >= 70) return 'GOOD';
-  if (score >= 50) return 'FAIR';
-  return 'NEEDS REST';
+function getScoreTier(score: number): ScoreTier {
+  if (score >= 85) return 'optimal';
+  if (score >= 70) return 'good';
+  if (score >= 50) return 'fair';
+  return 'needs_rest';
 }
 
-function getScoreLabelColor(label: ScoreLabel): string {
-  switch (label) {
-    case 'OPTIMAL':    return '#C4FF6B';
-    case 'GOOD':       return '#00D4AA';
-    case 'FAIR':       return '#FFB84D';
-    case 'NEEDS REST': return '#FF6B6B';
+function getScoreTierColor(tier: ScoreTier): string {
+  switch (tier) {
+    case 'optimal':    return '#C4FF6B';
+    case 'good':       return '#00D4AA';
+    case 'fair':       return '#FFB84D';
+    case 'needs_rest': return '#FF6B6B';
   }
-}
-
-function getTodayLabel(): string {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
 }
 
 function fmtNum(val: number | undefined, fallback = '--'): string {
@@ -104,7 +97,7 @@ function HeartPulseIcon() {
 
 // ─── Score Label Badge ────────────────────────────────────────────────────────
 
-function ScoreLabelBadge({ label, color }: { label: ScoreLabel; color: string }) {
+function ScoreLabelBadge({ label, color }: { label: string; color: string }) {
   return (
     <View
       style={[
@@ -336,6 +329,7 @@ const subStyles = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export function StyledHealthScreen() {
+  const { t } = useTranslation();
   const homeData = useHomeDataContext();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -359,17 +353,18 @@ export function StyledHealthScreen() {
 
   // Sleep
   const sleepScore = homeData.sleepScore;
-  const sleepLabel = getScoreLabel(sleepScore);
-  const sleepLabelColor = getScoreLabelColor(sleepLabel);
+  const sleepTier = getScoreTier(sleepScore);
+  const sleepLabelColor = getScoreTierColor(sleepTier);
+  const sleepLabel = t(`health.score_${sleepTier}`);
   const sleepSubMetrics: SubMetric[] = [
-    { label: 'Total Sleep', value: sleep?.timeAsleep || '--' },
+    { label: t('health.total_sleep'), value: sleep?.timeAsleep || '--' },
     {
-      label: 'Resting HR',
+      label: t('health.resting_hr'),
       value: fmtNum(restingHRForDisplay),
       unit: restingHRForDisplay ? 'bpm' : undefined,
     },
     {
-      label: 'Resp. Rate',
+      label: t('health.resp_rate'),
       value: fmtNum(sleep?.respiratoryRate),
       unit: sleep?.respiratoryRate ? '/min' : undefined,
     },
@@ -377,21 +372,22 @@ export function StyledHealthScreen() {
 
   // Activity
   const activityScore = activity?.score ?? 0;
-  const activityLabel = getScoreLabel(activityScore);
-  const activityLabelColor = getScoreLabelColor(activityLabel);
+  const activityTier = getScoreTier(activityScore);
+  const activityLabelColor = getScoreTierColor(activityTier);
+  const activityLabel = t(`health.score_${activityTier}`);
   const steps = activity?.steps ?? 0;
   const activitySubMetrics: SubMetric[] = [
     {
-      label: 'Steps',
+      label: t('health.steps'),
       value: steps > 0 ? steps.toLocaleString() : '--',
     },
     {
-      label: 'Calories',
+      label: t('health.calories'),
       value: fmtNum(activity?.calories),
       unit: activity?.calories ? 'kcal' : undefined,
     },
     {
-      label: 'Active Min',
+      label: t('health.active_min'),
       value: fmtNum(activity?.activeMinutes),
       unit: activity?.activeMinutes ? 'min' : undefined,
     },
@@ -399,20 +395,21 @@ export function StyledHealthScreen() {
 
   // Recovery
   const readiness = homeData.readiness;
-  const recoveryLabel = getScoreLabel(readiness);
-  const recoveryLabelColor = getScoreLabelColor(recoveryLabel);
+  const recoveryTier = getScoreTier(readiness);
+  const recoveryLabelColor = getScoreTierColor(recoveryTier);
+  const recoveryLabel = t(`health.score_${recoveryTier}`);
   const recoverySubMetrics: SubMetric[] = [
     {
-      label: 'HRV',
+      label: t('health.hrv'),
       value: fmtNum(homeData.hrvSdnn),
       unit: homeData.hrvSdnn ? 'ms' : undefined,
     },
     {
-      label: 'Strain',
+      label: t('health.strain'),
       value: fmtNum(homeData.strain),
     },
     {
-      label: 'Readiness',
+      label: t('health.readiness'),
       value: readiness > 0 ? String(readiness) : '--',
     },
   ];
@@ -433,15 +430,15 @@ export function StyledHealthScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Health</Text>
-          <Text style={styles.headerDate}>{getTodayLabel()}</Text>
+          <Text style={styles.headerTitle}>{t('health.title')}</Text>
+          <Text style={styles.headerDate}>{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
         </View>
 
         {/* Sleep Card */}
         <View style={styles.cardWrap}>
           <GradientInfoCard
             icon={<MoonIcon />}
-            title="Sleep"
+            title={t('health.sleep_card')}
             headerValue={sleepScore > 0 ? sleepScore : undefined}
             showArrow
             onHeaderPress={() => router.push('/detail/sleep-detail')}
@@ -467,7 +464,7 @@ export function StyledHealthScreen() {
         <View style={styles.cardWrap}>
           <GradientInfoCard
             icon={<FlameIcon />}
-            title="Activity"
+            title={t('health.activity_card')}
             headerValue={activityScore > 0 ? activityScore : undefined}
             showArrow
             onHeaderPress={() => router.push('/detail/activity-detail')}
@@ -488,7 +485,7 @@ export function StyledHealthScreen() {
         <View style={styles.cardWrap}>
           <GradientInfoCard
             icon={<HeartPulseIcon />}
-            title="Recovery"
+            title={t('health.recovery_card')}
             headerValue={readiness > 0 ? readiness : undefined}
             showArrow
             onHeaderPress={() => router.push('/detail/recovery-detail')}

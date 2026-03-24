@@ -255,7 +255,7 @@ const SplashScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
         </Svg>
       </Animated.View>
       <Animated.Text style={[styles.splashTitle, { opacity: logoOpacity }]}>
-        Smart Ring
+        Focus
       </Animated.Text>
     </Animated.View>
   );

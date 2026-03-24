@@ -4,6 +4,634 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-03-24: Route All Data Fetches Through UnifiedSmartRingService for V8 Band Support
+
+**What:** Fixed V8 band data not appearing on home screen by routing all data fetches through `UnifiedSmartRingService` instead of calling `JstyleService` directly. Previously, sleep, HR, HRV, SpO2, and temperature data never showed for V8 bands because `useHomeData`, `useMetricHistory`, `TodayCardVitalsService`, `BackgroundSleepTask`, `DailyHeartRateCard`, and `LiveHeartRateCard` all called `JstyleService` directly — bypassing V8 routing.
+
+**User impact:** V8 band users will now see all health data (sleep, heart rate, HRV, SpO2, temperature) on the home screen, metric history screens, and daily cards. Live heart rate measurement also works for V8 bands. Zero behavioral change for Jstyle ring users.
+
+**Changes:**
+- Added 10 new SDK-routing methods to `UnifiedSmartRingService`: `getSleepDataRaw`, `getContinuousHeartRateRaw`, `getSingleHeartRateRaw`, `getHRVDataNormalizedArray`, `getSpO2DataNormalizedArray`, `getTemperatureDataNormalizedArray`, `getSpO2DataRaw`, `startHeartRateMeasuring`, `stopHeartRateMeasuring`, `stopRealTimeData`
+- V8 continuous HR adapter groups flat records into Jstyle-compatible `{date, arrayDynamicHR, startTimestamp}` shape
+- `LiveHeartRateCard` now listens to both Jstyle and V8 native event emitters for measurement results
+- Deduplicated `measureHeartRate` → delegates to `startHeartRateMeasuring`; `getHRVData`/`getTemperature`/`getSpO2` → delegate to `*NormalizedArray` methods; `isConnected` → single service selection; `setProfile` → passes profile directly
+
+**Files modified:** `UnifiedSmartRingService.ts`, `useHomeData.ts`, `useMetricHistory.ts`, `TodayCardVitalsService.ts`, `BackgroundSleepTask.ts`, `DailyHeartRateCard.tsx`, `LiveHeartRateCard.tsx`
+
+---
+
+## 2026-03-24: Remove Nutrition Tab, Calorie Deficit Card, and Meal Actions
+
+**What:** Removed three nutrition-related features that were placeholder/not ready: the Nutrition subtab from the home screen material top tabs (now 3 tabs: Overview, Sleep, Activity), the Caloric Deficit card from the Overview tab, and the "Log Meal" / "Capture Meal" action buttons from the add overlay. Also cleaned up all related dead code: `NutritionTab.tsx`, `CalorieDeficitCard.tsx`, `NutritionIcon.tsx` (deleted), meal mode from `LogEntrySheet`, `MealSubtype` type, meal timeline entries, nutrition gradient/theme entries, `AnimatedGradientBackground` nutrition background, orphaned route in today layout, and all nutrition/calorie/meal i18n keys from both `en.json` and `es.json`.
+
+**Files deleted:** `NutritionTab.tsx`, `CalorieDeficitCard.tsx`, `NutritionIcon.tsx`
+**Files modified:** `NewHomeScreen.tsx`, `OverviewTab.tsx`, `AddOverlayContext.tsx`, `home/index.ts`, `gradients.ts`, `icons/index.ts`, `AnimatedGradientBackground.tsx`, `LogEntrySheet.tsx`, `InsightCard.tsx`, `DailyTimelineCard.tsx`, `timeline.types.ts`, `useHomeData.ts`, `today/_layout.tsx`, `en.json`, `es.json`
+
+---
+
+## 2026-03-24: Troubleshoot Guide Bottom Sheet
+
+**What:** Added a troubleshoot guide bottom sheet to the onboarding connect screen. Users can now tap "Troubleshoot guide" from the scanning screen, "No devices found" screen, or "Devices found" footer to open a dark glass bottom sheet with 5 numbered BLE troubleshooting tips. The sheet follows the same `@gorhom/bottom-sheet` pattern as FirmwareUpdateSheet, with full i18n support (English + Spanish).
+
+**User impact:** When users can't find their ring/band during onboarding, they now get actionable troubleshooting steps (toggle Bluetooth, charge ring, keep close, restart ring, restart app) instead of a dead link.
+
+**Files created:** `src/components/home/TroubleshootSheet.tsx`
+**Files modified:** `app/(onboarding)/connect.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+## 2026-03-24: Full i18n Pass — Terminology + Score Messages + Health Tab + Workout Cards
+
+**What:** Comprehensive i18n update across three phases:
+
+1. **ring/anillo → device/dispositivo:** Updated ~35 English and ~35 Spanish i18n values across sync, onboarding, battery, readiness, sleep, activity, profile, explainer, and recovery timeline. Fixed 3 hardcoded strings in DevicesScreen.tsx, replaced hardcoded alert in connect.tsx with `t()` calls, and updated 3 troubleshoot tips.
+
+2. **Score messages translated:** Moved all hardcoded English score interpretation strings from `useHomeData.ts` to i18n. Added 20 new keys under `overview.*` (score_msg, sleep_msg, activity_msg, insight). Updated `getScoreMessage`, `getSleepMessage`, `getActivityMessage` to accept `t` parameter. Fixed hardcoded sleep insight fallback in SleepTab.
+
+3. **Health tab + workout cards + day navigator:** Translated "Ask Coach" button (MetricInsightCard), health tab card titles (Sleep/Activity/Recovery), score pills (OPTIMAL/GOOD/FAIR/NEEDS REST), sub-metric labels (Total Sleep, Resting HR, Resp. Rate, Steps, Calories, etc.), "Today"/"Yesterday" in detail screen day navigators. Added workout source labels (Health/Ring) to i18n. Fixed tempColor bug where translated status string was compared against English.
+
+**User impact:** The entire app now renders in the user's selected language (EN/ES). No more hardcoded English in score cards, health tab, workout source badges, or detail screen navigators. Temperature status color now works correctly in Spanish.
+
+**Files modified:** `en.json`, `es.json`, `DevicesScreen.tsx`, `connect.tsx`, `useHomeData.ts`, `OverviewTab.tsx`, `SleepTab.tsx`, `ActivityTab.tsx`, `MetricInsightCard.tsx`, `StyledHealthScreen.tsx`, `useMetricHistory.ts`
+
+---
+
+## 2026-03-24: `/remove-user` Slash Command
+
+**What:** Created a new Claude Code slash command (`/remove-user <email|uuid>`) for permanently deleting a user and all their data from Supabase. The command looks up the user, shows data counts across all tables (HR readings, sleep sessions, steps, Strava, summaries, push tokens), requires typing the exact email to confirm, then deletes from `auth.users` which cascades to all dependent tables.
+
+**User impact:** Admin can now quickly remove test accounts or handle account deletion requests without manually writing SQL.
+
+**Files created:** `.claude/commands/remove-user.md`
+**Files modified:** `.claude/projects/.../memory/MEMORY.md` (added command to index)
+
+---
+
+## 2026-03-24: Auth Screen — Language Selector + Button Icons
+
+**What:** Added a language toggle pill (globe icon + "EN"/"ES") in the top-right corner of the auth screen, positioned with safe area insets. Tapping cycles between English and Spanish using the existing `useLanguage` hook. Also added `Ionicons` icons to both auth buttons — Google "G" logo on the Google button and mail icon on the Continue with Email button, each in a horizontal row layout.
+
+**User impact:** Users can now switch language before signing in (previously only accessible from Settings). Auth buttons are more visually distinct with their respective icons.
+
+**Files modified:** `src/screens/AuthScreen.tsx`
+
+---
+
+## 2026-03-24: Add V8Bridge to Xcode build — fix "V8Bridge not available" runtime error
+
+**What:** The V8Bridge native module source files existed in `ios/V8Bridge/` but were not included in the Xcode project. At runtime, `NativeModules.V8Bridge` was `undefined`, causing V8 band connections to fail with "V8Bridge not available". Added all necessary entries to `project.pbxproj`: PBXBuildFile (V8Bridge.m in Sources, libBleSDK_V8.a in Frameworks), PBXFileReference (6 files), PBXGroup, root group reference, and HEADER_SEARCH_PATHS + LIBRARY_SEARCH_PATHS for both Debug and Release configurations.
+
+**User impact:** FOCUS BAND (V8) devices can now connect after a native rebuild. Previously, scanning found them but tapping "Connect" failed immediately.
+
+**Files modified:** `ios/SmartRing.xcodeproj/project.pbxproj`
+
+**Note:** Requires native rebuild — Xcode workspace opened automatically.
+
+---
+
+## 2026-03-24: Fix SleepTab crash — `homeData.sleep.deep` undefined
+
+**What:** `SleepTab` line 175 referenced `homeData.sleep.deep` which doesn't exist — `HomeData` has `lastNightSleep` (a `SleepData` interface), not `sleep`, and `SleepData` has no `deep` field. Fixed by computing deep sleep minutes from `sleep.segments` (filtering for `stage === 'deep'` and summing durations).
+
+**User impact:** App no longer crashes when navigating to the Sleep tab.
+
+**Files modified:** `src/screens/home/SleepTab.tsx`
+
+---
+
+## 2026-03-24: Gate useHomeData during onboarding — eliminate noisy startup logs
+
+**What:** `HomeDataProvider` wraps the entire app (including onboarding), so `useHomeData` was mounting and running the full data sync pipeline (autoReconnect, 3 sleep retries, 232 HR records, HRV, steps, battery, Strava token queries, connection listeners) even while the user was on the welcome/connect screen. Added an `enabled` parameter to `useHomeData(enabled)` that gates all 8 useEffect hooks (cache loading, listeners, initial fetch). `HomeDataProvider` now passes `isAuthenticated && hasConnectedDevice` from `useOnboarding()`. Also fixed a stale `hasLoadedCache` ref bug (reset on disable so cache reloads on re-enable) and removed an unnecessary `homeData.refresh()` call in `success.tsx` (the initial-fetch effect auto-fires when `enabled` flips to true).
+
+**User impact:** Clean console during onboarding — no more 100+ log lines of data fetching. App launches faster to the welcome screen since no BLE/network work runs until the user has authenticated and connected a device.
+
+**Files modified:** `src/context/HomeDataContext.tsx`, `src/hooks/useHomeData.ts`, `app/(onboarding)/success.tsx`
+
+---
+
+## 2026-03-24: Fix device name display — both devices showing "Focus X3"
+
+**What:** During BLE scanning, both the X3 ring and V8 band showed "Focus X3" as their name because the fallback was hardcoded. Now uses per-device `sdkType`/`deviceType` to show "FOCUS BAND" for V8 devices and "FOCUS X3" for Jstyle devices. Also fixed device image selection and connecting subtitle to use per-device checks instead of the route-level `isBand` param.
+
+**User impact:** When scanning for a V8 band, discovered devices correctly show "FOCUS BAND" name and band image. Ring devices show "FOCUS X3" name and ring image.
+
+**Files modified:** `app/(onboarding)/connect.tsx` (extracted `isBandDevice()` helper, fixed 4 fallback locations)
+
+---
+
+## 2026-03-24: Fix broken sleep score formula in buildBlockResult
+
+**What:** The inline sleep score formula in `buildBlockResult()` (useHomeData.ts) was treating deep/REM percentages as raw 0-1 ratios instead of proper percentages, producing scores ~20-30 points lower than they should be (e.g. 66 instead of 88). Replaced with the existing, well-tested `calculateSleepScore()` utility from `utils/ringData/sleep.ts` which uses research-based stepped thresholds for duration, deep %, REM %, and efficiency. Also cleaned up: single-pass stage counting (was 4 separate filter passes), removed `as any` cast by providing complete `SleepInfo` shape.
+
+**User impact:** Sleep scores now match the correct algorithm — users will see accurate scores reflecting their actual sleep quality.
+
+**Files modified:** `src/hooks/useHomeData.ts` (import + buildBlockResult function)
+
+---
+
+## 2026-03-24: Replace "Resp" with "Deep Sleep" in Sleep MetricInsightCard
+
+**What:** The sleep tab's MetricInsightCard previously showed "Resp" (respiratory rate), which always displayed `--` because the X3 ring doesn't provide that data. Replaced with Deep Sleep duration formatted as "Xh Ym", using the existing `sleep.deep` field and i18n key. Shows `--` when no sleep data is available.
+
+**Files modified:** `src/screens/home/SleepTab.tsx` (1 line)
+
+---
+
+## 2026-03-23: V8 Smart Band Integration (Phases 1-3)
+
+**What:** Full integration of the V8 smart band as a second device type alongside the Jstyle/X3 ring. Users can now choose between a ring or band during onboarding, and the app routes all BLE commands to the correct SDK.
+
+**Phase 1 — Foundation:**
+- **Type system** (`sdk.types.ts`): Added `DeviceType = 'ring' | 'band'`, expanded `SDKType` to `'jstyle' | 'v8'`, added 13 V8 sport types
+- **Native bridge** (`ios/V8Bridge/V8Bridge.m`, `.h`): Full Obj-C native module mirroring JstyleBridge — scan, connect, disconnect, auto-reconnect, battery, firmware, steps, sleep, HR, HRV, SpO2, temperature, activity modes, manual measurement. Paginated data retrieval, BUSY guard, watchdog timer, reconnection timer.
+- **V8 SDK files** (`ios/V8Bridge/`): Copied BleSDK_V8.h, BleSDK_Header_V8.h, DeviceData_V8.h, libBleSDK_V8.a (arm64)
+- **V8Service.ts**: JS wrapper with timeout protection, serialized call queue, data normalization to existing types
+- **UnifiedSmartRingService.ts**: Major rewrite — routes all data/connection methods via `isV8()` check, dual-SDK scan, sequential auto-reconnect
+
+**Phase 2 — Onboarding:**
+- **Device select screen** (`app/(onboarding)/device-select.tsx`): Two glass-morphism cards (ring/band) with stagger animations
+- **Connect screen** updated to filter devices by `sdkType` based on `deviceType` param
+- **useSmartRing.ts**: `isFocusDevice()` now matches both ring and V8 band patterns
+- **i18n**: Added en/es keys for device selection and device slots
+
+**Phase 3 — Storage & Data:**
+- **storage.ts**: Added `PAIRED_RING_DEVICE`, `PAIRED_BAND_DEVICE`, `ACTIVE_DEVICE_TYPE` keys
+- **Supabase migration**: `20260324_device_type_column.sql` adds `device_type` to hrv_readings, sleep_sessions, daily_metrics
+
+**Code quality pass (/simplify):** Fixed 8 issues:
+- Bug: `Number() ?? -1` → `|| -1` (NaN not caught by nullish coalescing)
+- Bug: `disconnect()` was clearing pairing keys (breaks auto-reconnect)
+- Bug: `getRespiratoryRateNightly` called Jstyle directly for V8 devices
+- Bug: `getBloodPressure` made unnecessary BLE call for V8
+- Hoisted activity mode map to module scope
+- Deduplicated `getVersion` unwrap, image styles, time-sync code
+
+**Files created:** `ios/V8Bridge/V8Bridge.h`, `ios/V8Bridge/V8Bridge.m`, `src/services/V8Service.ts`, `app/(onboarding)/device-select.tsx`, `supabase/migrations/20260324_device_type_column.sql`
+**Files modified:** `src/types/sdk.types.ts`, `src/services/UnifiedSmartRingService.ts`, `src/hooks/useSmartRing.ts`, `app/(onboarding)/_layout.tsx`, `app/(onboarding)/connect.tsx`, `src/utils/storage.ts`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+**Note:** V8Bridge files and libBleSDK_V8.a still need to be added to the Xcode project. Native rebuild required.
+
+---
+
+## 2026-03-23: Remove Sync from Success + Restyle Integrations Screen
+
+**Change:**
+1. **Success screen**: Removed background sync logic (`getBattery`/`getSteps`) that was causing "Connection reset" errors. The home screen handles sync on its own.
+2. **Integrations screen**: Full restyle to match onboarding design system — `LinearGradient` background (#000 → #5A112A), step bars at top (all 5 active), matching typography (32px/18px titles), glass-morphism integration cards, white primary "Continue" button with #5a112a text, underlined "Skip" link. Removed old green glow and teal color scheme.
+
+**Files modified:** `app/(onboarding)/success.tsx`, `app/(onboarding)/integrations.tsx`
+
+---
+
+## 2026-03-23: Success Screen — Full Redesign to Match Figma
+
+**Change:** Rewrote `success.tsx` to match Figma 543:683. Old screen had checkmark icon, stats card, and HR measurement UI. New screen:
+- `LinearGradient` background (#000 → #5A112A), same as "Ring found" screen
+- "All set" title + "{{name}} has connected successfully." subtitle, centered
+- `all-set-mock.png` hand-with-ring image below text
+- White "Continue" button (rounded 12px, #5a112a text)
+- "Reset" underlined link below — shows confirmation alert, then navigates back to connect screen
+- Background data sync (battery + steps) still runs silently on mount
+- Added i18n keys: `title_all_set`, `subtitle_all_set`, `button_reset` (en + es)
+
+**Files modified:** `app/(onboarding)/success.tsx`, `en.json`, `es.json`
+
+---
+
+## 2026-03-23: Blue Glow — Centered + No Clipping
+
+**Change:** Moved blue radial glow out of `carouselWrap` into `devicesContent` as an absolute-positioned sibling. Centered horizontally (`left: 0`, same width as screen). Positioned at `top: 18%` of screen height to align with the ring. Increased SVG radial gradient radii from 44%/42% to 50%/50% for a smoother fade that doesn't clip at edges.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Ring Found — Gradient BG + Smaller/Higher Blue Glow
+
+**Change:**
+1. **Gradient background**: Replaced `connect-bg.jpg` `ImageBackground` with `LinearGradient` (`#000` at 39.14% → `#5A112A` at 95.91%). Removed unused `CONNECT_BG` constant.
+2. **Blue glow**: Reduced from 1.4× to 1× screen width, repositioned upward (`top: -15%` of screen width) to align with the ring image.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Connect Button + Blue Glow Fix + Tighter Ring Layout
+
+**Change:**
+1. **"Connect to this device" button**: Added white primary button beneath device MAC in the card. Device card changed from `TouchableOpacity` to `View` — tap target is now the button only.
+2. **Blue glow fix**: Removed `zIndex: -1` (unreliable in RN), added `pointerEvents="none"` so glow doesn't block touches.
+3. **Tighter subtitle-to-ring distance**: Device card changed from `justifyContent: center` to `paddingTop: 16` so the ring sits closer to the subtitle.
+
+**Files modified:** `app/(onboarding)/connect.tsx`, `en.json`, `es.json`
+
+---
+
+## 2026-03-23: Glow Alignment + Tighter Title/Subtitle Spacing
+
+**Change:**
+1. **Blue glow repositioned**: Moved inside `carouselWrap` so it's centered behind the ring image (was at screen bottom, now `top: 10%` within carousel, `zIndex: -1`).
+2. **Title-subtitle gap reduced**: `scanTitle.marginBottom` 18→8, `welcomeTitle.marginBottom` 10→8 across all screens.
+3. **Subtitle max-width**: Added `maxWidth: 260` to both `scanSubtitle` and `welcomeSubtitle` for tighter text wrapping on all screens.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Devices Found — Blue Radial Glow + Layout Tightening
+
+**Change:** On the "Ring found" screen:
+1. Removed `marginTop: 20` from `carouselWrap` so the FlatList sits closer to the subtitle.
+2. Added a blue radial glow element beneath the carousel — SVG `RadialGradient` (#0042A8 center → transparent edge, 44%/42% radii) matching Figma node 543:656. Positioned absolutely at bottom, 1.4× screen width, offset downward.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Spinner Blur + No Devices Cleanup + Scan Again Button Style
+
+**Change:** Three updates to the scanning/no-devices screens:
+1. **Spinner blur fill**: Added `BlurView` (expo-blur, intensity 40, light tint) inside the spinner circle, matching the same width as the circle with no rounded corners — creates a frosted glass effect over the background.
+2. **No devices screen**: Removed the spinner entirely. Now shows title + subtitle + "Scan again" primary button at the bottom.
+3. **Scan again button**: Updated to `borderRadius: 20` to match the Figma reference (pill-like rounded corners).
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Scanning Screen — Add Ring Image + No Devices "Scan Again" Button
+
+**Change:** Added `scan-ring.png` as a standalone image between the subtitle and troubleshoot footer on the scanning screen (positioned with `marginTop: auto` to fill available space). On the no-devices screen, replaced the troubleshoot text link with a full-width white "Scan again" primary button matching the welcome screen button style.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Fix Scanning Screen Layout — Remove scan-ring.png from Spinner
+
+**Change:** Removed `scan-ring.png` `<Image>` from inside the spinner SVG wrapper in `renderSpinner()`. The ring-on-charger visual comes from the `scanning_bg.jpg` background image, not a separate element. Also removed the unused `SCAN_RING_IMG` constant and `scanRingImg` style. Spinner now correctly shows only the SVG circle + rotating arc glow.
+
+**Files modified:** `app/(onboarding)/connect.tsx`
+
+---
+
+## 2026-03-23: Device Screens — Full Redesign (Scanning + Found + No Devices + Connecting)
+
+**Change:** Complete overhaul of all post-welcome onboarding screens:
+
+- **Scanning screen**: Full-screen `scanning_bg.jpg`, white circle ring (194px) with spinning arc segment (15% of circle, not a dot), `scan-ring.png` image centered inside the ring. Arc spins with bezier easing, 1s duration, 1.5s pause. Content staggers in. "Can't find your ring? Troubleshoot guide" footer.
+- **Devices found screen** (Figma 543:654): `connect-bg.jpg` background, `connect-mock.png` ring image. Horizontal `FlatList` carousel with paging — if multiple rings found, shows right arrow hint and page indicator dots below. Device name + MAC displayed. "Not your ring? Scan again" footer links back to scanning.
+- **No devices found screen**: Same `scanning_bg.jpg` + spinner as scanning screen. "Can't find your ring? Troubleshoot guide" footer with scan-again action.
+- **Connecting screen**: Reuses scanning bg + spinner with connecting text.
+
+**Code quality fixes (via /simplify):** Fixed spinner not animating on no-devices step (added `'devices'` to effect trigger), typed scroll event handler (removed `any`), moved `activeDeviceIndex` state and `onDeviceScroll` to top of component with other hooks.
+
+**Files modified:** `app/(onboarding)/connect.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+## 2026-03-23: Scanning Screen — Full Redesign with Spinner Animation
+
+**Change:** Scanning screen now uses full-screen `scanning_bg.jpg` background matching Figma frame 542:628. Old green pulse ripple animation replaced with a white circle ring (194px, 50% opacity stroke) and a spinning glow dot (white, blur 8) that orbits the ring — 1s spin with `Easing.bezier(0.4, 0, 0, 1)`, 1.5s pause between spins, via Reanimated `withRepeat`/`withSequence`. Content staggers in (title → subtitle → footer at 200/225/250ms). Bottom footer shows "Can't find your ring? Troubleshoot guide" placeholder link. Connecting screen reuses same background + spinner.
+
+**Code quality fixes (via /simplify):** Removed unused `RING_CIRCUMFERENCE`, extracted `renderSpinner()` to eliminate copy-paste between scanning/connecting, fixed spinner restart flash on step transition, replaced spacer View with `marginTop: 'auto'`, extracted `fullScreen` style for three `ImageBackground` components.
+
+**Files modified:** `app/(onboarding)/connect.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+## 2026-03-23: Onboarding Welcome Screen — Layout + Animation Overhaul
+
+**Change:** Welcome screen now has full-screen background (`welcome-bg.jpg`) covering the entire device, with title+subtitle centered vertically and the "Start scan" button pinned near the bottom — matching the attached design reference. Switched from RN `Animated` stagger to `react-native-reanimated` pattern (sparring app style): `useSharedValue` for opacity (0→1) + translateY (80→0), `withDelay` + `withTiming` with `Easing.bezier(0.4, 0, 0, 1)`, 600ms duration, tight stagger delays (200/225/235ms).
+
+**CLAUDE.md updates:** Added Animations section documenting the Reanimated stagger pattern as the project standard.
+
+**Code quality fixes (via /simplify):** Fixed variable shadow (`t` → `timer`), moved `resizeMode` from inline style to proper prop (removed `as any` cast), added unmount cleanup for scan timeout ref.
+
+**Files modified:** `app/(onboarding)/connect.tsx`, `CLAUDE.md`
+
+---
+
+## 2026-03-23: Auth Screen — SVG Logo + Onboarding Background
+
+**Change:** Replaced the hardcoded "FOCUS" text on the auth landing screen with an SVG `FocusLogo` component matching the brand wordmark from Figma. Swapped background image from `splash.jpg` to `onboarding-bg.jpg`.
+
+**Files created:** `src/components/common/FocusLogo.tsx` — Reusable SVG logo component with configurable `width`, `height`, and `color` props
+**Files modified:** `src/screens/AuthScreen.tsx`
+
+---
+
+## 2026-03-23: Baseline Mode for New Users
+
+**Change:** New users now see a "Building Your Baseline" experience instead of empty/random scores. The app needs ~3 days of sleep + HR + HRV data before composite scores (readiness, strain, sleep score) become meaningful. During baseline mode: Overview tab shows a progress card with per-metric readiness indicators, Sleep tab shows a "X/3 nights tracked" pill instead of the score gauge, and the HomeHeader shows a "Day X/3" chip. When baseline completes, a celebration overlay appears. Existing users with sufficient data auto-complete silently.
+
+**Files created:**
+- `src/types/baseline.types.ts` — `BaselineModeState`, `BaselineMetrics`, `MetricBaselineProgress` types
+- `src/services/BaselineModeService.ts` — Pure computation (`computeBaselineState`), persistence (`loadBaselineCompletedAt`, `persistBaselineCompletion`)
+- `src/context/BaselineModeContext.tsx` — React context + `useBaselineMode()` hook, derived from FocusBaselines + MetricBaselines
+- `src/components/home/BaselineProgressCard.tsx` — Glass card with animated progress ring, 6 metric rows with day-dot progress bars
+- `src/components/home/BaselineCompleteOverlay.tsx` — Full-screen celebration overlay with check animation, auto-dismiss after 4s
+- `supabase/migrations/20260323_baseline_completed_at.sql` — Adds `baseline_completed_at` column to `user_profiles`
+
+**Files modified:**
+- `app/_layout.tsx` — Added `BaselineModeProvider` to provider tree
+- `src/screens/home/OverviewTab.tsx` — Replaced `isOnboarding` logic with `useBaselineMode().isInBaselineMode`, swapped welcome section for `BaselineProgressCard`
+- `src/screens/home/SleepTab.tsx` — Added baseline-aware rendering: shows tracking pill when sleep baseline not ready
+- `src/components/home/HomeHeader.tsx` — Consumes `useBaselineMode()` directly, shows teal "Day X/3" chip during baseline
+- `src/screens/NewHomeScreen.tsx` — Renders `BaselineCompleteOverlay`
+- `src/i18n/locales/en.json` + `es.json` — Added `baseline.*` keys (17 strings each)
+
+**Also in this session:**
+- Fixed onboarding connect.tsx to use i18n translations (was hardcoded English)
+- Fixed duplicate `onboarding` key in en.json/es.json (JSON last-key-wins was losing `welcome_title`/`welcome_subtitle`/`tip`)
+
+**Code quality fixes (via /simplify):**
+- Removed `isLoading`/`isSyncing` from context deps (caused 4+ redundant recomputes per sync)
+- Added `statesAreEqual` guard + `useMemo` on context value to prevent unnecessary re-renders
+- Parallelized baseline storage reads with `Promise.all`
+- Added race condition guard (`cancelled` flag) on async recompute
+- Fixed mutation of pure function return — now uses object spread
+- Animation cleanup: reset values on re-entry, track composite refs, stop on unmount
+- Removed parameter sprawl on HomeHeader (3 props → uses hook directly)
+- Aligned glass card style with design system conventions
+
+---
+
+## 2026-03-23: Unified Activity Feed (Apple Health + Strava + Ring)
+
+**Change:** Merged workouts from Apple Health, Strava, and the ring into a single deduplicated activity feed. Apple Health workouts are now fetched via `queryWorkoutSamples` (7-day window). Strava syncs in the background on every app load (non-blocking). Activities are deduplicated by time overlap (>70%) + sport category, with Strava winning when both sources have the same workout.
+
+**Files created:**
+- `src/types/activity.types.ts` — `UnifiedActivity` and `HKWorkoutResult` interfaces
+- `src/services/HealthKit/HealthKitWorkoutFetcher.ts` — Fetches workouts from Apple Health via `queryWorkoutSamples`, maps 30+ `WorkoutActivityType` enum values to normalized sport strings, generates time-of-day workout names
+- `src/services/ActivityDeduplicator.ts` — Pure merge+dedup service: priority-based (Strava > Apple Health > Ring), 70% time-overlap threshold with sport category matching, sport color/icon mapping for 25+ activity types
+
+**Files modified:**
+- `src/services/HealthKitService.ts` — Added `fetchWorkouts()` and `fetchWeekWorkouts()` methods, composing the new `HealthKitWorkoutFetcher`
+- `src/services/StravaService.ts` — Added `backgroundSync(days)` public method: loads tokens if needed, syncs recent activities, never throws (safe for fire-and-forget)
+- `src/hooks/useHomeData.ts` — Fire-and-forget background Strava sync at top of `fetchData()`, HealthKit workout fetch in parallel with Supabase queries, `mergeActivities()` call to build `unifiedActivities` on `HomeData`. Added `unifiedActivities: UnifiedActivity[]` to HomeData interface.
+- `src/components/home/DailyTimelineCard.tsx` — Replaced separate Strava + ring activity rendering with unified activities. Added `iconOverride`/`colorOverride` on timeline events so each activity renders with its sport-specific icon and color (not hardcoded Strava orange). Removed now-unused `stravaActivities` prop and `StravaActivitySummary` import.
+- `src/screens/home/OverviewTab.tsx` — Passes `unifiedActivities` to DailyTimelineCard, removed `stravaActivities` prop
+- `src/screens/home/ActivityTab.tsx` — New `UnifiedWorkoutCard` component with sport icon, name, meta, and source badge (Strava/Health/Ring). Replaced old Strava-only fallback with unified activities list. Deleted dead `StravaWorkoutCard` and `formatStravaWorkoutMeta`. Uses `formatSleepDuration` from utils for duration formatting.
+
+**Code quality fixes (via /simplify):**
+- Removed dead `stravaActivities` prop from DailyTimelineCard (was unused after unified switch)
+- Deleted dead `StravaWorkoutCard`, `formatStravaWorkoutMeta`, and unused `StravaActivitySummary` import from ActivityTab
+- Fixed duplicate ring timeline entries (ring sessions were rendered twice: once raw, once via unified)
+- Fixed hardcoded Strava orange icon/color for non-Strava activities in timeline — now uses per-activity sport color
+- Typed `ringToUnified` parameter as `X3ActivitySession` instead of `any`
+- Reused `formatSleepDuration` utility instead of inline duration formatting
+- Capped HealthKit workout query to 50 results to bound memory for heavy auto-detection users
+
+**Key notes:**
+- Background Strava sync fires before the Supabase query, so newly-synced activities appear on next refresh (not current load) — acceptable trade-off for non-blocking behavior
+- Dedup uses sport categories (e.g., Run+TrailRun both map to "run") so trail runs from Strava won't duplicate with generic runs from Apple Health
+- Apple Health workout types mapped: running, cycling, hiking, swimming, walking, yoga, pilates, HIIT, weight training, boxing, rowing, climbing, dance, and 15+ more
+- Source badge on workout cards: orange "Strava", pink "Health", teal "Ring"
+- Native rebuild required for HealthKit workout queries to work (new `queryWorkoutSamples` API)
+
+---
+
+## 2026-03-23: SyncStatusSheet Connection Timeout
+
+**Change:** Added a 40-second timeout to the sync bottom sheet's "connecting" phase. If the ring doesn't connect within 40s, the sheet shows "Could not connect" with a teal "Find Rings" button that navigates to the onboarding ring scan screen. Sheet height and button fade in smoothly using Reanimated animations.
+
+**Code quality fixes (via /simplify):** Eliminated redundant `connectionTimerRef` (timeout ID lives in effect closure only), guarded `setConnectionTimedOut(false)` with functional updater to prevent spurious re-renders on normal phase transitions, animated sheet height expansion and button opacity for smooth UX.
+
+**Files modified:** `src/components/home/SyncStatusSheet.tsx`, `src/screens/NewHomeScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+**New i18n keys:** `sync.connection_timeout`, `sync.find_rings`
+
+---
+
+## 2026-03-23: Auth Email Bottom Sheet — Figma White Theme + Dynamic Height
+
+**Change:** Redesigned the "Continue with Email" bottom sheet to match Figma frame 524:548. White-themed sheet with `enableDynamicSizing` (height adapts to content per mode), gray-bordered inputs, black submit button, and "First time? Create an account" inline link pattern. Sheet title shows "Continue with Mail" in sign-in mode. Built-in keyboard avoidance via `keyboardBehavior="interactive"`.
+
+**Code quality fixes (via /simplify):** Fixed `renderBackdrop` typing (`any` → `BottomSheetBackdropProps`), added `disabled={isSubmitting}` to mail button (UX bug — was clickable during Google sign-in), replaced triple `{mode === X && ...}` conditionals with `SHEET_TITLES`/`SUBMIT_LABELS` lookup maps, extracted `PLACEHOLDER_COLOR` constant (was hardcoded 5×), replaced magic `borderRadius: 12` and `fontSize: 16` with theme tokens `borderRadius.md`/`fontSize.lg`.
+
+**Files modified:** `src/screens/AuthScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+**New i18n keys:** `auth.first_time`, `auth.already_have_account`
+
+---
+
+## 2026-03-23: Auth Screen Redesign — Figma Parity
+
+**Change:** Redesigned AuthScreen to match Figma design. Full-screen `splash.jpg` background image, large "FOCUS" branding text, two white rounded buttons ("Continue with Google" / "Continue with Mail"), and "Contact us" link at bottom. Email/password form now opens in a `@gorhom/bottom-sheet` instead of inline ScrollView. Google sign-in continues directly from the landing screen.
+
+**Code quality fixes (via /simplify):** Removed unused `Dimensions`/`width`/`height` imports, memoized `snapPoints` with `useMemo`, added `pressBehavior="close"` to backdrop, replaced hardcoded `#1A1A2E` with `colors.surface`, added `finally` blocks for consistent `isSubmitting` cleanup in all auth handlers.
+
+**Files modified:** `src/screens/AuthScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+**New i18n keys:** `auth.button_continue_google`, `auth.button_continue_mail`, `auth.login_trouble`, `auth.contact_us`
+
+---
+
+## 2026-03-22: Apple Health Full Rewrite — New Architecture Compatible
+
+**Change:** Replaced `react-native-health` (Obj-C, incompatible with RN 0.81 New Architecture) with `@kingstinct/react-native-healthkit` v13 (Nitro Modules). Rewrote HealthKitService as a modular facade with 4 sub-services. Fixed broken onboarding connect, redesigned Apple Health screen with glassmorphism, added HealthKit as fallback data source when ring is disconnected, and added full i18n support (en + es).
+
+**Files created:**
+- `src/services/HealthKit/HealthKitPermissions.ts` — Availability checks and authorization requests using v13 probe-read pattern
+- `src/services/HealthKit/HealthKitDataFetchers.ts` — Heart rate, steps, HRV, SpO2 fetching with step deduplication (Apple Watch > iPhone source precedence)
+- `src/services/HealthKit/HealthKitSleepProcessor.ts` — Sleep data processing: 6pm→12pm query window, session grouping (90min gap), best-session scoring, stage breakdown
+- `src/services/HealthKit/HealthKitSubscriptions.ts` — Real-time HealthKit change listeners for HR, steps, sleep
+- `app/(tabs)/settings/apple-health.tsx` — Route shell for Apple Health detail screen
+- `.claude/agents/coordinator.md` — Orchestrator agent (opus)
+- `.claude/agents/researcher.md` — Read-only investigation agent (haiku)
+- `.claude/agents/implementer.md` — Code writing agent (sonnet)
+- `.claude/agents/reviewer.md` — Quality review agent (sonnet, runs /simplify)
+
+**Files modified:**
+- `app.config.js` — Swapped `react-native-health` plugin for `@kingstinct/react-native-healthkit` with NSHealth descriptions
+- `package.json` / `package-lock.json` — Replaced `react-native-health` with `@kingstinct/react-native-healthkit`
+- `src/services/HealthKitService.ts` — Complete rewrite as facade composing 4 sub-services. Singleton with initialize/isConnected/fetchAll/checkPermissions/setupSubscriptions/cleanup. Probes permissions before re-requesting auth dialog on cold start.
+- `src/hooks/useHealthKit.ts` — Simplified to use new HealthKitService. `isAvailable` is now a module-level constant (not state). Added subscription cleanup on unmount.
+- `src/screens/AppleHealthScreen.tsx` — Full redesign: glassmorphism cards, Ionicons, all strings via `t()`. Removed dead `!isAvailable` branch (unreachable after Platform guard). Uses `formatSleepDuration` from utils instead of inline formatting.
+- `app/(onboarding)/integrations.tsx` — All hardcoded strings replaced with `t('integrations.*')`. Connect flow calls working HealthKitService.initialize().
+- `src/screens/SettingsScreen.tsx` — Fixed hardcoded "Apple Health" → `t('profile.account.apple_health')`
+- `src/hooks/useHomeData.ts` — Added HealthKit fallback when ring disconnected: fills sleep (efficiency/duration/bed-wake), steps, HRV from Apple Health. Fixed operator precedence bug in permission check. Uses `formatSleepDuration` utility.
+- `src/i18n/locales/en.json` — Added ~40 keys: `integrations.*` (11), `apple_health.*` (30+), `profile.account.apple_health`
+- `src/i18n/locales/es.json` — Matching Spanish translations for all new keys
+- `CLAUDE.md` — Added mandatory `/simplify` code quality gate rule
+
+**Key notes:**
+- **Native rebuild required** — package swap from `react-native-health` to `@kingstinct/react-native-healthkit` requires `pod install` + Xcode rebuild
+- v13 API uses `filter: { date: { startDate, endDate } }` pattern (not `{ from, to }`)
+- `requestAuthorization({ toRead: [...] as any })` — type cast needed because library's string union type is narrower than the identifiers we use
+- HealthKit subscriptions return `{ remove: () => boolean }`, not `() => void`
+- Step dedup uses O(n) sorted-cursor approach instead of O(n²) overlap scan
+- Sleep processor sorts once in `groupIntoSessions` and passes sorted arrays downstream (no redundant re-sorts)
+- AsyncStorage key `apple_health_connected_v1` persists connection state across app restarts
+- `/simplify` review completed: fixed 8 issues (dead code, reuse of `formatSleepDuration`, constant vs state, subscription leak, O(n²) dedup, redundant sorts, operator precedence, unused setter)
+
+---
+
+## 2026-03-22: Onboarding Welcome State for New Users
+
+**Change:** When a user has no sleep record yet (new user, first day with the ring), the Overview tab now shows a "Welcome to Focus" banner instead of the recovery score gauge, metrics card, and sleep card. The banner explains what to expect and prompts the user to wear the ring overnight. Once sleep data exists, the normal score view appears automatically.
+
+**Files modified:**
+- `src/screens/home/OverviewTab.tsx` — Added `isOnboarding` derived boolean (`!isLoading && !isSyncing && !sleepScore && timeAsleepMinutes === 0`). Conditionally renders either the welcome banner or the existing gauge+metrics+sleep card block. Welcome banner uses: teal radial gradient glow SVG (absolute positioned, `react-native-svg`), large title, subtitle, `RingIcon` badge in a teal-tinted circle, and a tip pill. Removed `<Text>◯</Text>` placeholder in favour of `RingIcon` component (simplify pass). Simplified redundant `(sleepScore === 0 || !sleepScore)` to `!sleepScore`.
+- `src/i18n/locales/en.json` — Added `onboarding` namespace with keys: `welcome_title`, `welcome_subtitle`, `tip`.
+- `src/i18n/locales/es.json` — Added same keys in natural Latin American Spanish.
+
+**Key notes:**
+- Detection is purely client-side: no separate onboarding flag or Supabase column needed.
+- HR chart, calorie deficit, and daily timeline cards still render during onboarding (they may have day-1 step/HR data).
+- Banner disappears automatically once the first night's sleep syncs — no user action required.
+- `isOnboarding` is `false` while loading or syncing, preventing a flash of the welcome screen on subsequent opens.
+
+---
+
+## 2026-03-22: Apple Health / HealthKit Integration — Implementation Plan
+
+**Change:** Produced a detailed implementation plan to fix all 8 Apple Health issues across the app. Key research findings:
+- `react-native-health` v1.7.0 (Podfile.lock) does not support New Architecture (enabled by default in RN 0.81). This is why `AppleHealthKit = null` — the module fails to load.
+- Recommended replacement: `@kingstinct/react-native-healthkit` v13.2.3 — Nitro Modules based, full New Arch support, actively maintained.
+- Entitlements (`com.apple.developer.healthkit`) and Info.plist keys are already in place — no entitlement work needed.
+- Zero i18n keys exist for Apple Health or integrations screens — ~30 keys need adding in en.json/es.json.
+- Plan covers 8 phases: package swap, service rewrite, onboarding fix, health screen redesign, settings fix, home screen data merge (read HealthKit + write ring data back), hook cleanup, and app.config.js update.
+- Data priority follows Oura/Ultrahuman pattern: ring data is primary, HealthKit fills gaps, ring data is written back to Apple Health for other apps.
+
+**No code changes — plan only.**
+
+---
+
+## 2026-03-22: Firmware Update Prompt (Informational Bottom Sheet)
+
+**Change:** Added a dismissible bottom sheet that appears once per 72 hours when the ring's firmware is behind the latest known version stored in Supabase.
+
+- **`supabase/migrations/20260321_app_config.sql`**: New `app_config` table (key/value store). Seeded with `latest_firmware_version = '1.0.0'`. Applied to production via MCP.
+- **`src/utils/storage.ts`**: Added `FIRMWARE_UPDATE_DISMISSED_AT` constant and added key to `STORAGE_KEYS`.
+- **`src/services/FirmwareUpdateService.ts`**: New service — `checkShouldShow(currentVersion)` fetches latest version from Supabase `app_config`, falls back to `'1.0.0'`, compares semver, and checks 72h dismiss cooldown in AsyncStorage. `markDismissed()` saves timestamp.
+- **`src/components/home/FirmwareUpdateSheet.tsx`**: New `BottomSheetModal` (same pattern as `ExplainerSheet`). Shows ring emoji icon, current and latest version strings, and an "Update Later" button. Fully dismissible — no blocking.
+- **`app/(tabs)/_layout.tsx`**: After ring connects (`hasConnectedDevice`), runs firmware check once per session via `useRef` guard. If update available, renders `FirmwareUpdateSheet`; dismiss calls `markDismissed()` and hides the sheet.
+
+**User-visible behavior:** When a ring is connected and its firmware is behind, a bottom sheet slides up from the bottom instructing the user to update via the Jstyle companion app. Dismissing saves a 72-hour cooldown — the sheet won't reappear until the cooldown expires.
+
+---
+
+## 2026-03-22: Apple Health Connect — Onboarding + Profile
+
+**Change:** Made Apple Health connection functional in both the onboarding integrations screen and the profile page.
+
+- **`HealthKitService.ts`**: Re-enabled — now imports `react-native-health` (lazily, iOS-only). Added `isConnected()` async method that reads from AsyncStorage (`apple_health_connected_v1`). `initialize()` now persists `true` to AsyncStorage on success. `checkIsAvailable()` restores initialized state from storage on app restart.
+- **`app/(onboarding)/integrations.tsx`**: Apple Health card is now a tappable `TouchableOpacity` (was a disabled `View` with "Soon" badge). Tapping calls `HealthKitService.initialize()`, which shows the iOS HealthKit permissions sheet. Shows spinner while connecting, teal checkmark when connected, red "Connect" chip when not connected.
+- **`src/screens/SettingsScreen.tsx`**: Account section now has an Apple Health row (below Strava). Tapping navigates to `/(tabs)/settings/apple-health`. Row shows "Connected" in green or "Not connected" in muted text. Status refreshes on screen focus via `useFocusEffect`.
+- **`app/(tabs)/settings/apple-health.tsx`**: New route shell — renders existing `AppleHealthScreen`.
+
+## 2026-03-22: Background Sleep Notification (wake time + 30 min)
+
+**Change:** Replaced the foreground-only "Sleep Analysis Ready" notification (which fired instantly when the user opened the app) with a background-fetch-powered system that detects wake time from sleep data and schedules the notification for 30 minutes after waking up. Works even when the app is closed.
+
+**Files created:**
+- `src/services/BackgroundSleepTask.ts` — Background fetch task (`BACKGROUND_SLEEP_CHECK`): connects to ring via BLE in background, fetches sleep data, extracts latest wake time (≥3hr blocks, after 7 AM only), schedules local notification for wakeTime + 30 min via `Notifications.scheduleNotificationAsync`. Includes foreground fallback (`maybeSendSleepNotificationFromForeground`) for when background fetch didn't fire.
+
+**Files modified:**
+- `app.config.js` — Added `'fetch'` to `UIBackgroundModes` (alongside `bluetooth-central`)
+- `ios/SmartRing/Info.plist` — Added `fetch` to `UIBackgroundModes` array
+- `app/_layout.tsx` — Added top-level import of `BackgroundSleepTask` (task must be defined before app renders)
+- `src/services/NotificationService.ts` — Removed `maybeSendSleepReadyNotification()` (old immediate-fire approach). Added `registerBackgroundSleepTask()` call in `setup()`.
+- `src/screens/NewHomeScreen.tsx` — Replaced `NotificationService.maybeSendSleepReadyNotification()` with `maybeSendSleepNotificationFromForeground(homeData.lastNightSleep.wakeTime)` as foreground fallback.
+
+**Dependencies added:**
+- `expo-background-fetch`
+- `expo-task-manager`
+
+**Key notes:**
+- 7 AM guard: wake times before 7 AM are ignored to avoid false triggers from fragmented sleep (user wakes at 3 AM, goes back to sleep)
+- Always uses the **latest** wake time from night-length blocks (≥180 min)
+- Once-per-day dedup via AsyncStorage key `@focus_sleep_notif_scheduled_v2`
+- Background task runs in 5 AM – 2 PM window only
+- BLE stays connected in background thanks to `bluetooth-central` mode — ring must be on wrist
+- Requires native rebuild (`/xcode-rebuild`) — `UIBackgroundModes` changed in Info.plist
+
+---
+
+## 2026-03-21: Fix Ring Disconnected After First Onboarding
+
+**Change:** The home screen showed no ring data after completing onboarding for the first time. Ring appeared connected but all metrics (sleep, HR, steps, HRV) were empty. On app restart everything worked fine.
+
+**Root cause:** `HomeDataProvider` runs `fetchData('initial')` at app start — before onboarding. With no paired ring, `autoReconnect()` fails and the provider exits early with `isRingConnected: false`. When the ring connects during onboarding, `onConnectionStateChanged` fires and calls only `refreshMissingCardData` (vitals only), never a full `fetchData`. So by the time the user reaches the home screen, all metrics are empty.
+
+**Fix:** Single change in `success.tsx` — import `useHomeDataContext` and call `void homeData.refresh()` (fire-and-forget) inside `handleContinue` before navigating. This kicks off a full ring data sync while the user is on the integrations screen. By the time they reach the home screen, data is loading or already populated.
+
+**Files modified:**
+- `app/(onboarding)/success.tsx` — Added `useHomeDataContext` import + hook call + `void homeData.refresh()` in `handleContinue`
+
+---
+
+## 2026-03-21: TestFlight Build 1.0.4 (build 5)
+
+**Change:** Bumped version to 1.0.4 (build 5) and successfully uploaded to App Store Connect. Fixed several blocking issues discovered during the process: wrong bundle ID in Release config, expired Xcode sessions, and a restricted entitlement.
+
+**Files modified:**
+- `app.config.js` — Version bumped `1.0.3` → `1.0.4`, buildNumber `4` → `5`
+- `ios/SmartRing.xcodeproj/project.pbxproj` — `MARKETING_VERSION` → `1.0.4`, `CURRENT_PROJECT_VERSION` → `5`; Release config `PRODUCT_BUNDLE_IDENTIFIER` fixed from `com.focusring.app.dev` → `com.focusring.app`, `PRODUCT_NAME` fixed from `FocusDEV` → `Focus`
+- `ios/SmartRing/SmartRing.entitlements` — Removed `com.apple.developer.healthkit.access` (health-records requires special Apple approval); changed `aps-environment` from `development` → `production`
+- `ios/ExportOptions.plist` — Added `authenticationKeyPath`, `authenticationKeyID`, `authenticationKeyIssuerID` for App Store Connect API key auth (bypasses expired Xcode sessions permanently)
+
+**Key notes:**
+- App Store Connect API key `A93H45TYS3` is now stored at `~/.appstoreconnect/private_keys/AuthKey_A93H45TYS3.p8` — future builds use this instead of Xcode account sessions which expire
+- Issuer ID: `befadbf1-4e14-4f57-b39f-0ca58dce537b`
+- Export must use `-allowProvisioningUpdates` flag so xcodebuild can register HealthKit + Push Notifications capabilities automatically
+- The Release config in `project.pbxproj` was previously hardcoded to `.dev` bundle ID — this caused the first archive to upload the wrong app
+- `/testflight` skill updated to reflect all of the above fixes
+
+---
+
+## 2026-03-20: Onboarding — Integrations Step (Strava + Apple Health)
+
+**Change:** Added a new `/(onboarding)/integrations` screen that appears after the ring connection success screen. Users can connect Strava (and eventually Apple Health) before entering the main app. Strava is fully functional using the existing `stravaService.connect()` flow. Apple Health shows as "Coming soon" on iOS.
+
+**Flow:** `connect.tsx` → `success.tsx` → **`integrations.tsx`** → `/(tabs)`
+
+**Files created:**
+- `app/(onboarding)/integrations.tsx` — New screen: Strava card (orange, tappable, shows connected checkmark after OAuth), Apple Health card (iOS only, disabled/soon). "Continue" and "Skip for now" both call `completeOnboarding()` then navigate to tabs.
+
+**Files modified:**
+- `app/(onboarding)/_layout.tsx` — Registered `integrations` route in Stack
+- `app/(onboarding)/success.tsx` — `handleContinue` now routes to integrations instead of calling `completeOnboarding` + `/(tabs)` directly. `completeOnboarding` removed from destructure.
+
+**Key notes:**
+- `stravaService.reload()` is called on mount to check existing connection state from DB
+- Apple Health card only renders on `Platform.OS === 'ios'` and is styled as disabled (opacity 0.5)
+- The integrations screen is where `completeOnboarding()` is now called (was previously in success.tsx)
+
+---
+
+## 2026-03-20: Auth — Replace GitHub OAuth with Google only
+
+**Change:** Removed GitHub OAuth and replaced with Google OAuth only. Fixed OAuth redirect URI scheme mismatch (`com.smartring.testapp` → `smartring`). Strava is NOT an auth provider — it's handled via the existing data integration flow in the new onboarding integrations step instead.
+
+**Files modified:**
+- `src/services/AuthService.ts` — Removed `signInWithGitHub`. Added shared `oAuthSignIn()` helper (fixes redirect scheme), `signInWithGoogle()`. URL token extraction handles both query params and URL fragment.
+- `src/hooks/useAuth.ts` — Replaced `signInWithGitHub` with `signInWithGoogle`.
+- `src/screens/AuthScreen.tsx` — Replaced GitHub button with Google button (Google multicolor icon, white border).
+- `src/i18n/locales/en.json` / `es.json` — Added `auth.button_sign_in_google`.
+
+**Key notes:**
+- Redirect URI: `smartring://auth/callback` (was `com.smartring.testapp://auth/callback`)
+- Supabase dashboard prerequisite (manual): Enable Google provider (Client ID + Secret) under Authentication → Providers. Redirect URL: `https://pxuemdkxdjuwxtupeqoa.supabase.co/auth/v1/callback`
+
+---
+
+## 2026-03-20: Fix xcodebuild "Workspace does not exist" (Recurring Bug)
+
+**Change:** Documented and fixed a recurring xcodebuild failure caused by using relative paths. xcodebuild resolves paths relative to its own working directory, not the shell's, so relative paths like `ios/SmartRing.xcworkspace` silently resolve to the wrong location.
+
+**Fix:** Always use absolute paths for all xcodebuild arguments.
+
+**Files modified:**
+- `CLAUDE.md` — Added "TestFlight / xcodebuild Rule" section with the absolute-path requirement and correct example
+- `~/.claude/commands/testflight.md` — Added explicit RULE: "ALWAYS use absolute paths"; removed `xcpretty` pipe (not installed); steps 8 & 9 already use absolute paths after the earlier fix in this session
+
+**Key notes:**
+- Root cause: xcodebuild ignores the shell `cd` and resolves relative paths from an internal working directory
+- Error message: "Workspace SmartRing.xcworkspace does not exist at SmartRingExpoApp/ios/SmartRing.xcworkspace"
+- All four xcodebuild path args must be absolute: `-workspace`, `-archivePath`, `-exportPath`, `-exportOptionsPlist`
+
+---
+
 ## 2026-03-19: Remote Push Notifications via Expo Push API
 
 **Change:** Added full remote push infrastructure — device registers for an Expo push token on first authenticated launch and saves it to Supabase, a deployed Edge Function accepts manual or server-triggered pushes, and `_layout.tsx` handles notification taps to deeplink into any sub-tab (including when app is killed).

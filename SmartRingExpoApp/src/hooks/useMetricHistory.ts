@@ -11,9 +11,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import i18next from 'i18next';
 import { supabase } from '../services/SupabaseService';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
-import JstyleService from '../services/JstyleService';
 import { calculateSleepScore } from '../utils/ringData/sleep';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -507,7 +507,7 @@ async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
 async function fetchHRVFromRing(): Promise<Map<string, DayHRVData>> {
   const map = new Map<string, DayHRVData>();
   try {
-    const records = await JstyleService.getHRVDataNormalized();
+    const records = await UnifiedSmartRingService.getHRVDataNormalizedArray();
     for (const r of records) {
       if (!r.timestamp) continue;
       const dateKey = toDateStr(new Date(r.timestamp));
@@ -531,7 +531,7 @@ async function fetchHRVFromRing(): Promise<Map<string, DayHRVData>> {
 async function fetchSpO2FromRing(): Promise<Map<string, DaySpO2Data>> {
   const map = new Map<string, DaySpO2Data>();
   try {
-    const records = await JstyleService.getSpO2DataNormalized();
+    const records = await UnifiedSmartRingService.getSpO2DataNormalizedArray();
     const byDate = new Map<string, Array<{ value: number; recordedAt: Date }>>();
     for (const r of records) {
       const dateKey = toDateStr(new Date(r.timestamp));
@@ -558,7 +558,7 @@ async function fetchSpO2FromRing(): Promise<Map<string, DaySpO2Data>> {
 async function fetchTemperatureFromRing(): Promise<Map<string, DayTemperatureData>> {
   const map = new Map<string, DayTemperatureData>();
   try {
-    const records = await JstyleService.getTemperatureDataNormalized();
+    const records = await UnifiedSmartRingService.getTemperatureDataNormalizedArray();
     const byDate = new Map<string, Array<{ value: number; recordedAt: Date }>>();
     for (const r of records) {
       const dateKey = toDateStr(new Date(r.timestamp));
@@ -691,9 +691,9 @@ export function buildDayNavigatorLabels(count = 7): Array<{ label: string; dateK
     const d = nDaysAgo(i);
     const dateKey = toDateStr(d);
     let label: string;
-    if (i === 0) label = 'Today';
-    else if (i === 1) label = 'Yesterday';
-    else label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (i === 0) label = i18next.t('health.today');
+    else if (i === 1) label = i18next.t('health.yesterday');
+    else label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     result.push({ label, dateKey });
   }
   return result;

@@ -606,6 +606,30 @@ class StravaService {
   }
 
   // ============================================
+  // BACKGROUND SYNC (fire-and-forget from app load)
+  // ============================================
+
+  /**
+   * Load tokens + sync recent activities in one call.
+   * Safe to call fire-and-forget — never throws, logs errors internally.
+   * Returns quickly if user has no Strava connection.
+   */
+  async backgroundSync(days: number = 7): Promise<{ success: boolean; count: number }> {
+    try {
+      if (!this._isConnected) {
+        await this.loadTokensFromDatabase();
+      }
+      if (!this._isConnected) {
+        return { success: false, count: 0 };
+      }
+      return await this.syncActivitiesToSupabase(days);
+    } catch (error) {
+      console.log('[StravaService] backgroundSync error (non-fatal):', error);
+      return { success: false, count: 0 };
+    }
+  }
+
+  // ============================================
   // RELOAD (after auth state change)
   // ============================================
 

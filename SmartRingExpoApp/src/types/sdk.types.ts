@@ -1,5 +1,7 @@
 // Smart Ring SDK Type Definitions
 
+export type DeviceType = 'ring' | 'band';
+
 export interface DeviceInfo {
   id: string;
   mac: string;
@@ -8,7 +10,8 @@ export interface DeviceInfo {
   rssi: number;
   ver?: string;
   isConnected?: boolean;
-  sdkType?: 'jstyle'; // Which SDK this device uses
+  sdkType?: 'jstyle' | 'v8'; // Which SDK this device uses
+  deviceType?: DeviceType;     // Form factor: ring or band
 }
 
 export interface StepsData {
@@ -155,6 +158,20 @@ export enum SportType {
   Yoga = 5,
   Gym = 6,
   Other = 7,
+  // V8 band additional modes
+  Badminton = 8,
+  Football = 9,
+  Tennis = 10,
+  Breath = 11,
+  Dance = 12,
+  Basketball = 13,
+  Workout = 14,
+  Cricket = 15,
+  Aerobics = 16,
+  PingPong = 17,
+  RopeJump = 18,
+  SitUps = 19,
+  Volleyball = 20,
 }
 
 export interface FirmwareInfo {

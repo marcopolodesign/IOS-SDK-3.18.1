@@ -16,6 +16,7 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
+import { useBaselineMode } from '../../context/BaselineModeContext';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -51,6 +52,7 @@ const TIP_CARD_WIDTH = Dimensions.get('window').width * 0.75;
 export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd, isActive = false }: SleepTabProps) {
   const homeData = useHomeDataContext();
   const { t } = useTranslation();
+  const baseline = useBaselineMode();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshCount, setRefreshCount] = React.useState(0);
 
@@ -82,12 +84,12 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
     if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [isActive]);
 
-  const sleepMessage = getSleepMessage(homeData.sleepScore);
+  const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
   const sleepInsight =
     homeData.insightType === 'sleep'
       ? homeData.insight
-      : 'Your deep sleep was above average last night. Deep sleep is crucial for physical recovery and memory consolidation.';
+      : t('sleep.insight_default');
 
   const tips = useMemo(() => {
     if (sleep.score >= 70) {
@@ -141,31 +143,45 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         </View>
       )}
 
-      {/* Sleep Score Gauge */}
-      <View style={styles.gaugeSection}>
-        <SemiCircularGauge
-          score={sleep.score}
-          label={t('sleep.last_night')}
-          animated={!homeData.isLoading}
-        />
-        <View style={styles.gaugeInfoBtn}>
-          <InfoButton metricKey="sleep_score" />
+      {/* Sleep Score Gauge — or baseline pill */}
+      {baseline.isInBaselineMode && !baseline.metrics.sleep.ready ? (
+        <View style={styles.baselineBanner}>
+          <View style={styles.baselinePill}>
+            <Text style={styles.baselinePillText}>
+              {t('baseline.sleep_tracking', { current: baseline.metrics.sleep.current, required: baseline.metrics.sleep.required })}
+            </Text>
+          </View>
+          <Text style={styles.baselineBannerText}>{t('baseline.sleep_subtitle')}</Text>
         </View>
-        <Text style={styles.scoreMessage}>{sleepMessage}</Text>
-      </View>
+      ) : (
+        <>
+          <View style={styles.gaugeSection}>
+            <SemiCircularGauge
+              score={sleep.score}
+              label={t('sleep.last_night')}
+              animated={!homeData.isLoading}
+            />
+            <View style={styles.gaugeInfoBtn}>
+              <InfoButton metricKey="sleep_score" />
+            </View>
+          </View>
 
-      {/* Metrics + Insight Card */}
-      <View style={styles.metricsInsightSection}>
-        <MetricInsightCard
-          metrics={[
-            { label: t('sleep.time_asleep'), value: sleep.timeAsleep || '--' },
-            { label: t('sleep.resting_hr'), value: sleep.restingHR || '--' },
-            { label: 'Resp', value: sleep.respiratoryRate || '--' },
-          ]}
-          insight={sleepInsight}
-          backgroundImage={require('../../assets/backgrounds/insights/violet-insight.jpg')}
-        />
-      </View>
+          {/* Metrics + Insight Card */}
+          <View style={styles.metricsInsightSection}>
+            <MetricInsightCard
+              metrics={[
+                { label: t('sleep.time_asleep'), value: sleep.timeAsleep || '--' },
+                { label: t('sleep.resting_hr'), value: sleep.restingHR || '--' },
+                { label: t('sleep.deep'), value: (() => {
+                  const deepMin = sleep.segments.filter(s => s.stage === 'deep').reduce((sum, s) => sum + Math.round((s.endTime.getTime() - s.startTime.getTime()) / 60000), 0);
+                  return deepMin > 0 ? `${Math.floor(deepMin / 60)}h ${deepMin % 60}m` : '--';
+                })() },
+              ]}
+              insight={[sleepMessage, sleepInsight].filter(Boolean).join(' ')}
+            />
+          </View>
+        </>
+      )}
 
       {/* Sleep Stats
       <View style={styles.statsSection}>
@@ -386,7 +402,7 @@ const styles = StyleSheet.create({
   },
   gaugeSection: {
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
   },
   gaugeInfoBtn: {
     position: 'absolute',
@@ -554,6 +570,33 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)',
     fontSize: fontSize.xs,
     fontFamily: fontFamily.regular,
+  },
+  baselineBanner: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  baselinePill: {
+    backgroundColor: 'rgba(0,212,170,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,170,0.2)',
+    marginBottom: 10,
+  },
+  baselinePillText: {
+    color: '#00D4AA',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+  },
+  baselineBannerText: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 

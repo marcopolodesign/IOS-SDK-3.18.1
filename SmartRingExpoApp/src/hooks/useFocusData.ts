@@ -58,12 +58,6 @@ export function useFocusData(): FocusState {
     setIsLoading(true);
     setError(null);
 
-    // Always load baselines first — local read, needed for recovery timeline card
-    try {
-      const earlyBaselines = await loadBaselines();
-      setBaselines(earlyBaselines);
-    } catch {}
-
     try {
       // 1. Try cache for instant render
       if (!skipCache) {
@@ -82,22 +76,24 @@ export function useFocusData(): FocusState {
         } catch {}
       }
 
-      // 2. Get auth user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // 2. Get auth user + load baselines in parallel
+      const [earlyBaselines, { data: { user } }] = await Promise.all([
+        loadBaselines(),
+        supabase.auth.getUser(),
+      ]);
+      setBaselines(earlyBaselines);
       if (!user) {
         setIsLoading(false);
         return;
       }
       const userId = user.id;
 
-      // 3. Load baselines — bootstrap from history on first ever load
-      let storedBaselines = await loadBaselines();
+      // 3. Bootstrap baselines from history on first ever load
+      let storedBaselines = earlyBaselines;
       if (storedBaselines.daysLogged === 0 && storedBaselines.updatedAt === null) {
         storedBaselines = await bootstrapBaselinesFromSupabase(userId);
+        setBaselines(storedBaselines);
       }
-      setBaselines(storedBaselines);
 
       // 4. Fetch today's metrics from Supabase using recorded_at / start_time
       const { start: todayStart, end: todayEnd } = todayRange();
@@ -222,7 +218,7 @@ export function useFocusData(): FocusState {
 
   useFocusEffect(
     useCallback(() => {
-      load(true);
+      load();
     }, [load])
   );
 

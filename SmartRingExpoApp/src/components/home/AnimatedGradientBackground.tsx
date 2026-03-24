@@ -21,7 +21,6 @@ const overviewVariants = {
 const backgroundImages: Record<TabType, any> = {
   overview: overviewVariants.mid, // default fallback
   sleep: require('../../assets/backgrounds/sleep.jpg'),
-  nutrition: require('../../assets/backgrounds/nutrition.jpg'),
   activity: require('../../assets/backgrounds/activity.jpg'),
 };
 
@@ -34,7 +33,6 @@ const backgroundsToPrefetch = Array.from(
 const fallbackColors: Record<TabType, string> = {
   overview: '#1a1a2e',
   sleep: '#200C77',
-  nutrition: '#2D0015',
   activity: '#1a0a00',
 };
 

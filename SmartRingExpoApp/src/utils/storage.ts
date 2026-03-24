@@ -6,7 +6,14 @@ export const STORAGE_KEYS = {
   DEVICE_CONNECTED: '@device_connected',
   PAIRED_DEVICE_MAC: '@paired_device_mac',
   BATTERY_ALERTS_SHOWN: '@battery_alerts_shown',
+  FIRMWARE_UPDATE_DISMISSED_AT: '@firmware_update_dismissed_at',
+  // Multi-device support
+  PAIRED_RING_DEVICE: '@paired_ring_device',
+  PAIRED_BAND_DEVICE: '@paired_band_device',
+  ACTIVE_DEVICE_TYPE: '@active_device_type',
 } as const;
+
+export const FIRMWARE_UPDATE_DISMISSED_AT = '@firmware_update_dismissed_at';
 
 export const OnboardingStorage = {
   async getOnboardingComplete(): Promise<boolean> {

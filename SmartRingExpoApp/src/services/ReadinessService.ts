@@ -215,19 +215,20 @@ async function scoreTrainingLoadComponent(userId: string): Promise<number | null
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
     const twentyEightDaysAgo = new Date(now.getTime() - 28 * 24 * 3600 * 1000).toISOString();
 
-    const { data: recent } = await supabase
-      .from('strava_activities')
-      .select('moving_time_sec, start_date')
-      .eq('user_id', userId)
-      .gte('start_date', sevenDaysAgo)
-      .in('sport_type', ['Run', 'TrailRun', 'Hike', 'Ride']);
-
-    const { data: chronic } = await supabase
-      .from('strava_activities')
-      .select('moving_time_sec, start_date')
-      .eq('user_id', userId)
-      .gte('start_date', twentyEightDaysAgo)
-      .in('sport_type', ['Run', 'TrailRun', 'Hike', 'Ride']);
+    const [{ data: recent }, { data: chronic }] = await Promise.all([
+      supabase
+        .from('strava_activities')
+        .select('moving_time_sec, start_date')
+        .eq('user_id', userId)
+        .gte('start_date', sevenDaysAgo)
+        .in('sport_type', ['Run', 'TrailRun', 'Hike', 'Ride']),
+      supabase
+        .from('strava_activities')
+        .select('moving_time_sec, start_date')
+        .eq('user_id', userId)
+        .gte('start_date', twentyEightDaysAgo)
+        .in('sport_type', ['Run', 'TrailRun', 'Hike', 'Ride']),
+    ]);
 
     if (!recent || !chronic || chronic.length === 0) return null;
 
@@ -475,23 +476,24 @@ export async function computeLastRunContext(
       new Date(runDate + 'T00:00:00Z').getTime() + 24 * 60 * 60 * 1000
     ).toISOString();
 
-    const { data: hrvData } = await supabase
-      .from('hrv_readings')
-      .select('sdnn')
-      .eq('user_id', userId)
-      .gte('recorded_at', runDayStart)
-      .lt('recorded_at', runDayEnd)
-      .order('recorded_at', { ascending: false })
-      .limit(1);
-
-    const { data: sleepData } = await supabase
-      .from('sleep_sessions')
-      .select('sleep_score')
-      .eq('user_id', userId)
-      .gte('start_time', runDayStart)
-      .lt('start_time', runDayEnd)
-      .order('start_time', { ascending: false })
-      .limit(1);
+    const [{ data: hrvData }, { data: sleepData }] = await Promise.all([
+      supabase
+        .from('hrv_readings')
+        .select('sdnn')
+        .eq('user_id', userId)
+        .gte('recorded_at', runDayStart)
+        .lt('recorded_at', runDayEnd)
+        .order('recorded_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('sleep_sessions')
+        .select('sleep_score')
+        .eq('user_id', userId)
+        .gte('start_time', runDayStart)
+        .lt('start_time', runDayEnd)
+        .order('start_time', { ascending: false })
+        .limit(1),
+    ]);
 
     const runHrv = hrvData?.[0]?.sdnn ?? null;
     const runSleepScore = sleepData?.[0]?.sleep_score ?? null;

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UnifiedSmartRingService from './UnifiedSmartRingService';
-import JstyleService from './JstyleService';
 
 export type TodayCardHydrationReason =
   | 'initial'
@@ -108,14 +107,14 @@ class TodayCardVitalsService {
     return merged;
   }
 
-  private async fetchJstyleVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
+  private async fetchDeviceVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
     const partial: Partial<TodayVitals> = {};
     const wantsTemperature = missing.includes('temperatureC');
     const wantsSpo2 = missing.includes('minSpo2') || missing.includes('lastSpo2');
 
     if (wantsTemperature) {
       try {
-        const tempData = await JstyleService.getTemperatureDataNormalized();
+        const tempData = await UnifiedSmartRingService.getTemperatureDataNormalizedArray();
         const validTemps = tempData
           .map(item => Number(item.temperature))
           .filter(isValidTemperature);
@@ -123,13 +122,13 @@ class TodayCardVitalsService {
           partial.temperatureC = validTemps[validTemps.length - 1];
         }
       } catch (error) {
-        console.log('[TodayCardVitalsService] jstyle temperature fetch failed:', error);
+        console.log('[TodayCardVitalsService] temperature fetch failed:', error);
       }
     }
 
     if (wantsSpo2) {
       try {
-        const rawSpo2 = await JstyleService.getSpO2Data();
+        const rawSpo2 = await UnifiedSmartRingService.getSpO2DataRaw();
         const values: number[] = [];
         for (const rec of rawSpo2.records || []) {
           const entries: any[] = Array.isArray(rec.arrayAutomaticSpo2Data) ? rec.arrayAutomaticSpo2Data : [];
@@ -143,7 +142,7 @@ class TodayCardVitalsService {
           partial.lastSpo2 = values[values.length - 1];
         }
       } catch (error) {
-        console.log('[TodayCardVitalsService] jstyle spo2 fetch failed:', error);
+        console.log('[TodayCardVitalsService] spo2 fetch failed:', error);
       }
     }
 
@@ -151,20 +150,20 @@ class TodayCardVitalsService {
   }
 
   private async fetchRingVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
-    return this.fetchJstyleVitals(missing);
+    return this.fetchDeviceVitals(missing);
   }
 
   private async fetchMissingVitals(missing: Array<'temperatureC' | 'minSpo2' | 'lastSpo2'>): Promise<Partial<TodayVitals>> {
     const sdkType = UnifiedSmartRingService.getConnectedSDKType();
-    if (sdkType === 'jstyle') return this.fetchJstyleVitals(missing);
+    if (sdkType !== 'none') return this.fetchDeviceVitals(missing);
 
     try {
-      const jstyleStatus = await JstyleService.isConnected();
-      if (jstyleStatus.connected) {
-        return this.fetchJstyleVitals(missing);
+      const status = await UnifiedSmartRingService.isConnected();
+      if (status.connected) {
+        return this.fetchDeviceVitals(missing);
       }
     } catch (error) {
-      console.log('[TodayCardVitalsService] jstyle status check failed:', error);
+      console.log('[TodayCardVitalsService] connection status check failed:', error);
     }
 
     return {};

@@ -17,8 +17,10 @@ export default function OnboardingLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="device-select" />
       <Stack.Screen name="connect" />
       <Stack.Screen name="success" />
+      <Stack.Screen name="integrations" />
     </Stack>
   );
 }

@@ -41,6 +41,13 @@ export const DevicesScreen: React.FC<DevicesScreenProps> = ({ onDeviceConnected 
     }
   }, [isConnected, onDeviceConnected]);
 
+  // Stop scan early once a device is found during a manual re-scan.
+  useEffect(() => {
+    if (devices.length > 0 && isScanning) {
+      stopScan();
+    }
+  }, [devices, isScanning]);
+
   const handleScan = async () => {
     await scan(15);
   };
@@ -122,7 +129,7 @@ export const DevicesScreen: React.FC<DevicesScreenProps> = ({ onDeviceConnected 
               <Text style={styles.emptyIcon}>📡</Text>
               <Text style={styles.emptyTitle}>No devices found</Text>
               <Text style={styles.emptyText}>
-                Pull down to scan for nearby Smart Ring devices
+                Pull down to scan for nearby Focus devices
               </Text>
             </View>
           ) : (
@@ -159,10 +166,10 @@ export const DevicesScreen: React.FC<DevicesScreenProps> = ({ onDeviceConnected 
         <View style={styles.helpSection}>
           <Text style={styles.helpTitle}>Troubleshooting</Text>
           <Text style={styles.helpText}>
-            • Make sure your Smart Ring is charged{'\n'}
-            • Keep the ring close to your phone{'\n'}
+            • Make sure your Focus device is charged{'\n'}
+            • Keep the device close to your phone{'\n'}
             • Ensure Bluetooth is enabled{'\n'}
-            • Try restarting the ring if not detected
+            • Try restarting the device if not detected
           </Text>
         </View>
       </ScrollView>

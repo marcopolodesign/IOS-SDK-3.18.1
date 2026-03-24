@@ -16,13 +16,13 @@ import { BlurView } from 'expo-blur';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
-import type { TimelineEntry, RecoverySubtype, MealSubtype } from '../../types/timeline.types';
+import type { TimelineEntry, RecoverySubtype } from '../../types/timeline.types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface LogEntrySheetProps {
   visible: boolean;
-  mode: 'recovery' | 'meal' | 'activity' | null;
+  mode: 'recovery' | 'activity' | null;
   onClose: () => void;
   onSave: (entry: Omit<TimelineEntry, 'id'>) => void;
 }
@@ -90,10 +90,6 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
   const [recoveryTime, setRecoveryTime] = useState(nowHHMM());
   const [recoveryDuration, setRecoveryDuration] = useState('');
 
-  // Meal state
-  const [mealSubtype, setMealSubtype] = useState<MealSubtype>('breakfast');
-  const [mealTime, setMealTime] = useState(nowHHMM());
-
   // Activity state
   const [activityName, setActivityName] = useState('');
   const [activityTime, setActivityTime] = useState(nowHHMM());
@@ -104,7 +100,6 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
       // Reset time fields to current time on open
       const now = nowHHMM();
       setRecoveryTime(now);
-      setMealTime(now);
       setActivityTime(now);
       Animated.spring(slideAnim, {
         toValue: 0,
@@ -142,20 +137,6 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
         startTime: startMs,
         endTime: durationMs > 0 ? startMs + durationMs : undefined,
       });
-    } else if (mode === 'meal') {
-      const subtypeLabels: Record<MealSubtype, string> = {
-        breakfast: t('log_entry.subtype_breakfast'),
-        lunch: t('log_entry.subtype_lunch'),
-        dinner: t('log_entry.subtype_dinner'),
-        snack: t('log_entry.subtype_snack'),
-      };
-      onSave({
-        date,
-        type: 'meal',
-        subtype: mealSubtype,
-        title: subtypeLabels[mealSubtype],
-        startTime: parseTimeToMs(mealTime),
-      });
     } else if (mode === 'activity') {
       const startMs = parseTimeToMs(activityTime);
       const durationMs = activityDuration
@@ -172,9 +153,9 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
     }
 
     onClose();
-  }, [mode, recoverySubtype, recoveryTime, recoveryDuration, mealSubtype, mealTime, activityName, activityTime, activityDuration, onSave, onClose]);
+  }, [mode, recoverySubtype, recoveryTime, recoveryDuration, activityName, activityTime, activityDuration, onSave, onClose]);
 
-  const modeTitle = mode === 'recovery' ? t('log_entry.header_recovery') : mode === 'meal' ? t('log_entry.header_meal') : t('log_entry.header_activity');
+  const modeTitle = mode === 'recovery' ? t('log_entry.header_recovery') : t('log_entry.header_activity');
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -245,38 +226,6 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
                     placeholder={t('log_entry.duration_placeholder')}
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardType="number-pad"
-                    keyboardAppearance="dark"
-                  />
-                </>
-              )}
-
-              {mode === 'meal' && (
-                <>
-                  <FieldLabel>{t('log_entry.meal_label')}</FieldLabel>
-                  <View style={styles.chipRow}>
-                    {(['breakfast', 'lunch', 'dinner', 'snack'] as MealSubtype[]).map((sub) => (
-                      <Chip
-                        key={sub}
-                        label={
-                          sub === 'breakfast' ? t('log_entry.subtype_breakfast') :
-                          sub === 'lunch' ? t('log_entry.subtype_lunch') :
-                          sub === 'dinner' ? t('log_entry.subtype_dinner') :
-                          t('log_entry.subtype_snack')
-                        }
-                        selected={mealSubtype === sub}
-                        onPress={() => setMealSubtype(sub)}
-                      />
-                    ))}
-                  </View>
-
-                  <FieldLabel>{t('log_entry.time_label')}</FieldLabel>
-                  <TextInput
-                    style={styles.input}
-                    value={mealTime}
-                    onChangeText={setMealTime}
-                    placeholder={t('log_entry.time_placeholder')}
-                    placeholderTextColor="rgba(255,255,255,0.3)"
-                    keyboardType="numbers-and-punctuation"
                     keyboardAppearance="dark"
                   />
                 </>

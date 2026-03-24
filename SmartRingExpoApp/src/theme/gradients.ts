@@ -1,7 +1,7 @@
 // Gradient definitions for each tab
 // Based on Figma Focus design
 
-export type TabType = 'overview' | 'sleep' | 'nutrition' | 'activity';
+export type TabType = 'overview' | 'sleep' | 'activity';
 
 export interface GradientConfig {
   colors: string[];
@@ -27,13 +27,6 @@ export const gradients: Record<TabType, GradientConfig> = {
     center: { x: 0.8794, y: 0.5504 },
     radius: { width: 0.2862, height: 0.4522 },
   },
-  nutrition: {
-    // Maroon theme - similar structure to sleep
-    colors: ['#000000', '#8B0000', '#4A0020', '#2D0015'],
-    locations: [0.3, 0.55, 0.75, 1.0],
-    center: { x: 0.5, y: 0.3 },
-    radius: { width: 0.6, height: 0.8 },
-  },
   activity: {
     // Orange/red theme - energetic gradient
     colors: ['#000000', '#FF4500', '#FF6B35', '#FFD700'],
@@ -55,11 +48,6 @@ export const linearGradients: Record<TabType, { colors: string[]; start: { x: nu
     start: { x: 1, y: 0 },
     end: { x: 0, y: 1 },
   },
-  nutrition: {
-    colors: ['#8B0000', '#4A0020', '#000000'],
-    start: { x: 0.5, y: 0 },
-    end: { x: 0.5, y: 1 },
-  },
   activity: {
     colors: ['#FFD700', '#FF6B35', '#FF4500', '#000000'],
     start: { x: 1, y: 0 },
@@ -76,11 +64,6 @@ export const insightColors = {
   },
   activity: {
     background: ['#FF6B35', '#FF4500'],
-    text: '#FFFFFF',
-    icon: '#FFFFFF',
-  },
-  nutrition: {
-    background: ['#8B0000', '#4A0020'],
     text: '#FFFFFF',
     icon: '#FFFFFF',
   },

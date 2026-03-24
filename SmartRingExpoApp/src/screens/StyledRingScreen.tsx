@@ -903,7 +903,7 @@ export function StyledRingScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Smart Ring</Text>
+          <Text style={styles.headerTitle}>Focus</Text>
           <StatusBadge connected={isConnected} />
         </View>
 
@@ -931,7 +931,7 @@ export function StyledRingScreen() {
                   {/* Connected Ring Card */}
                   <GlassCard style={styles.ringCard}>
                     <RingIcon size={100} battery={battery ?? undefined} />
-                    <Text style={styles.ringName}>{connectedDevice.name || 'Smart Ring'}</Text>
+                    <Text style={styles.ringName}>{connectedDevice.name || 'Focus Ring'}</Text>
                     <Text style={styles.ringMac}>{connectedDevice.mac || pairedDeviceMac || 'Unknown'}</Text>
                     
                     <TouchableOpacity style={styles.disconnectButton} onPress={disconnect}>
@@ -1051,7 +1051,7 @@ export function StyledRingScreen() {
                 <RingIcon size={120} />
                 <Text style={styles.connectTitle}>Connect Your Ring</Text>
                 <Text style={styles.connectDescription}>
-                  Tap the button below to scan for nearby Smart Ring devices
+                  Tap the button below to scan for nearby Focus devices
                 </Text>
                 
                 <TouchableOpacity 
@@ -1105,7 +1105,7 @@ export function StyledRingScreen() {
               <GlassCard style={styles.helpCard}>
                 <Text style={styles.helpTitle}>Troubleshooting</Text>
                 <Text style={styles.helpText}>
-                  • Make sure your Smart Ring is charged{'\n'}
+                  • Make sure your Focus ring is charged{'\n'}
                   • Keep the ring close to your phone{'\n'}
                   • Ensure Bluetooth is enabled{'\n'}
                   • Try restarting the ring if not detected

@@ -166,7 +166,7 @@ export function SemiCircularGauge({
         </View>
 
         {/* Min/Max labels */}
-        <View style={[styles.minMaxContainer, { width: size / 2 + 100 }]}>
+        <View style={[styles.minMaxContainer, { width: size / 1.2 + 100 }]}>
           <Text style={styles.minMaxText}>0</Text>
           <Text style={styles.minMaxText}>100</Text>
         </View>
@@ -194,6 +194,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -10,
   },
   scoreRow: {
     flexDirection: 'row',
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
   },
   scoreText: {
     color: '#FFFFFF',
-    fontSize: 72,
+    fontSize: 109,
     fontFamily: fontFamily.regular,
   },
   percentText: {

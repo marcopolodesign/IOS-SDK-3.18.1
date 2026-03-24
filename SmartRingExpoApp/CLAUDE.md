@@ -4,6 +4,12 @@ This document provides context for Claude Code when working on this Expo/React N
 
 > **📝 MANDATORY:** After completing ANY implementation (feature, fix, refactor — anything that changes code), you MUST automatically update `catchup.md` with a concise entry of what was implemented. Do NOT ask the user — just do it. Also add a summary to the "Recent Changes" section below. This is non-negotiable and applies to every task, including plans that were executed.
 
+> **🔍 MANDATORY — Code Quality Gate:** After completing a code-changing task, review for reuse, quality, and efficiency before updating catchup.md.
+> - **Small changes (1-2 files):** Do a quick inline review yourself — check for duplicated utilities, unused imports, missing cleanup. No agent needed.
+> - **Large changes (3+ files):** Run `/simplify` which spawns a single Sonnet reviewer agent.
+> - The flow is: **implement → review/simplify → catchup.md**
+> - Do NOT skip the review. Do NOT ask the user. Just do it.
+
 ## Project Overview
 
 Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring via the **Jstyle/X3 SDK only**.
@@ -20,6 +26,21 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 ## SDK Reference Rule
 
 > **IMPORTANT:** When implementing SDK features, fixing data issues, or adding new ring data types, **ALWAYS check the X3 demo project** at `IOS (X3)/Ble SDK Demo/` and the native bridge files at `ios/JstyleBridge/` for reference implementation patterns before writing code. The demo project contains working examples for all data types (sleep, steps, heart rate, HRV, SpO2, temperature, battery).
+
+## Figma
+
+> **IMPORTANT:** When implementing UI from Figma, always use the **Figma MCP** (`claude.ai Figma` / `mcp__claude_ai_Figma__*`) tools — NOT any other Figma integration. Use `get_design_context` with the fileKey and nodeId extracted from the Figma URL.
+
+## Animations
+
+> **IMPORTANT:** For stagger/entrance animations, use `react-native-reanimated` — NOT RN's built-in `Animated` API. Follow this pattern (see `connect.tsx` welcome screen as reference):
+> - `useSharedValue` for opacity (0→1) and translateY (80→0)
+> - `useAnimatedStyle` to create animated style objects
+> - `withDelay` + `withTiming` for staggered entrances
+> - Easing: `Easing.bezier(0.4, 0, 0, 1)` (custom bezier)
+> - Duration: 600ms
+> - Stagger delays: 200ms, 225ms, 235ms (tight stagger)
+> - Use `Reanimated.Text`, `Reanimated.View` (default export from `react-native-reanimated`)
 
 ## Design Conventions
 
@@ -54,6 +75,21 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 - Types: `camelCase.types.ts` in `src/types/`
 - Migrations: `YYYYMMDD_description.sql` in `supabase/migrations/`
 
+## TestFlight / xcodebuild Rule
+
+> **RECURRING BUG:** `xcodebuild` fails with "Workspace SmartRing.xcworkspace does not exist at SmartRingExpoApp/ios/SmartRing.xcworkspace". **Root cause:** Xcode's Organizer window stays open in the background and re-triggers an archive using a relative path whenever a new archive lands. **Fix: always run `killall Xcode 2>/dev/null || true` before any xcodebuild archive command.**
+>
+> Additionally, **always use absolute paths** for `-workspace`, `-archivePath`, `-exportPath`, and `-exportOptionsPlist`. Never use relative paths with xcodebuild.
+>
+> Correct pre-archive sequence (always):
+> ```bash
+> killall Xcode 2>/dev/null || true
+> xcodebuild \
+>   -workspace /Users/mataldao/Local/Focus/SmartRingExpoApp/ios/SmartRing.xcworkspace \
+>   -archivePath /Users/mataldao/Local/Focus/SmartRingExpoApp/ios/build/SmartRing.xcarchive \
+>   ...
+> ```
+
 ## Native Rebuild Rule
 
 > After ANY change to files in `ios/JstyleBridge/`, `ios/SmartRing/`, `ios/Podfile`, or native plugins in `app.json`: notify the user that a native rebuild is needed, then automatically run `open ios/SmartRing.xcworkspace` to open Xcode. Hot reload does NOT pick up native changes.
@@ -67,6 +103,13 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 - **Explain changes from a frontend perspective.** When summarizing what was done, describe the user-visible result (what the user will see, how the UI behaves) — not just which files or functions changed.
 
 ## Recent Changes
+
+### 2026-03-22: Apple Health Full Rewrite (New Architecture)
+
+**Implemented:** Replaced `react-native-health` with `@kingstinct/react-native-healthkit` v13 (Nitro Modules). Modular sub-services: HealthKitPermissions, HealthKitDataFetchers, HealthKitSleepProcessor, HealthKitSubscriptions. Fixed onboarding connect, redesigned Apple Health screen (glassmorphism + i18n), added HealthKit fallback in useHomeData when ring disconnected. Code quality pass via `/simplify` fixed 8 issues.
+
+**Files created:** `src/services/HealthKit/` (4 sub-services), `app/(tabs)/settings/apple-health.tsx`, `.claude/agents/` (4 agents)
+**Files modified:** `app.config.js`, `package.json`, `HealthKitService.ts`, `useHealthKit.ts`, `AppleHealthScreen.tsx`, `integrations.tsx`, `SettingsScreen.tsx`, `useHomeData.ts`, `en.json`, `es.json`, `CLAUDE.md`
 
 ### 2026-03-05: Full App i18n Translation Pass
 

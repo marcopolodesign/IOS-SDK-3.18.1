@@ -22,6 +22,7 @@ import { useOnboarding } from '../context/OnboardingContext';
 import { useLanguage } from '../hooks/useLanguage';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import { stravaService } from '../services/StravaService';
+import HealthKitService from '../services/HealthKitService';
 
 interface SettingsScreenProps {}
 
@@ -42,6 +43,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const [is24Hour, setIs24Hour] = useState(true);
   const [isMetric, setIsMetric] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [healthConnected, setHealthConnected] = useState(false);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -65,6 +67,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       if (!isConnected) return;
       void loadSettings();
     }, [isConnected, loadSettings])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      HealthKitService.isConnected().then(setHealthConnected);
+    }, [])
   );
 
   const handleSaveProfile = async () => {
@@ -218,13 +226,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('profile.sections.account')}</Text>
             <View style={styles.glassCard}>
-              <View style={[styles.glassRow, styles.glassRowFirst]}>
+              <TouchableOpacity
+                style={[styles.glassRow, styles.glassRowFirst]}
+                onPress={() => router.push('/(tabs)/settings/strava')}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.rowLabel}>{t('profile.account.strava')}</Text>
-                <Text style={[styles.rowValue, stravaService.isConnected && styles.rowValueConnected]}>
-                  {stravaService.isConnected ? t('profile.account.connected') : t('profile.account.not_connected')}
-                </Text>
-              </View>
-              <View style={styles.glassRow}>
+                <View style={styles.accountRowRight}>
+                  <Text style={[styles.rowValue, stravaService.isConnected && styles.rowValueConnected]}>
+                    {stravaService.isConnected ? t('profile.account.connected') : t('profile.account.not_connected')}
+                  </Text>
+                  <ChevronIcon />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.glassRow}
+                onPress={() => router.push('/(tabs)/settings/apple-health')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.rowLabel}>{t('profile.account.apple_health')}</Text>
+                <View style={styles.accountRowRight}>
+                  <Text style={[styles.rowValue, healthConnected && styles.rowValueConnected]}>
+                    {healthConnected ? t('profile.account.connected') : t('profile.account.not_connected')}
+                  </Text>
+                  <ChevronIcon />
+                </View>
+              </TouchableOpacity>
+              <View style={[styles.glassRow, styles.glassRowLast, { borderBottomWidth: 0 }]}>
                 <Text style={styles.rowLabel}>{t('profile.account.smart_ring')}</Text>
                 <Text style={[styles.rowValue, isConnected && styles.rowValueConnected]}>
                   {isConnected ? t('profile.account.connected') : t('profile.account.not_connected')}
@@ -605,6 +633,11 @@ const styles = StyleSheet.create({
   },
   rowValueConnected: {
     color: colors.success,
+  },
+  accountRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   rowValueMuted: {
     fontSize: fontSize.md,

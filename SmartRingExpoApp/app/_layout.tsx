@@ -1,6 +1,9 @@
 import '../src/i18n'; // i18n side-effect init — must be first
 import '../src/services/BackgroundSleepTask'; // register background fetch task — must be top-level
+import * as SplashScreen from 'expo-splash-screen';
 import * as Sentry from '@sentry/react-native';
+
+SplashScreen.preventAutoHideAsync();
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
@@ -24,13 +27,14 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useFonts } from 'expo-font';
 import { useEffect } from 'react';
 import { OnboardingProvider } from '../src/context/OnboardingContext';
 import { HomeDataProvider } from '../src/context/HomeDataContext';
 import { AddOverlayProvider } from '../src/context/AddOverlayContext';
 import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
+import { BaselineModeProvider } from '../src/context/BaselineModeContext';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 function RootLayout() {
@@ -77,18 +81,29 @@ function RootLayout() {
     return () => { sub?.remove(); };
   }, []);
 
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     'TT-Interphases-Pro-Regular': require('../assets/fonts/TT_Interphases_Pro_Regular.ttf'),
     'TT-Interphases-Pro-DemiBold': require('../assets/fonts/TT_Interphases_Pro_DemiBold.ttf'),
   });
 
-  // Show loading indicator while fonts are loading
-  if (!fontsLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      if (fontError) console.warn('[RootLayout] Font loading error, proceeding anyway:', fontError);
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  // Safety timeout — never let splash hang more than 5s
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      SplashScreen.hideAsync();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Keep native splash visible while fonts load
+  if (!fontsLoaded && !fontError) {
+    return null;
   }
 
   return (
@@ -96,6 +111,7 @@ function RootLayout() {
       <BottomSheetModalProvider>
       <OnboardingProvider>
         <HomeDataProvider>
+        <BaselineModeProvider>
         <MetricExplainerProvider>
         <AddOverlayProvider>
         <StatusBar style="light" />
@@ -118,6 +134,7 @@ function RootLayout() {
         </Stack>
         </AddOverlayProvider>
         </MetricExplainerProvider>
+        </BaselineModeProvider>
         </HomeDataProvider>
       </OnboardingProvider>
       </BottomSheetModalProvider>
@@ -131,11 +148,5 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

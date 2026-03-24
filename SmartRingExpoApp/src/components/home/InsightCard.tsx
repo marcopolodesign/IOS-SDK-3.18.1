@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 
-type InsightType = 'sleep' | 'activity' | 'nutrition' | 'general';
+type InsightType = 'sleep' | 'activity' | 'general';
 
 interface InsightCardProps {
   insight: string;
@@ -30,7 +30,6 @@ function SparkleIcon() {
 const gradientColors: Record<InsightType, [string, string]> = {
   sleep: ['#6366F1', '#4F46E5'],
   activity: ['#FF6B35', '#DC2626'],
-  nutrition: ['#10B981', '#059669'],
   general: ['#3B82F6', '#1D4ED8'],
 };
 

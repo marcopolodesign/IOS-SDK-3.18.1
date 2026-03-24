@@ -2,8 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
+import Constants from 'expo-constants';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import { RingIcon, BandIcon, DeviceType } from '../../assets/icons';
+import { useBaselineMode } from '../../context/BaselineModeContext';
 
 interface HomeHeaderProps {
   userName?: string;
@@ -149,6 +151,7 @@ export function HomeHeader({
   onRefresh,
 }: HomeHeaderProps) {
   const { t } = useTranslation();
+  const { isInBaselineMode, daysWithData } = useBaselineMode();
 
   const getBatteryColor = (level: number): string => {
     if (level < 5) return '#EF4444';
@@ -180,7 +183,18 @@ export function HomeHeader({
 
         <View style={styles.greetingContainer}>
           <Text style={styles.greeting}>{getGreeting()},</Text>
-          <Text style={styles.userName}>{userName}</Text>
+          <View style={styles.userNameRow}>
+            <Text style={styles.userName}>{userName}</Text>
+            {isInBaselineMode ? (
+              <View style={styles.baselineChip}>
+                <Text style={styles.baselineChipText}>
+                  {t('baseline.header_chip', { current: Math.min(daysWithData, 3), required: 3 })}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.versionBadge}>v{Constants.expoConfig?.version ?? '—'}</Text>
+            )}
+          </View>
         </View>
       </View>
 
@@ -271,6 +285,16 @@ const styles = StyleSheet.create({
   greetingContainer: {
     gap: 2,
   },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  versionBadge: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+  },
   greeting: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: fontSize.sm,
@@ -352,6 +376,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: fontSize.sm,
     fontFamily: fontFamily.demiBold,
+  },
+  baselineChip: {
+    backgroundColor: 'rgba(0,212,170,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,170,0.2)',
+  },
+  baselineChipText: {
+    color: '#00D4AA',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.demiBold,
+    letterSpacing: 0.3,
   },
 });
 

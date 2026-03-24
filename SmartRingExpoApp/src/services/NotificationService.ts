@@ -1,17 +1,45 @@
-import * as Notifications from 'expo-notifications';
-import { Platform, NativeModules } from 'react-native';
+import { Platform, NativeModules, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './SupabaseService';
+import { registerBackgroundSleepTask } from './BackgroundSleepTask';
 
-const SLEEP_NOTIF_DATE_KEY = '@focus_sleep_notif_date_v1';
-const EXPO_PROJECT_ID = '176a7f39-858f-4c21-97c5-7714f587c179';
+async function saveTokenToSupabase(token: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { error } = await supabase.from('push_tokens').upsert(
+    { user_id: user.id, token, platform: 'ios' },
+    { onConflict: 'user_id,token' },
+  );
+
+  if (error) {
+    console.error('[PushToken] Supabase upsert failed:', error);
+    return false;
+  }
+
+  const { data: saved } = await supabase
+    .from('push_tokens')
+    .select('token')
+    .eq('token', token)
+    .single();
+
+  console.log('[PushToken] verification:', saved ? 'saved ✓' : 'not found ✗');
+  return !!saved;
+}
 
 /**
  * Request permission + get Expo push token + save it to Supabase push_tokens.
- * Safe to call on every authenticated app launch — Expo deduplications token fetches.
+ * Also registers the background sleep notification task.
+ * Lazy-loads expo-notifications to avoid native module crash in dev builds.
+ * Safe to call on every authenticated app launch.
  */
 async function setup(): Promise<void> {
   if (Platform.OS !== 'ios') return;
+  if (__DEV__) return; // ExpoPushTokenManager not registered in dev builds
+
+  // Lazy import — avoids ExpoPushTokenManager crash if native module not compiled in
+  const Notifications = await import('expo-notifications');
+  const Constants = (await import('expo-constants')).default;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let status = existing;
@@ -21,37 +49,42 @@ async function setup(): Promise<void> {
   }
   if (status !== 'granted') return;
 
-  const { data: token } = await Notifications.getExpoPushTokenAsync({
-    projectId: EXPO_PROJECT_ID,
-  });
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+  const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  console.log('[PushToken] token:', token);
 
-  await supabase.from('push_tokens').upsert(
-    { user_id: user.id, token, platform: 'ios' },
-    { onConflict: 'user_id,token' },
+  // Register background sleep notification task
+  registerBackgroundSleepTask().catch(e =>
+    console.warn('[BackgroundSleep] Registration failed:', e),
   );
+
+  const saved = await saveTokenToSupabase(token);
+  if (saved) return;
+
+  await new Promise<void>((resolve) => {
+    Alert.alert(
+      'Notifications',
+      "We couldn't enable notifications. Try again?",
+      [
+        {
+          text: 'Try Again',
+          onPress: async () => {
+            const retried = await saveTokenToSupabase(token);
+            if (!retried) {
+              Alert.alert('Notifications', 'Failed to enable notifications. You can try again later.');
+            }
+            resolve();
+          },
+        },
+        {
+          text: 'Dismiss',
+          style: 'cancel',
+          onPress: () => resolve(),
+        },
+      ],
+    );
+  });
 }
 
-/**
- * Fire the "Sleep Analysis Ready" local notification at most once per calendar day,
- * only between 4 AM and 2 PM. Called after a sync that yields valid sleep data.
- */
-async function maybeSendSleepReadyNotification(): Promise<void> {
-  if (Platform.OS !== 'ios') return;
-
-  const hour = new Date().getHours();
-  if (hour < 4 || hour >= 14) return;
-
-  const today = new Date().toDateString();
-  const lastShown = await AsyncStorage.getItem(SLEEP_NOTIF_DATE_KEY);
-  if (lastShown === today) return;
-
-  await AsyncStorage.setItem(SLEEP_NOTIF_DATE_KEY, today);
-
-  // Fire via native JstyleBridge so it works even when app is suspended
-  await NativeModules.JstyleBridge.scheduleSleepAnalysisNotification();
-}
-
-export const NotificationService = { setup, maybeSendSleepReadyNotification };
+export const NotificationService = { setup };

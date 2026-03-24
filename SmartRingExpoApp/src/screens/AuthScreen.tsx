@@ -1,38 +1,66 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
-  Dimensions,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
+  Linking,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../hooks/useLanguage';
 import { colors, spacing, borderRadius, fontSize } from '../theme/colors';
-import Svg, { Path } from 'react-native-svg';
+import BottomSheet, { BottomSheetScrollView, BottomSheetBackdrop, BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { FocusLogo } from '../components/common/FocusLogo';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width, height } = Dimensions.get('window');
-const RING_HERO = require('../../assets/images/ring-hero.png');
+const ONBOARDING_BG = require('../../assets/onboarding-bg.jpg');
+const PLACEHOLDER_COLOR = '#A5A5A5';
 
 type AuthMode = 'signIn' | 'signUp' | 'forgotPassword';
 
+const SHEET_TITLES: Record<AuthMode, string> = {
+  signIn: 'auth.button_continue_mail',
+  signUp: 'auth.title_sign_up',
+  forgotPassword: 'auth.title_forgot_password',
+};
+
+const SUBMIT_LABELS: Record<AuthMode, string> = {
+  signIn: 'auth.button_sign_in',
+  signUp: 'auth.button_sign_up',
+  forgotPassword: 'auth.button_reset',
+};
+
 export function AuthScreen() {
   const { t } = useTranslation();
-  const { signIn, signUp, signInWithGitHub, resetPassword } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
+  const { currentLanguage, changeLanguage } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const bottomSheetRef = useRef<BottomSheet>(null);
+
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openMailSheet = () => {
+    setMode('signIn');
+    setError(null);
+    setEmail('');
+    setPassword('');
+    setDisplayName('');
+    bottomSheetRef.current?.expand();
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -69,234 +97,355 @@ export function AuthScreen() {
         const result = await signUp(email, password, displayName || undefined);
         if (!result.success) {
           setError(result.error || t('auth.error_unexpected'));
-          setIsSubmitting(false);
         } else if (result.needsEmailConfirmation) {
           Alert.alert(t('auth.alert_success'), t('auth.alert_confirm_sent'));
           setMode('signIn');
-          setIsSubmitting(false);
         }
       } else {
         const result = await signIn(email, password);
         if (!result.success) {
           setError(result.error || t('auth.error_unexpected'));
-          setIsSubmitting(false);
         }
       }
     } catch (e) {
       setError(t('auth.error_unexpected'));
+    } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleGitHubSignIn = async () => {
+  const handleGoogleSignIn = async () => {
     setError(null);
     setIsSubmitting(true);
     try {
-      const result = await signInWithGitHub();
+      const result = await signInWithGoogle();
       if (!result.success) {
         setError(result.error || t('auth.error_unexpected'));
-        setIsSubmitting(false);
       }
     } catch (e) {
       setError(t('auth.error_unexpected'));
+    } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Small snap for content, large snap for keyboard
+  const snapPoints = useMemo(() => {
+    const contentSnap = mode === 'signUp' ? '52%' : mode === 'forgotPassword' ? '32%' : '42%';
+    return [contentSnap, '80%'];
+  }, [mode]);
+
+  // Snap sheet up when keyboard opens, back down when it closes
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => {
+      bottomSheetRef.current?.snapToIndex(1);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      bottomSheetRef.current?.snapToIndex(0);
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.6}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
   return (
     <View style={styles.container}>
-      {/* Ring hero */}
-      <View style={styles.heroSection}>
-        <Image source={RING_HERO} style={styles.ringImage} resizeMode="cover" />
-        <LinearGradient
-          colors={['transparent', '#000000']}
-          style={styles.heroFade}
-        />
-      </View>
-
-      {/* Brand */}
-      <View style={styles.brandSection}>
-        <Text style={styles.brandName}>{t('auth.logo_text')}</Text>
-        <Text style={styles.tagline}>{t('auth.tagline')}</Text>
-      </View>
-
-      {/* Form */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.formWrapper}
+      <ImageBackground
+        source={ONBOARDING_BG}
+        style={styles.background}
+        resizeMode="cover"
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        {/* Language toggle */}
+        <TouchableOpacity
+          style={[styles.langToggle, { top: insets.top + 12 }]}
+          onPress={() => changeLanguage(currentLanguage === 'en' ? 'es' : 'en')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.formTitle}>
-            {mode === 'signIn' && t('auth.title_sign_in')}
-            {mode === 'signUp' && t('auth.title_sign_up')}
-            {mode === 'forgotPassword' && t('auth.title_forgot_password')}
+          <Ionicons name="globe-outline" size={16} color="#fff" />
+          <Text style={styles.langToggleText}>
+            {currentLanguage.toUpperCase()}
           </Text>
+        </TouchableOpacity>
 
-          {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {mode === 'signUp' && (
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.placeholder_display_name')}
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              value={displayName}
-              onChangeText={setDisplayName}
-              autoCapitalize="words"
-            />
-          )}
-
-          <TextInput
-            style={styles.input}
-            placeholder={t('auth.placeholder_email')}
-            placeholderTextColor="rgba(255,255,255,0.3)"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-          />
-
-          {mode !== 'forgotPassword' && (
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.placeholder_password')}
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-            />
-          )}
-
-          <TouchableOpacity
-            style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-            activeOpacity={0.85}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color={colors.textInverse} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {mode === 'signIn' && t('auth.button_sign_in')}
-                {mode === 'signUp' && t('auth.button_sign_up')}
-                {mode === 'forgotPassword' && t('auth.button_reset')}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {mode !== 'forgotPassword' && (
-            <>
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>{t('auth.divider_or')}</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              <TouchableOpacity
-                style={styles.githubButton}
-                onPress={handleGitHubSignIn}
-                disabled={isSubmitting}
-                activeOpacity={0.8}
-              >
-                <Svg width={18} height={18} viewBox="0 0 24 24" fill="#fff">
-                  <Path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                </Svg>
-                <Text style={styles.githubButtonText}>{t('auth.button_github')}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Mode switcher */}
-          <View style={styles.modeSwitcher}>
-            {mode === 'signIn' && (
-              <>
-                <TouchableOpacity onPress={() => setMode('forgotPassword')}>
-                  <Text style={styles.linkText}>{t('auth.link_forgot')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setMode('signUp')}>
-                  <Text style={styles.linkText}>{t('auth.link_create')}</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            {mode === 'signUp' && (
-              <TouchableOpacity onPress={() => setMode('signIn')}>
-                <Text style={styles.linkText}>{t('auth.link_sign_in')}</Text>
-              </TouchableOpacity>
-            )}
-            {mode === 'forgotPassword' && (
-              <TouchableOpacity onPress={() => setMode('signIn')}>
-                <Text style={styles.linkText}>{t('auth.link_back')}</Text>
-              </TouchableOpacity>
-            )}
+        {/* Bottom content area */}
+        <View style={styles.bottomContent}>
+          <View style={styles.logoContainer}>
+            <FocusLogo width={200} height={79} />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity
+              style={styles.whiteButton}
+              onPress={handleGoogleSignIn}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <View style={styles.buttonRow}>
+                  <Ionicons name="logo-google" size={20} color="#000" />
+                  <Text style={styles.whiteButtonText}>
+                    {t('auth.button_continue_google')}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.whiteButton}
+              onPress={openMailSheet}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+            >
+              <View style={styles.buttonRow}>
+                <Ionicons name="mail-outline" size={20} color="#000" />
+                <Text style={styles.whiteButtonText}>
+                  {t('auth.button_continue_mail')}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.troubleText}>
+              {t('auth.login_trouble')}{' '}
+              <Text
+                style={styles.contactLink}
+                onPress={() => Linking.openURL('mailto:support@focusring.com')}
+              >
+                {t('auth.contact_us')}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      </ImageBackground>
+
+      {/* Email auth bottom sheet */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        enableDynamicSizing={false}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={styles.sheetBackground}
+        handleIndicatorStyle={styles.sheetHandle}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={10}
+        >
+          <BottomSheetScrollView
+            contentContainerStyle={styles.sheetContent}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+          >
+            <Text style={styles.sheetTitle}>
+              {t(SHEET_TITLES[mode])}
+            </Text>
+
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {mode === 'signUp' && (
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.placeholder_display_name')}
+                placeholderTextColor={PLACEHOLDER_COLOR}
+                value={displayName}
+                onChangeText={setDisplayName}
+                autoCapitalize="words"
+              />
+            )}
+
+            <TextInput
+              style={styles.input}
+              placeholder={t('auth.placeholder_email')}
+              placeholderTextColor={PLACEHOLDER_COLOR}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+            />
+
+            {mode !== 'forgotPassword' && (
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.placeholder_password')}
+                placeholderTextColor={PLACEHOLDER_COLOR}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoComplete="password"
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.submitButton, isSubmitting && styles.buttonDisabled]}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  {t(SUBMIT_LABELS[mode])}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Mode switcher */}
+            <View style={styles.modeSwitcher}>
+              {mode === 'signIn' && (
+                <>
+                  <Text style={styles.switcherText}>
+                    {t('auth.first_time')}{' '}
+                    <Text
+                      style={styles.switcherLink}
+                      onPress={() => setMode('signUp')}
+                    >
+                      {t('auth.link_create')}
+                    </Text>
+                  </Text>
+                  <TouchableOpacity onPress={() => setMode('forgotPassword')}>
+                    <Text style={styles.switcherLink}>{t('auth.link_forgot')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              {mode === 'signUp' && (
+                <Text style={styles.switcherText}>
+                  {t('auth.already_have_account')}{' '}
+                  <Text
+                    style={styles.switcherLink}
+                    onPress={() => setMode('signIn')}
+                  >
+                    {t('auth.button_sign_in')}
+                  </Text>
+                </Text>
+              )}
+              {mode === 'forgotPassword' && (
+                <TouchableOpacity onPress={() => setMode('signIn')}>
+                  <Text style={styles.switcherLink}>{t('auth.link_back')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </BottomSheetScrollView>
+        </KeyboardAvoidingView>
+      </BottomSheet>
     </View>
   );
 }
 
-const HERO_HEIGHT = height * 0.38;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#000',
   },
-  heroSection: {
-    height: HERO_HEIGHT,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  ringImage: {
+  background: {
+    flex: 1,
     width: '100%',
     height: '100%',
   },
-  heroFade: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: HERO_HEIGHT * 0.5,
-  },
-  brandSection: {
-    alignItems: 'center',
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-  },
-  brandName: {
-    fontSize: fontSize.xxxl,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -1,
-  },
-  tagline: {
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.45)',
-    marginTop: 4,
-    letterSpacing: 0.3,
-  },
-  formWrapper: {
+  bottomContent: {
     flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 60,
+    paddingHorizontal: 24,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl,
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
   },
-  formTitle: {
-    fontSize: fontSize.xl,
+  buttonsContainer: {
+    gap: 16,
+    alignItems: 'center',
+  },
+  whiteButton: {
+    backgroundColor: '#fff',
+    borderRadius: borderRadius.md,
+    paddingVertical: 20,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  whiteButtonText: {
+    color: '#000',
+    fontSize: fontSize.lg,
     fontWeight: '600',
-    color: colors.text,
-    marginBottom: spacing.lg,
+    letterSpacing: -0.32,
+  },
+  langToggle: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  langToggleText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  troubleText: {
+    color: '#ccc',
+    fontSize: 13,
+    letterSpacing: -0.26,
+    marginTop: 4,
+  },
+  contactLink: {
+    textDecorationLine: 'underline',
+  },
+  // Bottom sheet styles
+  sheetBackground: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+  },
+  sheetHandle: {
+    backgroundColor: '#D0D0D0',
+    width: 36,
+  },
+  sheetContent: {
+    paddingHorizontal: 32,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  sheetTitle: {
+    fontSize: 26,
+    fontWeight: '500',
+    color: '#000',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 21,
   },
   errorContainer: {
     backgroundColor: 'rgba(255, 107, 107, 0.1)',
@@ -311,72 +460,47 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: '#fff',
     borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 16,
-    fontSize: fontSize.md,
-    color: colors.text,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    fontSize: fontSize.lg,
+    color: '#000',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: PLACEHOLDER_COLOR,
     marginBottom: spacing.md,
   },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 50,
-    paddingVertical: 17,
+  submitButton: {
+    backgroundColor: '#000',
+    borderRadius: borderRadius.md,
+    paddingVertical: 20,
     alignItems: 'center',
     marginTop: spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.55,
   },
-  primaryButtonText: {
-    color: colors.textInverse,
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  dividerText: {
-    color: 'rgba(255,255,255,0.3)',
-    paddingHorizontal: spacing.md,
-    fontSize: fontSize.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  githubButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 50,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    gap: spacing.md,
-  },
-  githubButtonText: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: '500',
+  submitButtonText: {
+    color: '#fff',
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    letterSpacing: -0.32,
   },
   modeSwitcher: {
-    marginTop: spacing.xl,
+    marginTop: 21,
     alignItems: 'center',
     gap: spacing.md,
   },
-  linkText: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
+  switcherText: {
+    color: PLACEHOLDER_COLOR,
+    fontSize: fontSize.lg,
+    letterSpacing: -0.32,
+  },
+  switcherLink: {
+    color: PLACEHOLDER_COLOR,
+    fontSize: fontSize.lg,
+    letterSpacing: -0.32,
+    textDecorationLine: 'underline' as const,
   },
 });
 

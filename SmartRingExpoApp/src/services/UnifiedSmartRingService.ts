@@ -1,15 +1,17 @@
 /**
- * UnifiedSmartRingService - Jstyle/X3 Smart Ring Interface
+ * UnifiedSmartRingService - Multi-SDK Device Interface
  *
- * All ring commands route to the Jstyle BleSDK (JstyleService).
- * Scanning discovers X3 devices; once connected all data commands
- * flow through JstyleService.
+ * Routes commands to either Jstyle (X3 ring) or V8 (band) SDK
+ * based on the connected device's SDK type. Supports one device at a time.
+ * Both SDKs share the same NewBle singleton — delegate is switched per operation.
  */
 
 import { Platform } from 'react-native';
 import JstyleService from './JstyleService';
+import V8Service from './V8Service';
 import type {
   DeviceInfo,
+  DeviceType,
   StepsData,
   SleepData,
   HeartRateData,
@@ -27,11 +29,12 @@ import type {
   RecoveryContributors,
 } from '../types/sdk.types';
 
-export type SDKType = 'jstyle' | 'none';
+export type SDKType = 'jstyle' | 'v8' | 'none';
 
 class UnifiedSmartRingService {
   private activeSDK: SDKType = 'none';
   private connectedSDKType: SDKType = 'none';
+  private connectedDeviceType: DeviceType | null = null;
   private autoReconnectInFlight: Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> | null = null;
 
   // JavaScript-side connection state listeners (for manual state notifications)
@@ -65,8 +68,14 @@ class UnifiedSmartRingService {
       return;
     }
 
+    // Both SDKs may be available simultaneously
     if (JstyleService.isAvailable()) {
       this.activeSDK = 'jstyle';
+      return;
+    }
+
+    if (V8Service.isAvailable()) {
+      this.activeSDK = 'v8';
       return;
     }
 
@@ -94,6 +103,14 @@ class UnifiedSmartRingService {
   setConnectedSDKType(type: SDKType): void {
     console.log('📱 [UnifiedService] Setting connected SDK type:', type);
     this.connectedSDKType = type;
+    this.connectedDeviceType = type === 'v8' ? 'band' : type === 'jstyle' ? 'ring' : null;
+  }
+
+  /**
+   * Get the device type (ring or band) of the currently connected device
+   */
+  getConnectedDeviceType(): DeviceType | null {
+    return this.connectedDeviceType;
   }
 
   /**
@@ -107,7 +124,7 @@ class UnifiedSmartRingService {
    * Check if any SDK is available
    */
   isSDKAvailable(): boolean {
-    return JstyleService.isAvailable();
+    return JstyleService.isAvailable() || V8Service.isAvailable();
   }
 
   private ensureSDKAvailable(): void {
@@ -127,12 +144,26 @@ class UnifiedSmartRingService {
   async scan(duration: number = 10): Promise<DeviceInfo[]> {
     this.ensureSDKAvailable();
 
+    // Fire both SDK scans in parallel — devices arrive via onDeviceDiscovered
+    const scanPromises: Promise<void>[] = [];
+
     if (JstyleService.isAvailable()) {
-      await JstyleService.scan(duration).catch(err => {
-        console.log('⚠️ Jstyle scan error:', err.message);
-      });
+      scanPromises.push(
+        JstyleService.scan(duration).catch(err => {
+          console.log('⚠️ Jstyle scan error:', err.message);
+        })
+      );
     }
 
+    if (V8Service.isAvailable()) {
+      scanPromises.push(
+        V8Service.scan(duration).catch(err => {
+          console.log('⚠️ V8 scan error:', err.message);
+        })
+      );
+    }
+
+    await Promise.all(scanPromises);
     return []; // Devices will come through onDeviceDiscovered callbacks
   }
 
@@ -140,22 +171,31 @@ class UnifiedSmartRingService {
     if (JstyleService.isAvailable()) {
       JstyleService.stopScan();
     }
+    if (V8Service.isAvailable()) {
+      V8Service.stopScan();
+    }
   }
 
   async connect(mac: string, sdkType?: SDKType): Promise<{ success: boolean; message: string }> {
     this.ensureSDKAvailable();
 
     const type = sdkType || 'jstyle';
-    this.connectedSDKType = type;
+    this.setConnectedSDKType(type);
 
+    if (type === 'v8') {
+      return await V8Service.connect(mac);
+    }
     return await JstyleService.connect(mac);
   }
 
   disconnect(): void {
-    if (this.connectedSDKType === 'jstyle') {
+    if (this.connectedSDKType === 'v8') {
+      V8Service.disconnect();
+    } else if (this.connectedSDKType === 'jstyle') {
       JstyleService.disconnect();
     }
     this.connectedSDKType = 'none';
+    this.connectedDeviceType = null;
   }
 
   async isConnected(): Promise<{
@@ -164,16 +204,17 @@ class UnifiedSmartRingService {
     deviceName: string | null;
     deviceMac: string | null;
   }> {
-    if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
-      const status = await JstyleService.isConnected();
-      return {
-        connected: status.connected,
-        state: status.state,
-        deviceName: status.deviceName,
-        deviceMac: status.deviceId,
-      };
-    }
-    return { connected: false, state: 'unavailable', deviceName: null, deviceMac: null };
+    const svc = this.connectedSDKType === 'v8' ? V8Service
+      : (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) ? JstyleService
+      : null;
+    if (!svc) return { connected: false, state: 'unavailable', deviceName: null, deviceMac: null };
+    const status = await svc.isConnected();
+    return {
+      connected: status.connected,
+      state: status.state,
+      deviceName: status.deviceName,
+      deviceMac: status.deviceId,
+    };
   }
 
   async getFullConnectionStatus(): Promise<{
@@ -185,8 +226,8 @@ class UnifiedSmartRingService {
     deviceName: string | null;
     deviceMac: string | null;
   }> {
-    if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
-      const status = await JstyleService.isConnected();
+    const buildStatus = async (svc: typeof JstyleService | typeof V8Service) => {
+      const status = await svc.isConnected();
       return {
         managerState: status.state,
         managerStateCode: status.connected ? 3 : 0,
@@ -196,7 +237,9 @@ class UnifiedSmartRingService {
         deviceName: status.deviceName,
         deviceMac: status.deviceId,
       };
-    }
+    };
+    if (this.connectedSDKType === 'v8') return buildStatus(V8Service);
+    if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) return buildStatus(JstyleService);
     return {
       managerState: 'unavailable',
       managerStateCode: -1,
@@ -212,12 +255,24 @@ class UnifiedSmartRingService {
     hasPairedDevice: boolean;
     device: DeviceInfo | null;
   }> {
+    // Check Jstyle first
     if (JstyleService.isAvailable()) {
       const jResult = await JstyleService.getPairedDevice();
       if (jResult.hasPairedDevice && jResult.device) {
         return {
           hasPairedDevice: true,
-          device: { ...jResult.device, sdkType: 'jstyle' },
+          device: { ...jResult.device, sdkType: 'jstyle', deviceType: 'ring' },
+        };
+      }
+    }
+
+    // Check V8
+    if (V8Service.isAvailable()) {
+      const vResult = await V8Service.getPairedDevice();
+      if (vResult.hasPairedDevice && vResult.device) {
+        return {
+          hasPairedDevice: true,
+          device: { ...vResult.device, sdkType: 'v8', deviceType: 'band' },
         };
       }
     }
@@ -226,6 +281,9 @@ class UnifiedSmartRingService {
   }
 
   async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
+    if (this.connectedSDKType === 'v8') {
+      return await V8Service.forgetPairedDevice();
+    }
     if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
       return await JstyleService.forgetPairedDevice();
     }
@@ -238,11 +296,12 @@ class UnifiedSmartRingService {
     }
 
     this.autoReconnectInFlight = (async () => {
+      // Check Jstyle already connected
       if (JstyleService.isAvailable()) {
         try {
           const jStatus = await JstyleService.isConnected();
           if (jStatus.connected) {
-            this.connectedSDKType = 'jstyle';
+            this.setConnectedSDKType('jstyle');
             return {
               success: true,
               message: 'Already connected',
@@ -255,20 +314,57 @@ class UnifiedSmartRingService {
         }
       }
 
+      // Check V8 already connected
+      if (V8Service.isAvailable()) {
+        try {
+          const vStatus = await V8Service.isConnected();
+          if (vStatus.connected) {
+            this.setConnectedSDKType('v8');
+            return {
+              success: true,
+              message: 'Already connected',
+              deviceId: vStatus.deviceId ?? undefined,
+              deviceName: vStatus.deviceName ?? undefined,
+            };
+          }
+        } catch (e) {
+          console.log('⚠️ V8 isConnected check failed:', e);
+        }
+      }
+
+      // Try Jstyle reconnect
       if (JstyleService.isAvailable()) {
         try {
           const jPaired = await JstyleService.hasPairedDevice();
           if (jPaired.hasPairedDevice) {
-            this.connectedSDKType = 'jstyle';
+            this.setConnectedSDKType('jstyle');
             const result = await JstyleService.autoReconnect();
             if (result.success) {
-              setTimeout(() => this.emitConnectionState('connected'), 500);
+              setTimeout(() => this.emitConnectionState('connected'), 50);
               return result;
             }
             this.connectedSDKType = 'none';
           }
         } catch (e) {
           console.log('⚠️ Jstyle autoReconnect failed:', e);
+        }
+      }
+
+      // Try V8 reconnect
+      if (V8Service.isAvailable()) {
+        try {
+          const vPaired = await V8Service.hasPairedDevice();
+          if (vPaired.hasPairedDevice) {
+            this.setConnectedSDKType('v8');
+            const result = await V8Service.autoReconnect();
+            if (result.success) {
+              setTimeout(() => this.emitConnectionState('connected'), 50);
+              return result;
+            }
+            this.connectedSDKType = 'none';
+          }
+        } catch (e) {
+          console.log('⚠️ V8 autoReconnect failed:', e);
         }
       }
 
@@ -282,31 +378,44 @@ class UnifiedSmartRingService {
     }
   }
 
+  private isV8(): boolean {
+    return this.connectedSDKType === 'v8';
+  }
+
   // ========== Data Retrieval ==========
 
   async getSteps(): Promise<StepsData> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.getSteps();
     return await JstyleService.getSteps();
   }
 
   async getSleepData(): Promise<SleepData> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.getSleepByDay(0);
     return await JstyleService.getSleepByDay(0);
   }
 
   async getBattery(): Promise<BatteryData> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.getBattery();
     return await JstyleService.getBattery();
   }
 
   async getVersion(): Promise<{ version: string }> {
     this.ensureConnected();
-    const info = await JstyleService.getVersion();
+    const info = this.isV8()
+      ? await V8Service.getVersion()
+      : await JstyleService.getVersion();
     return { version: info.softwareVersion };
   }
 
   async get24HourHeartRate(): Promise<number[]> {
     this.ensureConnected();
+    if (this.isV8()) {
+      const data = await V8Service.getContinuousHeartRate();
+      return data.map(d => d.heartRate);
+    }
     const data = await JstyleService.getScheduledHeartRate([0]);
     return data.map(d => d.heartRate);
   }
@@ -314,9 +423,21 @@ class UnifiedSmartRingService {
   async getScheduledHeartRateRaw(days: number[] = [0]) {
     this.ensureConnected();
 
-    // X3 continuous HR records contain no timestamp fields, only raw HR arrays.
-    // HRV data includes per-record timestamps AND heartRate values (hourly cadence),
-    // making it the only reliable source for time-of-day HR charting on X3.
+    if (this.isV8()) {
+      // V8 continuous HR has per-record timestamps
+      const hrData = await V8Service.getContinuousHeartRate();
+      return hrData
+        .filter(h => h.heartRate > 0 && h.timestamp)
+        .map(h => {
+          const d = new Date(h.timestamp!);
+          return {
+            heartRate: h.heartRate,
+            timeMinutes: d.getHours() * 60 + d.getMinutes(),
+          };
+        });
+    }
+
+    // X3: use HRV data which has timestamps
     const hrvData = await JstyleService.getHRVDataNormalized();
     return hrvData
       .filter(h => (h.heartRate ?? 0) > 0 && h.timestamp)
@@ -335,25 +456,30 @@ class UnifiedSmartRingService {
   }
 
   async getHRVData(): Promise<HRVData> {
-    this.ensureConnected();
-    const data = await JstyleService.getHRVDataNormalized();
+    const data = await this.getHRVDataNormalizedArray();
     return data[0] || {};
   }
 
   async getStressData(): Promise<StressData> {
     this.ensureConnected();
-    // X3 doesn't have a dedicated stress endpoint; derive from HRV if needed
+    if (this.isV8()) {
+      const data = await V8Service.getHRVDataNormalized();
+      return { level: data[0]?.stress ?? 0 };
+    }
     return { level: 0 };
   }
 
   async getTemperature(): Promise<TemperatureData> {
-    this.ensureConnected();
-    const data = await JstyleService.getTemperatureDataNormalized();
+    const data = await this.getTemperatureDataNormalizedArray();
     return data[0] || { temperature: 0 };
   }
 
   async getHeartRate(): Promise<HeartRateData> {
     this.ensureConnected();
+    if (this.isV8()) {
+      const data = await V8Service.getContinuousHeartRate();
+      return data[0] || { heartRate: 0 };
+    }
     const data = await JstyleService.getScheduledHeartRate([0]);
     return data[0] || { heartRate: 0 };
   }
@@ -361,6 +487,7 @@ class UnifiedSmartRingService {
   async getSleepByDay(dayIndex: number = 0): Promise<SleepData | null> {
     try {
       this.ensureConnected();
+      if (this.isV8()) return await V8Service.getSleepByDay(dayIndex);
       return await JstyleService.getSleepByDay(dayIndex);
     } catch (e) {
       console.log('getSleepByDay error', e);
@@ -369,24 +496,31 @@ class UnifiedSmartRingService {
   }
 
   async getSpO2(): Promise<SpO2Data> {
-    this.ensureConnected();
-    const data = await JstyleService.getSpO2DataNormalized();
+    const data = await this.getSpO2DataNormalizedArray();
     return data[0] || { spo2: 0 };
   }
 
   async getBloodPressure(): Promise<BloodPressureData> {
     this.ensureConnected();
+    if (this.isV8()) {
+      // V8 doesn't support blood pressure — return zeros without a BLE call
+      return { systolic: 0, diastolic: 0, heartRate: 0 };
+    }
     const data = await JstyleService.getBloodPressureFromHRV();
     return data[0] || { systolic: 0, diastolic: 0, heartRate: 0 };
   }
 
   async getSportData(): Promise<SportData[]> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.getSportData();
     return await JstyleService.getSportData();
   }
 
   async getRespiratoryRateNightly(dayIndex: number = 0): Promise<number | null> {
     this.ensureConnected();
+
+    // V8 band doesn't support respiratory rate — only available on Jstyle ring
+    if (this.isV8()) return null;
 
     try {
       const sleepHrv = await JstyleService.getSleepHrvDataNormalized();
@@ -423,13 +557,14 @@ class UnifiedSmartRingService {
 
   getFeatureAvailability(): FeatureAvailability {
     const isX3 = this.connectedSDKType === 'jstyle';
+    const isV8 = this.connectedSDKType === 'v8';
     return {
       respiratoryRate: isX3,
-      activitySessions: isX3,
-      stressIndex: isX3,
+      activitySessions: isX3 || isV8,
+      stressIndex: isX3 || isV8,
       sleepHrv: isX3,
       osaEov: isX3,
-      ppi: isX3,
+      ppi: isX3 || isV8,
     };
   }
 
@@ -469,9 +604,7 @@ class UnifiedSmartRingService {
   }
 
   async measureHeartRate(): Promise<{ success: boolean }> {
-    this.ensureConnected();
-    const result = await JstyleService.startHeartRateMeasuring();
-    return { success: !!result?.success };
+    return this.startHeartRateMeasuring();
   }
 
   // ========== Real-time Monitoring ==========
@@ -480,6 +613,7 @@ class UnifiedSmartRingService {
     if (this.connectedSDKType === 'jstyle') {
       JstyleService.startRealTimeHeartRate();
     }
+    // V8 uses manual measurement — handled via measureHeartRate
   }
 
   stopHeartRateMonitoring(): void {
@@ -489,7 +623,11 @@ class UnifiedSmartRingService {
   }
 
   startSpO2Monitoring(): void {
-    if (this.connectedSDKType === 'jstyle') {
+    if (this.connectedSDKType === 'v8') {
+      V8Service.startSpO2Measuring().catch(err => {
+        console.log('⚠️ V8 startSpO2 error:', err.message);
+      });
+    } else if (this.connectedSDKType === 'jstyle') {
       JstyleService.startSpO2Measuring().catch(err => {
         console.log('⚠️ Jstyle startSpO2 error:', err.message);
       });
@@ -497,7 +635,11 @@ class UnifiedSmartRingService {
   }
 
   stopSpO2Monitoring(): void {
-    if (this.connectedSDKType === 'jstyle') {
+    if (this.connectedSDKType === 'v8') {
+      V8Service.stopSpO2Measuring().catch(err => {
+        console.log('⚠️ V8 stopSpO2 error:', err.message);
+      });
+    } else if (this.connectedSDKType === 'jstyle') {
       JstyleService.stopSpO2Measuring().catch(err => {
         console.log('⚠️ Jstyle stopSpO2 error:', err.message);
       });
@@ -508,16 +650,16 @@ class UnifiedSmartRingService {
 
   async setProfile(profile: ProfileData): Promise<{ success: boolean }> {
     this.ensureConnected();
-    return await JstyleService.setProfile({
-      gender: profile.gender,
-      age: profile.age,
-      height: profile.height,
-      weight: profile.weight,
-    });
+    if (this.isV8()) return await V8Service.setProfile(profile);
+    return await JstyleService.setProfile(profile);
   }
 
   async getProfile(): Promise<ProfileData> {
     this.ensureConnected();
+    // V8 doesn't support reading profile back — return defaults
+    if (this.isV8()) {
+      return { age: 25, height: 170, weight: 70, gender: 'male' };
+    }
     const profile = await JstyleService.getProfile();
     return {
       age: profile.age,
@@ -529,11 +671,13 @@ class UnifiedSmartRingService {
 
   async getGoal(): Promise<{ goal: number }> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.getGoal();
     return await JstyleService.getGoal();
   }
 
   async setGoal(goal: number): Promise<{ success: boolean }> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.setGoal(goal);
     return await JstyleService.setGoal(goal);
   }
 
@@ -557,6 +701,7 @@ class UnifiedSmartRingService {
 
   async factoryReset(): Promise<{ success: boolean }> {
     this.ensureConnected();
+    if (this.isV8()) return await V8Service.factoryReset();
     return await JstyleService.factoryReset();
   }
 
@@ -569,6 +714,9 @@ class UnifiedSmartRingService {
 
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onConnectionStateChanged(callback));
+    }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onConnectionStateChanged(callback));
     }
 
     return () => {
@@ -583,6 +731,9 @@ class UnifiedSmartRingService {
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onBluetoothStateChanged(callback));
     }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onBluetoothStateChanged(callback));
+    }
 
     return () => unsubs.forEach(u => u());
   }
@@ -592,7 +743,19 @@ class UnifiedSmartRingService {
 
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onDeviceDiscovered((device) => {
-        callback({ ...device, sdkType: 'jstyle' });
+        // Detect V8 bands by name even when discovered through Jstyle scanner
+        const name = (device.name || '').toLowerCase();
+        const isV8 = name.includes('v8') || name.includes('smartband');
+        callback({
+          ...device,
+          sdkType: isV8 ? 'v8' : 'jstyle',
+          deviceType: isV8 ? 'band' : 'ring',
+        });
+      }));
+    }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onDeviceDiscovered((device) => {
+        callback({ ...device, sdkType: 'v8', deviceType: 'band' });
       }));
     }
 
@@ -604,6 +767,11 @@ class UnifiedSmartRingService {
 
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onHeartRateData((data) => {
+        callback({ heartRate: data.heartRate, timestamp: data.timestamp });
+      }));
+    }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onHeartRateData((data) => {
         callback({ heartRate: data.heartRate, timestamp: data.timestamp });
       }));
     }
@@ -624,12 +792,22 @@ class UnifiedSmartRingService {
         });
       }));
     }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onRealTimeData((data: any) => {
+        callback({
+          steps: Number(data.steps) || 0,
+          distance: (Number(data.distance) || 0) * 1000,
+          calories: Number(data.calories) || 0,
+          time: 0,
+        });
+      }));
+    }
 
     return () => unsubs.forEach(u => u());
   }
 
   onSleepDataReceived(callback: (data: SleepData) => void): () => void {
-    // SDK has no real-time sleep data events
+    // Neither SDK has real-time sleep data events
     return () => {};
   }
 
@@ -638,6 +816,9 @@ class UnifiedSmartRingService {
 
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onBatteryChanged(callback));
+    }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onBatteryChanged(callback));
     }
 
     return () => unsubs.forEach(u => u());
@@ -648,6 +829,9 @@ class UnifiedSmartRingService {
 
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onSpO2Received(callback));
+    }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onSpO2Received(callback));
     }
 
     return () => unsubs.forEach(u => u());
@@ -663,8 +847,170 @@ class UnifiedSmartRingService {
     if (JstyleService.isAvailable()) {
       unsubs.push(JstyleService.onError(callback));
     }
+    if (V8Service.isAvailable()) {
+      unsubs.push(V8Service.onError(callback));
+    }
 
     return () => unsubs.forEach(u => u());
+  }
+
+  // ========== Raw / Array Data Methods (for useHomeData, useMetricHistory, etc.) ==========
+
+  /**
+   * Raw sleep data with records array — used by useHomeData & BackgroundSleepTask
+   */
+  async getSleepDataRaw(): Promise<{ records: any[]; timestamp?: number }> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getSleepDataRaw via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      const result = await V8Service.getSleepByDay(0);
+      // Wrap V8 SleepData into the records shape useHomeData expects
+      return { records: result ? [result] : [], timestamp: Date.now() };
+    }
+    return await JstyleService.getSleepData();
+  }
+
+  /**
+   * Continuous HR with {records} shape — used by useHomeData & DailyHeartRateCard
+   * V8 returns flat HeartRateData[], so we group into the Jstyle record shape.
+   */
+  async getContinuousHeartRateRaw(): Promise<{ records: any[]; timestamp?: number }> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getContinuousHeartRateRaw via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      const hrData = await V8Service.getContinuousHeartRate();
+      // Group V8 flat records by date into Jstyle-compatible {date, arrayDynamicHR, startTimestamp}
+      const byDate = new Map<string, { date: string; startTimestamp: number; arrayDynamicHR: number[] }>();
+      for (const h of hrData) {
+        if (h.heartRate <= 0 || !h.timestamp) continue;
+        const d = new Date(h.timestamp);
+        const dateStr = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+        if (!byDate.has(dateStr)) {
+          const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+          byDate.set(dateStr, { date: dateStr, startTimestamp: midnight, arrayDynamicHR: new Array(1440).fill(0) });
+        }
+        const rec = byDate.get(dateStr)!;
+        const minuteOfDay = d.getHours() * 60 + d.getMinutes();
+        if (minuteOfDay >= 0 && minuteOfDay < 1440) {
+          rec.arrayDynamicHR[minuteOfDay] = h.heartRate;
+        }
+      }
+      // Trim trailing zeros from arrayDynamicHR
+      for (const rec of byDate.values()) {
+        let last = rec.arrayDynamicHR.length - 1;
+        while (last >= 0 && rec.arrayDynamicHR[last] === 0) last--;
+        rec.arrayDynamicHR = rec.arrayDynamicHR.slice(0, last + 1);
+      }
+      return { records: Array.from(byDate.values()), timestamp: Date.now() };
+    }
+    return await JstyleService.getContinuousHeartRate();
+  }
+
+  /**
+   * Single/static HR with {records} shape — used by useHomeData as fallback
+   * V8 uses continuous only, so returns empty.
+   */
+  async getSingleHeartRateRaw(): Promise<{ records: any[]; timestamp?: number }> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getSingleHeartRateRaw via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      return { records: [], timestamp: Date.now() };
+    }
+    return await JstyleService.getSingleHeartRate();
+  }
+
+  /**
+   * Normalized HRV array — used by useHomeData & useMetricHistory
+   */
+  async getHRVDataNormalizedArray(): Promise<HRVData[]> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getHRVDataNormalizedArray via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      return await V8Service.getHRVDataNormalized();
+    }
+    return await JstyleService.getHRVDataNormalized();
+  }
+
+  /**
+   * Normalized SpO2 array — used by useMetricHistory & TodayCardVitalsService
+   */
+  async getSpO2DataNormalizedArray(): Promise<SpO2Data[]> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getSpO2DataNormalizedArray via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      return await V8Service.getSpO2DataNormalized();
+    }
+    return await JstyleService.getSpO2DataNormalized();
+  }
+
+  /**
+   * Normalized temperature array — used by useMetricHistory & TodayCardVitalsService
+   */
+  async getTemperatureDataNormalizedArray(): Promise<TemperatureData[]> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getTemperatureDataNormalizedArray via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      return await V8Service.getTemperatureDataNormalized();
+    }
+    return await JstyleService.getTemperatureDataNormalized();
+  }
+
+  /**
+   * Raw SpO2 with records — used by TodayCardVitalsService
+   */
+  async getSpO2DataRaw(): Promise<{ records: any[] }> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] getSpO2DataRaw via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      const normalized = await V8Service.getSpO2DataNormalized();
+      // Wrap V8 normalized array into the raw record shape TodayCardVitalsService expects
+      return {
+        records: [{
+          arrayAutomaticSpo2Data: normalized.map(s => ({
+            automaticSpo2Data: s.spo2,
+            timestamp: s.timestamp,
+          })),
+        }],
+      };
+    }
+    return await JstyleService.getSpO2Data();
+  }
+
+  /**
+   * Start heart rate measurement — routes to correct SDK
+   */
+  async startHeartRateMeasuring(): Promise<{ success: boolean }> {
+    this.ensureConnected();
+    console.log(`📱 [UnifiedService] startHeartRateMeasuring via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      return await V8Service.startHeartRateMeasuring();
+    }
+    const result = await JstyleService.startHeartRateMeasuring();
+    return { success: !!result?.success };
+  }
+
+  /**
+   * Stop heart rate measurement — routes to correct SDK
+   */
+  async stopHeartRateMeasuring(): Promise<void> {
+    console.log(`📱 [UnifiedService] stopHeartRateMeasuring via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      // V8 manual measurement auto-stops after duration
+      return;
+    }
+    await JstyleService.stopHeartRateMeasuring();
+  }
+
+  /**
+   * Stop real-time data stream
+   */
+  async stopRealTimeData(): Promise<void> {
+    console.log(`📱 [UnifiedService] stopRealTimeData via ${this.connectedSDKType}`);
+    if (this.isV8()) {
+      // V8 doesn't have a separate real-time data stream to stop
+      return;
+    }
+    await JstyleService.stopRealTimeData();
   }
 
   // ========== SDK-Specific Feature Access ==========
@@ -672,6 +1018,13 @@ class UnifiedSmartRingService {
   getJstyleService() {
     if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
       return JstyleService;
+    }
+    return null;
+  }
+
+  getV8Service() {
+    if (this.connectedSDKType === 'v8' || V8Service.isAvailable()) {
+      return V8Service;
     }
     return null;
   }

@@ -94,7 +94,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </View>
           <Text style={styles.disconnectedTitle}>No Ring Connected</Text>
           <Text style={styles.disconnectedText}>
-            Connect your Smart Ring to view health data
+            Connect your Focus ring to view health data
           </Text>
           <Pressable style={styles.connectButton} onPress={onNavigateToDevices}>
             <Text style={styles.connectButtonText}>Connect Device</Text>

@@ -11,41 +11,47 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
-import type { StravaActivitySummary } from '../../types/strava.types';
+import type { UnifiedActivity } from '../../types/activity.types';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { formatSleepDuration } from '../../utils/ringData/sleep';
 
-function formatStravaWorkoutMeta(activity: StravaActivitySummary): string {
+function formatUnifiedMeta(a: UnifiedActivity): string {
   const parts: string[] = [];
-  if (activity.distance_m) parts.push(`${(activity.distance_m / 1000).toFixed(1)} km`);
-  if (activity.moving_time_sec) {
-    const mins = Math.round(activity.moving_time_sec / 60);
-    if (mins >= 60) {
-      parts.push(`${Math.floor(mins / 60)}h ${mins % 60}m`);
-    } else {
-      parts.push(`${mins}m`);
-    }
-  }
-  if (activity.calories) parts.push(`${activity.calories} kcal`);
+  if (a.distanceM) parts.push(`${(a.distanceM / 1000).toFixed(1)} km`);
+  if (a.durationSec) parts.push(formatSleepDuration(Math.round(a.durationSec / 60)));
+  if (a.calories) parts.push(`${a.calories} kcal`);
   return parts.join(' · ');
 }
 
-function StravaWorkoutCard({ activity }: { activity: StravaActivitySummary }) {
-  const { t } = useTranslation();
-  const STRAVA_ORANGE = '#FC4C02';
-  const sportEmojis: Record<string, string> = {
-    Run: '🏃', TrailRun: '🥾', Ride: '🚴', Hike: '🥾', Swim: '🏊', Walk: '🚶',
-  };
-  const emoji = sportEmojis[activity.sport_type || ''] ?? '🏅';
+const SOURCE_COLORS: Record<string, string> = {
+  strava: '#FC4C02',
+  appleHealth: '#FF375F',
+  ring: '#00D4AA',
+};
 
+const SOURCE_LABEL_KEYS: Record<string, string> = {
+  strava: 'Strava',
+  appleHealth: 'activity.source_health',
+  ring: 'activity.source_ring',
+};
+
+function UnifiedWorkoutCard({ activity }: { activity: UnifiedActivity }) {
+  const { t } = useTranslation();
+  const color = SOURCE_COLORS[activity.source] || SOURCE_COLORS.ring;
+  const labelKey = SOURCE_LABEL_KEYS[activity.source] || SOURCE_LABEL_KEYS.ring;
+  const label = labelKey.startsWith('activity.') ? t(labelKey) : labelKey;
   return (
     <View style={styles.workoutCard}>
-      <View style={[styles.workoutIconContainer, { backgroundColor: 'rgba(252,76,2,0.12)' }]}>
-        <Text style={{ fontSize: 18 }}>{emoji}</Text>
+      <View style={[styles.workoutIconContainer, { backgroundColor: `${activity.color}18` }]}>
+        <Ionicons name={activity.icon as any} size={18} color={activity.color} />
       </View>
       <View style={styles.workoutInfo}>
-        <Text style={styles.workoutName}>{activity.name || activity.sport_type || t('activity.default_workout')}</Text>
-        <Text style={styles.workoutMeta}>{formatStravaWorkoutMeta(activity)}</Text>
+        <Text style={styles.workoutName}>{activity.name}</Text>
+        <Text style={styles.workoutMeta}>{formatUnifiedMeta(activity)}</Text>
       </View>
-      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: STRAVA_ORANGE, marginLeft: 8 }} />
+      <View style={{ backgroundColor: `${color}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+        <Text style={{ fontSize: 10, fontFamily: fontFamily.demiBold, color }}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -182,7 +188,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
     homeData.refreshMissingCardData,
   ]);
 
-  const activityMessage = getActivityMessage(homeData.activity.score);
+  const activityMessage = getActivityMessage(homeData.activity.score, t);
   const activity = homeData.activity;
   const calorieGoal = 650;
   const caloriesRounded = Math.round(activity.adjustedActiveCalories || activity.calories || 0);
@@ -193,8 +199,9 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   // Temperature status
   const tempC = homeData.todayVitals.temperatureC ?? 0;
   const tempF = tempC > 0 ? Math.round(tempC * 9 / 5 + 32) : null;
-  const tempStatus = tempC >= 36.1 && tempC <= 37.2 ? t('activity.temp_normal') : tempC > 37.2 ? t('activity.temp_elevated') : tempC > 0 ? t('activity.temp_low') : null;
-  const tempColor = tempStatus === 'Normal' ? '#4ADE80' : tempStatus === 'Elevated' ? '#FF6B6B' : '#FFD700';
+  const tempTier: 'normal' | 'elevated' | 'low' | null = tempC >= 36.1 && tempC <= 37.2 ? 'normal' : tempC > 37.2 ? 'elevated' : tempC > 0 ? 'low' : null;
+  const tempStatus = tempTier ? t(`activity.temp_${tempTier}`) : null;
+  const tempColor = tempTier === 'normal' ? '#4ADE80' : tempTier === 'elevated' ? '#FF6B6B' : '#FFD700';
 
   // SpO2 status
   const minSpo2 = homeData.todayVitals.minSpo2;
@@ -242,8 +249,6 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
             { label: t('activity.est_km'), value: distanceKmRounded },
             { label: t('activity.active_kcal'), value: caloriesRounded },
           ]}
-          insight={activityMessage}
-          backgroundImage={require('../../assets/backgrounds/insights/red-insight.jpg')}
         />
       </TouchableOpacity>
 
@@ -251,18 +256,18 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
       <View style={styles.workoutsSection}>
         <Text style={styles.sectionTitle}>{t('activity.recent_workouts')}</Text>
         <GlassCard style={styles.workoutsCard} noPadding>
-          {activity.workouts.length > 0 ? (
+          {homeData.unifiedActivities?.length > 0 ? (
+            homeData.unifiedActivities.slice(0, 5).map((ua, index) => (
+              <React.Fragment key={ua.id}>
+                <UnifiedWorkoutCard activity={ua} />
+                {index < Math.min(homeData.unifiedActivities.length, 5) - 1 && <View style={styles.workoutDivider} />}
+              </React.Fragment>
+            ))
+          ) : activity.workouts.length > 0 ? (
             activity.workouts.map((workout, index) => (
               <React.Fragment key={workout.id}>
                 <WorkoutCard workout={workout} />
                 {index < activity.workouts.length - 1 && <View style={styles.workoutDivider} />}
-              </React.Fragment>
-            ))
-          ) : homeData.stravaActivities?.length > 0 ? (
-            homeData.stravaActivities.slice(0, 5).map((stravaActivity, index) => (
-              <React.Fragment key={stravaActivity.id}>
-                <StravaWorkoutCard activity={stravaActivity} />
-                {index < Math.min(homeData.stravaActivities.length, 5) - 1 && <View style={styles.workoutDivider} />}
               </React.Fragment>
             ))
           ) : (
@@ -447,7 +452,7 @@ const styles = StyleSheet.create({
   gaugeSection: {
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs,
   },
   gaugeInfoBtn: {
     position: 'absolute',

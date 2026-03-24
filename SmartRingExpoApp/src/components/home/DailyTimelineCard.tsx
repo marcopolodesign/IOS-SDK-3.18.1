@@ -6,7 +6,7 @@ import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import type { SleepData } from '../../hooks/useHomeData';
 import type { X3ActivitySession } from '../../types/sdk.types';
 import type { TimelineEntry, RecoverySubtype } from '../../types/timeline.types';
-import type { StravaActivitySummary } from '../../types/strava.types';
+import type { UnifiedActivity } from '../../types/activity.types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,6 @@ type TimelineEventKind =
   | 'wake_up'
   | 'activity'
   | 'recovery'
-  | 'meal'
   | 'manual_activity'
   | 'strava_activity'
   | 'nap';
@@ -27,7 +26,7 @@ interface TimelineEvent {
   time: number; // ms epoch start
   endTime?: number; // ms epoch end
   label: string;
-  // Simple detail string for sleep/meal events
+  // Simple detail string for sleep events
   detail?: string;
   // Structured metrics for activity / recovery events
   durationSecs?: number;
@@ -35,6 +34,8 @@ interface TimelineEvent {
   heartRateAvg?: number;
   heartRateMax?: number;
   distanceLabel?: string;  // e.g. "8.4 km" for Strava activities
+  iconOverride?: string;   // per-activity icon (unified activities)
+  colorOverride?: string;  // per-activity color (unified activities)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -71,7 +72,6 @@ const EVENT_CONFIG: Record<
   wake_up:         { icon: 'sunny-outline',         color: '#FFB84D' },
   activity:        { icon: 'fitness-outline',       color: '#00D4AA' },
   recovery:        { icon: 'snow-outline',          color: '#6BFFF5' },
-  meal:            { icon: 'restaurant-outline',    color: '#FF9F6B' },
   manual_activity: { icon: 'bicycle-outline',       color: '#00D4AA' },
   strava_activity: { icon: 'trophy-outline',         color: '#FC4C02' },
   nap:             { icon: 'moon-outline',           color: '#B16BFF' },
@@ -156,7 +156,7 @@ interface DailyTimelineCardProps {
   sleep: SleepData;
   activitySessions: X3ActivitySession[];
   manualEntries: TimelineEntry[];
-  stravaActivities?: StravaActivitySummary[];
+  unifiedActivities?: UnifiedActivity[];
   todayNaps?: Array<{
     id: string;
     startTime: string;
@@ -172,7 +172,7 @@ export default function DailyTimelineCard({
   sleep,
   activitySessions,
   manualEntries,
-  stravaActivities = [],
+  unifiedActivities = [],
   todayNaps = [],
   onAddPress,
 }: DailyTimelineCardProps) {
@@ -216,36 +216,16 @@ export default function DailyTimelineCard({
       });
     }
 
-    // Ring-tracked activity sessions — carry structured metrics
-    activitySessions.forEach((session, i) => {
-      const durationSecs =
-        session.endTime > session.startTime
-          ? durationFromMs(session.startTime, session.endTime)
-          : session.duration;
-      list.push({
-        id: `activity_${i}`,
-        kind: 'activity',
-        time: session.startTime,
-        endTime: session.endTime > session.startTime ? session.endTime : undefined,
-        label: session.typeLabel || t('timeline.event_activity'),
-        durationSecs,
-        calories: session.calories || undefined,
-        heartRateAvg: session.heartRateAvg || undefined,
-        heartRateMax: session.heartRateMax || undefined,
-      });
-    });
+    // Ring activity sessions are now included in unifiedActivities (deduplicated)
+    // so we no longer add them separately here.
 
-    // Manual entries (recovery, meal, manual_activity)
+    // Manual entries (recovery, manual_activity)
     manualEntries.forEach((entry) => {
       const durationSecs =
         entry.endTime ? durationFromMs(entry.startTime, entry.endTime) : undefined;
       list.push({
         id: entry.id,
-        kind: entry.type === 'recovery'
-          ? 'recovery'
-          : entry.type === 'meal'
-          ? 'meal'
-          : 'manual_activity',
+        kind: entry.type === 'recovery' ? 'recovery' : 'manual_activity',
         time: entry.startTime,
         endTime: entry.endTime,
         label: entry.title,
@@ -267,27 +247,29 @@ export default function DailyTimelineCard({
       });
     });
 
-    // Strava activities — today only, inserted by start_date time
+    // Unified activities (Strava + Apple Health + Ring, deduplicated) — today only
     const todayIso = new Date().toISOString().slice(0, 10);
-    stravaActivities.forEach((activity) => {
-      if (!activity.start_date?.startsWith(todayIso)) return;
-      const startMs = new Date(activity.start_date).getTime();
-      const endMs = activity.moving_time_sec ? startMs + activity.moving_time_sec * 1000 : undefined;
+    unifiedActivities.forEach((activity) => {
+      if (!activity.startDate?.startsWith(todayIso)) return;
+      const startMs = new Date(activity.startDate).getTime();
+      const endMs = activity.durationSec ? startMs + activity.durationSec * 1000 : undefined;
       list.push({
-        id: `strava_${activity.id}`,
-        kind: 'strava_activity',
+        id: activity.id,
+        kind: 'strava_activity', // reuse existing kind for metrics chip rendering
         time: startMs,
         endTime: endMs,
-        label: activity.name || activity.sport_type || t('timeline.event_activity'),
-        durationSecs: activity.moving_time_sec ?? undefined,
-        calories: activity.calories ?? undefined,
-        heartRateAvg: activity.average_heartrate ?? undefined,
-        distanceLabel: activity.distance_m ? `${(activity.distance_m / 1000).toFixed(1)} km` : undefined,
+        label: activity.name || activity.sportType || t('timeline.event_activity'),
+        durationSecs: activity.durationSec || undefined,
+        calories: activity.calories,
+        heartRateAvg: activity.avgHeartRate,
+        distanceLabel: activity.distanceM ? `${(activity.distanceM / 1000).toFixed(1)} km` : undefined,
+        iconOverride: activity.icon,
+        colorOverride: activity.color,
       });
     });
 
     return list.sort((a, b) => a.time - b.time);
-  }, [sleep, activitySessions, manualEntries, stravaActivities, todayNaps]);
+  }, [sleep, activitySessions, manualEntries, unifiedActivities, todayNaps]);
 
   // Kinds that get the metrics chip row instead of plain detail text
   const isMetricKind = (kind: TimelineEventKind) =>
@@ -301,7 +283,8 @@ export default function DailyTimelineCard({
           const cfg = EVENT_CONFIG[event.kind];
           const isLast = index === events.length - 1;
 
-          let iconName = cfg.icon;
+          let iconName = event.iconOverride || cfg.icon;
+          const iconColor = event.colorOverride || cfg.color;
           if (event.kind === 'recovery') {
             const entry = manualEntries.find((e) => e.id === event.id);
             if (entry) iconName = recoveryIcon(entry.subtype);
@@ -318,14 +301,14 @@ export default function DailyTimelineCard({
               {/* Left column: connector line + icon */}
               <View style={styles.leftCol}>
                 {(!isLast || onAddPress) && <View style={styles.connectorLine} />}
-                <View style={[styles.iconCircle, { borderColor: cfg.color }]}>
-                  <Ionicons name={iconName} size={14} color={cfg.color} />
+                <View style={[styles.iconCircle, { borderColor: iconColor }]}>
+                  <Ionicons name={iconName as any} size={14} color={iconColor} />
                 </View>
               </View>
 
               {/* Right column: time label above bubble */}
               <View style={styles.entryOuter}>
-                <Text style={[styles.entryTime, { color: cfg.color }]}>{timeRangeStr}</Text>
+                <Text style={[styles.entryTime, { color: iconColor }]}>{timeRangeStr}</Text>
                 <View style={styles.entryBubble}>
                   <View style={styles.eventRow}>
                     <Text style={styles.eventLabel}>{event.label}</Text>
@@ -333,7 +316,7 @@ export default function DailyTimelineCard({
 
                   {/* Metrics chips for activity/recovery/manual_activity */}
                   {isMetricKind(event.kind) ? (
-                    <MetricsRow event={event} accentColor={cfg.color} />
+                    <MetricsRow event={event} accentColor={iconColor} />
                   ) : (
                     event.detail && (
                       <Text style={styles.eventDetail}>{event.detail}</Text>

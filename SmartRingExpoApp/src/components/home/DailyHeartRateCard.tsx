@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
-import JstyleService from '../../services/JstyleService';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
 type HourRange = { hour: number; min: number; max: number; hasData: boolean };
@@ -78,7 +77,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
     }
     // No context (card used standalone) — fetch directly from ring.
     // Use getContinuousHeartRate (same as testing.tsx / useHomeData).
-    JstyleService.getContinuousHeartRate()
+    UnifiedSmartRingService.getContinuousHeartRateRaw()
       .then(hrRaw => {
         const points: Array<{ timeMinutes: number; heartRate: number }> = [];
         for (const rec of hrRaw.records || []) {

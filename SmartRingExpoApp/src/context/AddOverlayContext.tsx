@@ -14,8 +14,6 @@ import { usePathname } from 'expo-router';
 
 const ACTIONS = [
   { label: 'Log Recovery', icon: 'bed-outline' as const },
-  { label: 'Capture Meal', icon: 'camera-outline' as const },
-  { label: 'Log Meal', icon: 'restaurant-outline' as const },
   { label: 'Log Activity', icon: 'fitness-outline' as const },
 ];
 

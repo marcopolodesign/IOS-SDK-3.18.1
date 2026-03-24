@@ -20,9 +20,12 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { colors, fontFamily, fontSize, spacing } from '../../theme/colors';
 import type { SyncProgressState, MetricKey, SyncPhase } from '../../types/syncStatus.types';
+
+const CONNECTION_TIMEOUT_MS = 40_000;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,8 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type TFunction = (key: string) => string;
 
-function deriveMessage(syncProgress: SyncProgressState, t: TFunction): string {
+function deriveMessage(syncProgress: SyncProgressState, t: TFunction, timedOut: boolean): string {
+  if (timedOut) return t('sync.connection_timeout');
   const { phase, metrics } = syncProgress;
   if (phase === 'connecting') return t('sync.connecting');
   if (phase === 'connected')  return t('sync.connected');
@@ -55,14 +59,18 @@ function deriveMessage(syncProgress: SyncProgressState, t: TFunction): string {
 interface SyncStatusSheetProps {
   syncProgress: SyncProgressState;
   isSyncing: boolean;
+  onFindRings?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProps) {
+export function SyncStatusSheet({ syncProgress, isSyncing, onFindRings }: SyncStatusSheetProps) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { phase, metrics } = syncProgress;
+
+  // ── Connection timeout ──
+  const [connectionTimedOut, setConnectionTimedOut] = useState(false);
 
   // ── Modal visibility ──
   const [modalVisible, setModalVisible] = useState(false);
@@ -114,12 +122,12 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
     backdropOpacity.value = withTiming(0.55, { duration: 300 });
   }, []);
 
-  // Only allow backdrop/back-button dismiss when sync is finished
+  // Allow backdrop/back-button dismiss when sync is finished or timed out
   const handleUserDismiss = useCallback(() => {
-    if (phaseRef.current === 'complete' || phaseRef.current === 'idle') {
+    if (phaseRef.current === 'complete' || phaseRef.current === 'idle' || connectionTimedOut) {
       hide();
     }
-  }, [hide]);
+  }, [hide, connectionTimedOut]);
 
   // ── Primary show trigger: isSyncing false→true ──
   // isSyncing is set in the same setData call as phase:'connecting', making it
@@ -149,6 +157,24 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
       hide();
     }
   }, [phase, hide]);
+
+  // ── Connection timeout: 40s while stuck on 'connecting' ──
+  useEffect(() => {
+    if (phase !== 'connecting') {
+      setConnectionTimedOut(prev => prev ? false : prev);
+      return;
+    }
+    setConnectionTimedOut(false);
+    const id = setTimeout(() => {
+      if (phaseRef.current === 'connecting') setConnectionTimedOut(true);
+    }, CONNECTION_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [phase]);
+
+  const handleFindRings = useCallback(() => {
+    hide();
+    onFindRings?.();
+  }, [hide, onFindRings]);
 
   // ── Progress arc ──
   const progress = useSharedValue(0.05);
@@ -211,7 +237,7 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
     : 0;
 
   // ── Morphing status line (Claude-style slide-up crossfade) ──
-  const currentMessage = deriveMessage(syncProgress, t);
+  const currentMessage = deriveMessage(syncProgress, t, connectionTimedOut);
   const msgOpacity   = useSharedValue(1);
   const msgTranslate = useSharedValue(0);
   const [displayedMessage, setDisplayedMessage] = useState(currentMessage);
@@ -256,8 +282,18 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
 
   const subAnimStyle = useAnimatedStyle(() => ({ opacity: subOpacity.value }));
 
-  // ── Total sheet height accounts for safe-area bottom ──
-  const sheetHeight = SHEET_CONTENT_HEIGHT + insets.bottom;
+  // ── Sheet height animates to accommodate timeout button ──
+  const sheetHeightSV = useSharedValue(SHEET_CONTENT_HEIGHT + insets.bottom);
+  const buttonOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    const target = (connectionTimedOut ? SHEET_CONTENT_HEIGHT + 44 : SHEET_CONTENT_HEIGHT) + insets.bottom;
+    sheetHeightSV.value = withTiming(target, { duration: 250, easing: Easing.out(Easing.cubic) });
+    buttonOpacity.value = withTiming(connectionTimedOut ? 1 : 0, { duration: 200 });
+  }, [connectionTimedOut, insets.bottom]);
+
+  const sheetHeightStyle = useAnimatedStyle(() => ({ height: sheetHeightSV.value }));
+  const buttonAnimStyle = useAnimatedStyle(() => ({ opacity: buttonOpacity.value }));
 
   return (
     <Modal
@@ -283,7 +319,7 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
       <Animated.View
         style={[
           styles.sheetContainer,
-          { height: sheetHeight },
+          sheetHeightStyle,
           sheetStyle,
         ]}
       >
@@ -343,6 +379,19 @@ export function SyncStatusSheet({ syncProgress, isSyncing }: SyncStatusSheetProp
                 <Animated.Text style={[styles.subText, subAnimStyle]}>
                   {t('sync.metrics_count', { done: completedCount })}
                 </Animated.Text>
+              )}
+
+              {connectionTimedOut && (
+                <Animated.View style={buttonAnimStyle}>
+                  <TouchableOpacity
+                    style={styles.findRingsButton}
+                    onPress={handleFindRings}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="search-outline" size={14} color="#00D4AA" />
+                    <Text style={styles.findRingsText}>{t('sync.find_rings')}</Text>
+                  </TouchableOpacity>
+                </Animated.View>
               )}
             </View>
           </View>
@@ -432,6 +481,24 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textSecondary,
     lineHeight: 16,
+  },
+  findRingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 170, 0.4)',
+    backgroundColor: 'rgba(0, 212, 170, 0.08)',
+  },
+  findRingsText: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.sm,
+    color: '#00D4AA',
   },
 });
 

@@ -5,7 +5,7 @@ import {
   signInWithEmail,
   signUpWithEmail,
   signOut as authSignOut,
-  signInWithGitHub as authSignInWithGitHub,
+  signInWithGoogle as authSignInWithGoogle,
   resetPassword as authResetPassword,
   updateProfile as authUpdateProfile,
   getProfile,
@@ -77,10 +77,9 @@ export function useAuth() {
     return result;
   }, []);
 
-  const signInWithGitHub = useCallback(async () => {
-    console.log('[useAuth] signInWithGitHub called');
-    const result = await authSignInWithGitHub();
-    return result;
+  const signInWithGoogle = useCallback(async () => {
+    console.log('[useAuth] signInWithGoogle called');
+    return authSignInWithGoogle();
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
@@ -109,7 +108,7 @@ export function useAuth() {
     signIn,
     signUp,
     signOut,
-    signInWithGitHub,
+    signInWithGoogle,
     resetPassword,
     updateProfile,
   };

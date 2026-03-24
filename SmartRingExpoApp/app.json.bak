@@ -65,6 +65,12 @@
         {
           "iosDisplayInForeground": true
         }
+      ],
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false
+        }
       ]
     ],
     "scheme": "smartring",

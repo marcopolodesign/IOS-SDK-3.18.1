@@ -6,7 +6,7 @@ export type { BandIconProps } from './BandIcon';
 
 export { OverviewIcon } from './OverviewIcon';
 export { SleepIcon } from './SleepIcon';
-export { NutritionIcon } from './NutritionIcon';
+
 export { ActivityIcon } from './ActivityIcon';
 export { SleepScoreIcon } from './SleepScoreIcon';
 

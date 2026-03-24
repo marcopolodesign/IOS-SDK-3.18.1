@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import type {
   DeviceInfo,
+  DeviceType,
   ConnectionState,
   BluetoothState,
   BatteryData,
@@ -10,13 +11,14 @@ import type {
   StepsData,
 } from '../types/sdk.types';
 
-// Helper to check if a device is a ring/band
-const isRingDevice = (device: DeviceInfo): boolean => {
+// Helper to check if a device is a Focus device (ring or band)
+const isFocusDevice = (device: DeviceInfo): boolean => {
   const name = device.name?.toLowerCase() || '';
   const id = device.id?.toLowerCase() || '';
 
-  // Jstyle X3 devices (tagged by native bridge)
+  // Tagged by native bridge
   if (device.sdkType === 'jstyle') return true;
+  if (device.sdkType === 'v8') return true;
 
   // Check for X3 patterns
   if (name.includes('x3')) return true;
@@ -29,10 +31,12 @@ const isRingDevice = (device: DeviceInfo): boolean => {
   // Check for FOCUS R1 (already formatted)
   if (name.includes('focus r1')) return true;
 
-  // Check for SmartBand
+  // Check for SmartBand / V8 band patterns
   if (name.includes('smartband')) return true;
+  if (name.includes('v8')) return true;
+  if (name.includes('focus band')) return true;
 
-  // Check for sdk_ prefix (cached ring)
+  // Check for sdk_ prefix (cached device)
   if (id.startsWith('sdk_r10_')) return true;
 
   return false;
@@ -43,6 +47,9 @@ const formatDeviceName = (device: DeviceInfo): string => {
   const name = device.name || '';
   const id = device.id || '';
   const lower = name.toLowerCase();
+
+  // V8 band devices
+  if (device.sdkType === 'v8' || device.deviceType === 'band') return 'FOCUS BAND';
 
   // Jstyle X3 devices
   if (device.sdkType === 'jstyle') return 'FOCUS X3';
@@ -60,7 +67,7 @@ const formatDeviceName = (device: DeviceInfo): string => {
   // SmartBand stays as-is
   if (lower.includes('smartband')) return name;
 
-  return name || 'Smart Ring';
+  return name || 'Focus Ring';
 };
 
 interface RingMetrics {
@@ -236,6 +243,10 @@ export const useSmartRing = (): UseSmartRingReturn => {
     });
 
     const unsubDevice = UnifiedSmartRingService.onDeviceDiscovered((device) => {
+      console.log('🔎 [useSmartRing] RAW device from bridge:', JSON.stringify({
+        name: device.name, mac: device.mac, id: device.id,
+        sdkType: device.sdkType, deviceType: device.deviceType,
+      }));
       setDevices((prev) => {
         // Ensure prev is always an array
         const deviceList = Array.isArray(prev) ? prev : [];
@@ -342,7 +353,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
     }
 
     // Determine SDK type from device and set it on the unified service
-    const sdkType = device.sdkType || 'jstyle';
+    const sdkType = device.sdkType || 'jstyle' as 'jstyle' | 'v8';
     console.log('🔗 [useSmartRing] Device sdkType:', sdkType);
     UnifiedSmartRingService.setConnectedSDKType(sdkType);
 
@@ -437,17 +448,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
         return { success: false, device: null };
       }
 
-      // Double-check connectivity right before calling the native reconnect to avoid racing an existing link
-      const statusBeforeReconnect = await UnifiedSmartRingService.isConnected();
-      if (statusBeforeReconnect.connected) {
-        console.log('📶 Connection restored during auto-connect flow - skipping native autoReconnect');
-        if (device) {
-          setConnectedDevice(device);
-        }
-        setConnectionState('connected');
-        return { success: true, device: device || null };
-      }
-
       console.log('🔗 Auto-reconnecting to paired device...');
 
       // Use native auto-reconnect which handles everything:
@@ -463,7 +463,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
         const connectedDeviceInfo: DeviceInfo = device || {
           id: result.deviceId || '',
           mac: result.deviceId || '',
-          name: result.deviceName || 'Smart Ring',
+          name: result.deviceName || 'Focus Ring',
           rssi: -50,
         };
         
@@ -537,10 +537,10 @@ export const useSmartRing = (): UseSmartRingReturn => {
     };
   }, []);
 
-  // Filter to only show ring devices and format names properly
+  // Filter to only show Focus devices (ring and band) and format names properly
   const filteredDevices = useMemo(() => {
     return devices
-      .filter(isRingDevice)
+      .filter(isFocusDevice)
       .map(device => ({
         ...device,
         name: formatDeviceName(device),

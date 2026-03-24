@@ -107,15 +107,29 @@ export async function resetPassword(email: string): Promise<{ success: boolean; 
   return { success: true };
 }
 
-export async function signInWithGitHub(): Promise<SignInResult> {
+function extractOAuthTokens(urlString: string): { accessToken: string | null; refreshToken: string | null } {
+  const url = new URL(urlString);
+  // Check query params first
+  let accessToken = url.searchParams.get('access_token');
+  let refreshToken = url.searchParams.get('refresh_token');
+  // Supabase often returns tokens in URL fragment
+  if (!accessToken && url.hash) {
+    const hashParams = new URLSearchParams(url.hash.substring(1));
+    accessToken = hashParams.get('access_token');
+    refreshToken = hashParams.get('refresh_token');
+  }
+  return { accessToken, refreshToken };
+}
+
+async function oAuthSignIn(provider: 'google' | 'strava'): Promise<SignInResult> {
   try {
     const redirectUri = makeRedirectUri({
-      scheme: 'com.smartring.testapp',
+      scheme: 'smartring',
       path: 'auth/callback',
     });
 
     const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
+      provider,
       options: {
         redirectTo: redirectUri,
         skipBrowserRedirect: true,
@@ -130,9 +144,7 @@ export async function signInWithGitHub(): Promise<SignInResult> {
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
 
       if (result.type === 'success' && result.url) {
-        const url = new URL(result.url);
-        const accessToken = url.searchParams.get('access_token');
-        const refreshToken = url.searchParams.get('refresh_token');
+        const { accessToken, refreshToken } = extractOAuthTokens(result.url);
 
         if (accessToken && refreshToken) {
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
@@ -161,6 +173,11 @@ export async function signInWithGitHub(): Promise<SignInResult> {
     return { success: false, error: error.message };
   }
 }
+
+export async function signInWithGoogle(): Promise<SignInResult> {
+  return oAuthSignIn('google');
+}
+
 
 // ============================================
 // Profile functions (separate from auth)
@@ -213,8 +230,8 @@ class AuthService {
     return signOut();
   }
 
-  async signInWithGitHub(): Promise<SignInResult> {
-    return signInWithGitHub();
+  async signInWithGoogle(): Promise<SignInResult> {
+    return signInWithGoogle();
   }
 
   async resetPassword(email: string): Promise<{ success: boolean; error?: string }> {

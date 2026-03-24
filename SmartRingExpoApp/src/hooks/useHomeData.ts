@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import i18next from 'i18next';
 import { SleepSegment, SleepStage } from '../components/home/SleepStagesChart';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
-import JstyleService from '../services/JstyleService';
 import { supabase } from '../services/SupabaseService';
 import TodayCardVitalsService, {
   CardDataStatus,
@@ -16,6 +16,12 @@ import dataSyncService from '../services/DataSyncService';
 import type { FeatureAvailability, RecoveryContributors, SportData, X3ActivitySession } from '../types/sdk.types';
 import type { SyncProgressState, MetricKey, MetricStatus, MetricSyncState } from '../types/syncStatus.types';
 import type { StravaActivitySummary } from '../types/strava.types';
+import type { UnifiedActivity } from '../types/activity.types';
+import { Platform } from 'react-native';
+import HealthKitService from '../services/HealthKitService';
+import { stravaService } from '../services/StravaService';
+import { mergeActivities } from '../services/ActivityDeduplicator';
+import { formatSleepDuration, calculateSleepScore } from '../utils/ringData/sleep';
 
 const CACHE_KEY = 'home_data_cache';
 const BASELINES_KEY = 'home_metric_baselines_v1';
@@ -94,7 +100,7 @@ export interface HomeData {
   isRingCharging: boolean;
   streakDays: number;
   insight: string;
-  insightType: 'sleep' | 'activity' | 'nutrition' | 'general';
+  insightType: 'sleep' | 'activity' | 'general';
   isLoading: boolean;
   isSyncing: boolean;
   error: string | null;
@@ -111,6 +117,7 @@ export interface HomeData {
   recoveryContributors: RecoveryContributors;
   syncProgress: SyncProgressState;
   stravaActivities: StravaActivitySummary[];
+  unifiedActivities: UnifiedActivity[];
   todayNaps: Array<{
     id: string;
     startTime: string;
@@ -831,18 +838,30 @@ function buildBlockResult(
     });
   }
 
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const score = Math.min(100, Math.round(
-    (totalMinutes / 480) * 35 +
-    ((timeline.filter(v => v === 3).length / totalMinutes) * 25) +
-    ((timeline.filter(v => v === 2).length / totalMinutes) * 15) +
-    Math.max(5, 25 - Math.round((timeline.filter(v => v === 0).length / totalMinutes) * 50))
-  ));
+  let deepMinutes = 0, remMinutes = 0, lightMinutes = 0, awakeMinutes = 0;
+  for (const v of timeline) {
+    if (v === 3) deepMinutes++;
+    else if (v === 2) remMinutes++;
+    else if (v === 1) lightMinutes++;
+    else awakeMinutes++;
+  }
+  const { score } = calculateSleepScore({
+    totalSleepMinutes: totalMinutes,
+    deepMinutes,
+    lightMinutes,
+    remMinutes,
+    awakeMinutes,
+    totalNapMinutes: 0,
+    fallAsleepDuration: 0,
+    segments: [],
+    napSegments: [],
+    timestamp: 0,
+    dayIndex: 0,
+  });
 
   return {
     score,
-    timeAsleep: `${hours}h ${minutes}m`,
+    timeAsleep: formatSleepDuration(totalMinutes),
     timeAsleepMinutes: totalMinutes,
     restingHR: extractedVitals.restingHR,
     respiratoryRate: extractedVitals.respiratoryRate,
@@ -854,30 +873,31 @@ function buildBlockResult(
 
 
 function generateInsight(sleepScore: number, activityScore: number): { insight: string; type: 'sleep' | 'activity' | 'general' } {
+  const t = i18next.t.bind(i18next);
   const insights = [
     {
       condition: sleepScore > 85,
-      insight: "Great sleep last night! Your recovery is optimal. Consider a higher intensity workout today.",
+      insight: t('overview.insight_sleep_great'),
       type: 'sleep' as const,
     },
     {
       condition: sleepScore < 70,
-      insight: "Your sleep quality was below average. Try to wind down earlier tonight and limit screen time before bed.",
+      insight: t('overview.insight_sleep_poor'),
       type: 'sleep' as const,
     },
     {
       condition: activityScore < 50,
-      insight: "You've been less active lately. Even a short 10-minute walk can boost your energy and mood.",
+      insight: t('overview.insight_activity_low'),
       type: 'activity' as const,
     },
     {
       condition: activityScore > 80,
-      insight: "You're crushing it! Your activity levels are excellent. Remember to stay hydrated and fuel properly.",
+      insight: t('overview.insight_activity_great'),
       type: 'activity' as const,
     },
     {
       condition: true,
-      insight: "Your vitals look good today. Keep up the consistent routine for optimal health.",
+      insight: t('overview.insight_general'),
       type: 'general' as const,
     },
   ];
@@ -942,6 +962,7 @@ const getEmptyData = (): HomeData => ({
     metrics: [...INITIAL_METRICS],
   },
   stravaActivities: [],
+  unifiedActivities: [],
   todayNaps: [],
   totalNapMinutesToday: 0,
   unifiedSleepSessions: [],
@@ -949,7 +970,7 @@ const getEmptyData = (): HomeData => ({
 });
 
 // Hook
-export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
+export function useHomeData(enabled = true): HomeData & { refresh: () => Promise<void> } {
   const [data, setData] = useState<HomeData>(getEmptyData);
 
   // Track app state for foreground detection
@@ -1055,6 +1076,10 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
 
   // Load cached data immediately on mount for instant display
   useEffect(() => {
+    if (!enabled) {
+      hasLoadedCache.current = false; // Reset so cache reloads on re-enable
+      return;
+    }
     if (hasLoadedCache.current) return;
     hasLoadedCache.current = true;
 
@@ -1069,10 +1094,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         }));
       }
     });
-  }, []);
+  }, [enabled]);
 
   // Load cached today-card vitals immediately on mount.
   useEffect(() => {
+    if (!enabled) return;
     TodayCardVitalsService.loadCachedVitals().then(cachedVitals => {
       if (!cachedVitals) return;
       setData(prev => {
@@ -1091,16 +1117,18 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         };
       });
     });
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     loadMetricBaselines().then(baselines => {
       baselinesRef.current = baselines;
     });
-  }, []);
+  }, [enabled]);
 
   // Listen for auth state changes to update userName from user_metadata
   useEffect(() => {
+    if (!enabled) return;
     // Get initial user
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user?.user_metadata?.display_name) {
@@ -1123,7 +1151,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [enabled]);
 
   const fetchData = useCallback(async (
     forceRefresh = false,
@@ -1172,9 +1200,17 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         console.log('🔄 [useHomeData] autoReconnect...');
       }
 
-      // Fetch Strava + naps in parallel while ring connects
+      // Fire-and-forget background Strava sync (non-blocking)
+      // By the time ring data finishes, Strava sync is likely done and data is in Supabase
+      const stravaSyncPromise = stravaService.backgroundSync(7).catch(() => null);
+      stravaSyncPromise.then(r => {
+        if (r?.success) console.log(`🏃 [useHomeData] Background Strava sync: ${r.count} activities`);
+      });
+
+      // Fetch Strava + naps + HealthKit workouts in parallel while ring connects
       let stravaActivities: StravaActivitySummary[] = [];
       let todayNaps: HomeData['todayNaps'] = [];
+      let hkWorkouts: import('../types/activity.types').HKWorkoutResult[] = [];
       if (userId) {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -1183,7 +1219,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         const todayEnd = new Date(todayStart);
         todayEnd.setDate(todayEnd.getDate() + 1);
 
-        const [stravaResult, napResult] = await Promise.all([
+        const [stravaResult, napResult, hkWorkoutResult] = await Promise.all([
           supabase
             .from('strava_activities')
             .select('id, name, sport_type, start_date, distance_m, moving_time_sec, average_heartrate, max_heartrate, suffer_score, calories, splits_metric_json, zones_json')
@@ -1198,8 +1234,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
             .gte('start_time', todayStart.toISOString())
             .lte('start_time', todayEnd.toISOString())
             .order('start_time', { ascending: true }),
+          // HealthKit workouts (7 days, iOS only — returns [] on Android)
+          HealthKitService.fetchWeekWorkouts().catch(() => []),
         ]);
         stravaActivities = (stravaResult.data as unknown as StravaActivitySummary[]) ?? [];
+        hkWorkouts = hkWorkoutResult;
         todayNaps = ((napResult.data as any[]) ?? []).map(s => ({
           id: s.id,
           startTime: s.start_time,
@@ -1218,6 +1257,67 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const reconnectResult = await reconnectPromise;
       if (!alreadyConnected) {
         if (!reconnectResult.success) {
+          // ── HealthKit fallback when ring is not connected ──
+          if (Platform.OS === 'ios') {
+            try {
+              const hkConnected = await HealthKitService.isConnected();
+              if ((hkConnected && HealthKitService.hasAuthorization) || await HealthKitService.checkPermissions()) {
+                console.log('🍎 [useHomeData] Ring not connected, trying HealthKit fallback...');
+                const hkData = await HealthKitService.fetchAllHealthData().catch(() => null);
+                if (hkData) {
+                  const hkSleep = hkData.sleep;
+                  const hkSteps = hkData.steps;
+                  const hkHR = hkData.heartRate;
+                  const hkHRV = hkData.hrv;
+                  const hkSpo2 = hkData.spo2;
+
+                  setData(prev => ({
+                    ...prev,
+                    userName,
+                    isLoading: false,
+                    isSyncing: false,
+                    isRingConnected: false,
+                    error: null,
+                    syncProgress: { ...sp, phase: 'idle' },
+                    // Fill in HealthKit data as fallback
+                    ...(hkSleep ? {
+                      sleepScore: hkSleep.sleepEfficiency,
+                      lastNightSleep: {
+                        score: hkSleep.sleepEfficiency,
+                        timeAsleep: formatSleepDuration(hkSleep.totalSleep),
+                        timeAsleepMinutes: hkSleep.totalSleep,
+                        restingHR: prev.lastNightSleep.restingHR,
+                        respiratoryRate: prev.lastNightSleep.respiratoryRate,
+                        segments: prev.lastNightSleep.segments,
+                        bedTime: hkSleep.bedTime ? new Date(hkSleep.bedTime) : prev.lastNightSleep.bedTime,
+                        wakeTime: hkSleep.wakeTime ? new Date(hkSleep.wakeTime) : prev.lastNightSleep.wakeTime,
+                      },
+                    } : {}),
+                    ...(hkSteps.steps > 0 ? {
+                      activity: {
+                        ...prev.activity,
+                        steps: hkSteps.steps,
+                      },
+                    } : {}),
+                    ...(hkHRV ? { hrvSdnn: hkHRV.sdnn } : {}),
+                    // Unified activities from Strava + HealthKit (no ring sessions when disconnected)
+                    stravaActivities,
+                    unifiedActivities: mergeActivities(stravaActivities, hkWorkouts, []),
+                  }));
+                  console.log('🍎 [useHomeData] HealthKit fallback applied:', {
+                    sleep: hkSleep?.totalSleep,
+                    steps: hkSteps.steps,
+                    hr: hkHR?.heartRate,
+                    hrv: hkHRV?.sdnn,
+                  });
+                  return;
+                }
+              }
+            } catch (hkError) {
+              console.log('🍎 [useHomeData] HealthKit fallback failed:', hkError);
+            }
+          }
+
           updateSP({ phase: 'idle' });
           setData(prev => ({ ...prev, userName, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.', syncProgress: sp }));
           return;
@@ -1228,6 +1328,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         console.log('✅ [useHomeData] already connected, skipping autoReconnect');
       }
       updateSP({ phase: 'syncing' });
+      console.log('📱 [useHomeData] SDK path:', UnifiedSmartRingService.getConnectedSDKType());
       console.log('✅ [useHomeData] connected');
 
       // 2. Sleep — getSleepData() raw + deriveFromRaw() (EXACT testing.tsx pattern)
@@ -1240,7 +1341,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       for (let attempt = 1; attempt <= 3 && !finalSleepData; attempt++) {
         try {
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt}...`);
-          const rawResult = await JstyleService.getSleepData();
+          const rawResult = await UnifiedSmartRingService.getSleepDataRaw();
           const rawRecords: any[] = (rawResult as any).data || (rawResult as any).records || [];
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt} records:`, rawRecords.length);
           const derived = deriveFromRaw(rawRecords);
@@ -1255,6 +1356,44 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
         }
       }
+      // Supabase fallback: if ring returned no sleep, try last night from cloud
+      if (!finalSleepData && userId) {
+        try {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          yesterday.setHours(18, 0, 0, 0); // 6 PM yesterday (overnight window)
+          const { data: sbSleep } = await supabase
+            .from('sleep_sessions')
+            .select('sleep_score, deep_min, light_min, rem_min, awake_min, start_time, end_time, detail_json')
+            .eq('user_id', userId)
+            .neq('session_type', 'nap')
+            .gte('start_time', yesterday.toISOString())
+            .order('start_time', { ascending: false })
+            .limit(1);
+          const s = (sbSleep as any)?.[0];
+          if (s && s.start_time && s.end_time) {
+            const deepMin = s.deep_min || 0;
+            const lightMin = s.light_min || 0;
+            const remMin = s.rem_min || 0;
+            const awakeMin = s.awake_min || 0;
+            const totalMin = deepMin + lightMin + remMin;
+            finalSleepData = {
+              score: s.sleep_score || 0,
+              timeAsleep: formatSleepDuration(totalMin),
+              timeAsleepMinutes: totalMin,
+              restingHR: 0,
+              respiratoryRate: 0,
+              segments: [],
+              bedTime: new Date(s.start_time),
+              wakeTime: new Date(s.end_time),
+            };
+            console.log(`✅ [useHomeData] sleep from Supabase: score=${s.sleep_score}, ${formatSleepDuration(totalMin)}`);
+          }
+        } catch (e: any) {
+          console.log('⚠️ [useHomeData] Supabase sleep fallback failed:', e?.message);
+        }
+      }
+
       updateSP(prev => updateMetric(prev, 'sleep', finalSleepData ? 'done' : 'error'));
 
       if (finalSleepData) hasLoadedRealData.current = true;
@@ -1279,7 +1418,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const hrChartData: Array<{ timeMinutes: number; heartRate: number }> = [];
       updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
-      const hrRaw = await JstyleService.getContinuousHeartRate();
+      const hrRaw = await UnifiedSmartRingService.getContinuousHeartRateRaw();
       console.log('📊 [useHomeData] HR raw records:', hrRaw.records?.length, hrRaw.records?.map((r: any) => ({
         date: r.date,
         ts: r.startTimestamp,
@@ -1288,14 +1427,28 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const samples: number[] = [];
       const now = new Date();
       const todayDateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
-      const isRecordFromToday = (rec: any): boolean => {
+      const getRecordDateStr = (rec: any): string => {
         const ts = rec.startTimestamp;
         if (typeof ts === 'number' && ts > 1e10) {
           const d = new Date(ts);
-          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+          return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
         }
         const dateStr = typeof rec.date === 'string' ? rec.date : '';
-        return dateStr.startsWith(todayDateStr);
+        return dateStr.split(' ')[0] || ''; // "2026.03.20 19:36:02" → "2026.03.20"
+      };
+      // Find the best date to use: today if available, otherwise most recent day in records
+      const allRecords = hrRaw.records || [];
+      let targetDateStr = todayDateStr;
+      const hasToday = allRecords.some((r: any) => getRecordDateStr(r) === todayDateStr);
+      if (!hasToday && allRecords.length > 0) {
+        // Find the most recent date across all records
+        const dates = allRecords.map((r: any) => getRecordDateStr(r)).filter((d: string) => d.length > 0);
+        dates.sort();
+        targetDateStr = dates[dates.length - 1] || todayDateStr;
+        console.log(`📊 [useHomeData] HR: no today data, using most recent day: ${targetDateStr}`);
+      }
+      const isRecordFromTargetDate = (rec: any): boolean => {
+        return getRecordDateStr(rec) === targetDateStr;
       };
       const parseX3DateToMinutes = (value?: string): number | undefined => {
         if (!value || typeof value !== 'string') return undefined;
@@ -1308,8 +1461,8 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
         if (!Number.isFinite(ts.getTime()) || ts.getTime() <= 0) return undefined;
         return ts.getHours() * 60 + ts.getMinutes();
       };
-      for (const rec of hrRaw.records || []) {
-        if (!isRecordFromToday(rec)) continue;
+      for (const rec of allRecords) {
+        if (!isRecordFromTargetDate(rec)) continue;
         const arr = Array.isArray(rec.arrayDynamicHR)
           ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
           : [];
@@ -1344,10 +1497,10 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       // If continuous HR is empty, try single/static HR as secondary source
       if (samples.length === 0) {
         try {
-          const singleHR = await JstyleService.getSingleHeartRate();
+          const singleHR = await UnifiedSmartRingService.getSingleHeartRateRaw();
           console.log('📊 [useHomeData] Single HR records:', singleHR.records?.length);
           for (const rec of singleHR.records || []) {
-            if (!isRecordFromToday(rec)) continue;
+            if (!isRecordFromTargetDate(rec)) continue;
             const arr = Array.isArray(rec.arrayDynamicHR)
               ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
               : [];
@@ -1381,7 +1534,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       const hrvHrPoints: Array<{ timeMinutes: number; heartRate: number }> = [];
       updateSP(prev => updateMetric(prev, 'hrv', 'loading'));
       try {
-      const hrvNorm = await JstyleService.getHRVDataNormalized();
+      const hrvNorm = await UnifiedSmartRingService.getHRVDataNormalizedArray();
       const valid = hrvNorm.filter(h => (h.sdnn ?? 0) > 0);
       console.log('RAW_HRV count:', hrvNorm.length, 'valid:', valid.length, 'first:', JSON.stringify(hrvNorm[0]));
       if (valid.length > 0) {
@@ -1635,6 +1788,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
           recoveryContributors,
           syncProgress: sp,
           stravaActivities,
+          unifiedActivities: mergeActivities(stravaActivities, hkWorkouts, activitySessions),
           todayNaps,
           totalNapMinutesToday: totalNapMinutesUpdated,
           unifiedSleepSessions,
@@ -1687,13 +1841,15 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
 
   // Initial fetch — call autoReconnect() immediately (same pattern as testing.tsx)
   useEffect(() => {
+    if (!enabled) return;
     console.log('🚀 [useHomeData] HOOK MOUNTED at', new Date().toLocaleTimeString());
     fetchData(true, 'initial');
-  }, [fetchData]);
+  }, [enabled, fetchData]);
 
   // Listen for ring connection state changes.
   // We update connection UI state and trigger targeted card hydration on reconnect.
   useEffect(() => {
+    if (!enabled) return;
     const unsubscribe = UnifiedSmartRingService.onConnectionStateChanged((state) => {
       console.log('📡 [useHomeData] Connection state changed:', state, 'at', new Date().toLocaleTimeString());
 
@@ -1736,10 +1892,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     return () => {
       unsubscribe();
     };
-  }, [refreshMissingCardData]);
+  }, [enabled, refreshMissingCardData]);
 
   // Reactively update battery level and charging state from passive ring notifications
   useEffect(() => {
+    if (!enabled) return;
     const unsubscribe = UnifiedSmartRingService.onBatteryReceived((batt) => {
       setData(prev => ({
         ...prev,
@@ -1748,10 +1905,11 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
       }));
     });
     return () => unsubscribe();
-  }, []);
+  }, [enabled]);
 
   // Listen for app state changes (foreground/background)
   useEffect(() => {
+    if (!enabled) return;
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       // App came to foreground from background
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
@@ -1772,7 +1930,7 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
     return () => {
       subscription.remove();
     };
-  }, [fetchData, refreshMissingCardData]);
+  }, [enabled, fetchData, refreshMissingCardData]);
 
   useEffect(() => {
     return () => {
@@ -1793,28 +1951,28 @@ export function useHomeData(): HomeData & { refresh: () => Promise<void> } {
 }
 
 // Score interpretation helpers
-export function getScoreMessage(score: number): string {
-  if (score >= 90) return "Rise and shine! You're at your peak.";
-  if (score >= 80) return "Great day ahead! You're well-recovered.";
-  if (score >= 70) return "Solid baseline. Ready for a productive day.";
-  if (score >= 60) return "Take it easy today. Focus on recovery.";
-  return "Rest up. Your body needs recovery time.";
+export function getScoreMessage(score: number, t: (key: string) => string): string {
+  if (score >= 90) return t('overview.score_msg_90');
+  if (score >= 80) return t('overview.score_msg_80');
+  if (score >= 70) return t('overview.score_msg_70');
+  if (score >= 60) return t('overview.score_msg_60');
+  return t('overview.score_msg_low');
 }
 
-export function getSleepMessage(score: number): string {
-  if (score >= 90) return "Exceptional sleep quality!";
-  if (score >= 80) return "Great night's rest.";
-  if (score >= 70) return "Good sleep overall.";
-  if (score >= 60) return "Room for improvement.";
-  return "Poor sleep quality. Prioritize rest tonight.";
+export function getSleepMessage(score: number, t: (key: string) => string): string {
+  if (score >= 90) return t('overview.sleep_msg_90');
+  if (score >= 80) return t('overview.sleep_msg_80');
+  if (score >= 70) return t('overview.sleep_msg_70');
+  if (score >= 60) return t('overview.sleep_msg_60');
+  return t('overview.sleep_msg_low');
 }
 
-export function getActivityMessage(score: number): string {
-  if (score >= 90) return "Outstanding activity level!";
-  if (score >= 80) return "Very active day.";
-  if (score >= 70) return "Good activity level.";
-  if (score >= 60) return "Moderate activity.";
-  return "Time to get moving!";
+export function getActivityMessage(score: number, t: (key: string) => string): string {
+  if (score >= 90) return t('overview.activity_msg_90');
+  if (score >= 80) return t('overview.activity_msg_80');
+  if (score >= 70) return t('overview.activity_msg_70');
+  if (score >= 60) return t('overview.activity_msg_60');
+  return t('overview.activity_msg_low');
 }
 
 export default useHomeData;
