@@ -43,8 +43,6 @@ export function HeroLinearGauge({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
-
       <View style={styles.heroArea}>
         <View style={styles.barRow}>
           <Text style={styles.minMax}>{minLabel}</Text>
@@ -56,6 +54,7 @@ export function HeroLinearGauge({
         </View>
 
         <View style={styles.valueWrapper}>
+          <Text style={styles.label}>{label}</Text>
           <Text style={styles.value}>{displayValue.toLocaleString()}</Text>
         </View>
       </View>

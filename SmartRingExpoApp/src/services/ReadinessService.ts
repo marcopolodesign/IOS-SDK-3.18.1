@@ -11,6 +11,7 @@ import type {
   ReadinessComponents,
   ReadinessRecommendation,
   IllnessWatch,
+  IllnessWatchDetails,
   IllnessSignals,
   IllnessStatus,
   LastRunContext,
@@ -28,6 +29,7 @@ function emptyBaselines(): FocusBaselines {
     restingHR: [],
     temperature: [],
     sleepScore: [],
+    sleepMinutes: [],
     respiratoryRate: [],
     updatedAt: null,
     daysLogged: 0,
@@ -38,7 +40,9 @@ export async function loadBaselines(): Promise<FocusBaselines> {
   try {
     const raw = await AsyncStorage.getItem(BASELINES_KEY);
     if (!raw) return emptyBaselines();
-    return JSON.parse(raw) as FocusBaselines;
+    // Merge against emptyBaselines() so any field added after initial storage
+    // (e.g. sleepMinutes) is populated with [] instead of undefined.
+    return { ...emptyBaselines(), ...(JSON.parse(raw) as Partial<FocusBaselines>) };
   } catch {
     return emptyBaselines();
   }
@@ -109,6 +113,7 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
       restingHR: r.restingHR ? pushRolling(baselines.restingHR, r.restingHR) : baselines.restingHR,
       temperature: r.temperature ? pushRolling(baselines.temperature, r.temperature) : baselines.temperature,
       sleepScore: r.sleepScore ? pushRolling(baselines.sleepScore, r.sleepScore) : baselines.sleepScore,
+      sleepMinutes: r.sleepMinutes ? pushRolling(baselines.sleepMinutes, r.sleepMinutes) : baselines.sleepMinutes,
       respiratoryRate: baselines.respiratoryRate,
       updatedAt: day,
       daysLogged: baselines.daysLogged + 1,
@@ -116,13 +121,15 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
   }
   baselines = { ...baselines, updatedAt: today };
 
+  console.log(`[Bootstrap] daysLogged=${baselines.daysLogged}`);
+
   await saveBaselines(baselines);
   return baselines;
 }
 
-function pushRolling(values: number[], value: number, max = 14): number[] {
-  if (!Number.isFinite(value) || value <= 0) return values;
-  const next = [...values, value];
+function pushRolling(values: number[] | undefined, value: number, max = 14): number[] {
+  if (!Number.isFinite(value) || value <= 0) return values ?? [];
+  const next = [...(values ?? []), value];
   return next.length <= max ? next : next.slice(next.length - max);
 }
 
@@ -162,6 +169,9 @@ export function updateBaselines(
     sleepScore: readings.sleepScore
       ? pushRolling(current.sleepScore, readings.sleepScore)
       : current.sleepScore,
+    sleepMinutes: readings.sleepMinutes
+      ? pushRolling(current.sleepMinutes, readings.sleepMinutes)
+      : current.sleepMinutes,
     respiratoryRate: readings.respiratoryRate
       ? pushRolling(current.respiratoryRate, readings.respiratoryRate)
       : current.respiratoryRate,
@@ -188,15 +198,15 @@ function scoreHRVComponent(sdnn: number | null, baseline: number[]): number | nu
 function scoreSleepComponent(
   sleepScore: number | null,
   sleepMinutes: number | null,
-  baseline: number[]
+  scoreBaseline: number[],
+  minutesBaseline: number[]
 ): number | null {
-  if (sleepScore == null) return null;
-  const baselineMinutes = median(baseline.map((s) => s)); // sleep baseline stores scores
-  const scoreContrib = sleepScore * 0.7;
-  if (baselineMinutes == null) return clamp(scoreContrib / 0.7, 0, 100);
-  // minutes component: compare to baseline (assume 480 min good sleep baseline for scoring)
-  const minsScore = sleepMinutes != null ? clamp((sleepMinutes / 480) * 100, 0, 100) : 0;
-  return clamp(scoreContrib + minsScore * 0.3, 0, 100);
+  // sleep_score is not persisted in Supabase, so fall back to minutes-only scoring
+  if (sleepScore == null && sleepMinutes == null) return null;
+  const baselineMins = median(minutesBaseline) ?? 480;
+  const minsScore = sleepMinutes != null ? clamp((sleepMinutes / baselineMins) * 100, 0, 100) : 50;
+  if (sleepScore == null) return minsScore;
+  return clamp(sleepScore * 0.7 + minsScore * 0.3, 0, 100);
 }
 
 function scoreRestingHRComponent(
@@ -205,7 +215,11 @@ function scoreRestingHRComponent(
 ): number | null {
   if (hr == null) return null;
   const med = median(baseline);
-  if (med == null) return null;
+  if (med == null) {
+    // No personal baseline yet — score against population norms so the bar isn't empty.
+    // < 50 bpm = athlete level (excellent), 60 = average, 80+ = poor.
+    return clamp(100 - (hr - 40) * 2.5, 0, 100);
+  }
   return clamp(50 - ((hr - med) / med) * 100, 0, 100);
 }
 
@@ -302,16 +316,20 @@ export async function computeReadiness(
 ): Promise<ReadinessScore> {
   const { userId, hrv, sleepScore, sleepMinutes, restingHR, baselines } = params;
 
+  console.log(`[Readiness] inputs: hrv=${hrv}, sleepScore=${sleepScore}, sleepMin=${sleepMinutes}, restingHR=${restingHR}, baselineDays=${baselines.daysLogged}`);
+
   const [tLoad] = await Promise.all([scoreTrainingLoadComponent(userId)]);
 
   const components: ReadinessComponents = {
     hrv: scoreHRVComponent(hrv, baselines.hrv),
-    sleep: scoreSleepComponent(sleepScore, sleepMinutes, baselines.sleepScore),
+    sleep: scoreSleepComponent(sleepScore, sleepMinutes, baselines.sleepScore, baselines.sleepMinutes ?? []),
     restingHR: scoreRestingHRComponent(restingHR, baselines.restingHR),
     trainingLoad: tLoad,
   };
 
   const score = computeWeightedScore(components);
+  if (__DEV__) console.log(`[Readiness] score=${score}, components=${JSON.stringify(components)}`);
+
   return {
     score,
     recommendation: scoreToRecommendation(score),
@@ -372,21 +390,23 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
 
   const tempDeviation = (() => {
     if (temperature == null || tempMed == null) return false;
-    const dev = Math.abs(temperature - tempMed);
-    if (dev > 0.8) { signalCount += 2; return true; }
-    if (dev > 0.3) { signalCount += 1; return true; }
-    return false;
+    const dev = temperature - tempMed; // positive = warmer than baseline
+    if (dev > 1.0) { signalCount += 2; return true; }  // Major: >1.0°C above baseline
+    if (dev > 0.5) { signalCount += 1; return true; }  // Minor: >0.5°C above baseline
+    return false; // Lower temps or small deviations are not illness signals
   })();
 
   const restingHRElevated = (() => {
     if (restingHR == null || hrMed == null) return false;
-    if (restingHR > hrMed + 5) { signalCount += 1; return true; }
+    // Only flag if meaningfully above baseline AND above a minimum absolute threshold.
+    // This prevents false positives when personal baseline is skewed by bad data.
+    if (restingHR > hrMed + 5 && restingHR > 52) { signalCount += 1; return true; }
     return false;
   })();
 
   const hrvSuppressed = (() => {
     if (hrv == null || hrvMed == null) return false;
-    if (hrv < hrvMed * 0.9) { signalCount += 1; return true; }
+    if (hrv < hrvMed * 0.85) { signalCount += 1; return true; } // 15% below baseline
     return false;
   })();
 
@@ -413,7 +433,32 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
   const status: IllnessStatus =
     signalCount >= 3 ? 'SICK' : signalCount >= 1 ? 'WATCH' : 'CLEAR';
 
-  return { status, signals, summary: buildIllnessSummary(status, signals) };
+  if (__DEV__) console.log(`[Illness] status=${status}, signals=${JSON.stringify(signals)}`);
+
+  const details: IllnessWatchDetails = {
+    hrvDelta: (() => {
+      if (hrv == null || hrvMed == null) return null;
+      const pct = Math.round(((hrv - hrvMed) / hrvMed) * 100);
+      return `${pct >= 0 ? '+' : ''}${pct}%`;
+    })(),
+    hrDelta: (() => {
+      if (restingHR == null || hrMed == null) return null;
+      const diff = Math.round(restingHR - hrMed);
+      return `${diff >= 0 ? '+' : ''}${diff} bpm`;
+    })(),
+    tempDelta: (() => {
+      if (temperature == null || tempMed == null) return null;
+      const diff = temperature - tempMed;
+      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}°C`;
+    })(),
+  };
+
+  return {
+    status,
+    signals,
+    summary: buildIllnessSummary(status, signals),
+    details,
+  };
 }
 
 // ─── Last Run Context ─────────────────────────────────────────────────────────
@@ -460,6 +505,7 @@ export async function computeLastRunContext(
       .order('start_date', { ascending: false })
       .limit(1);
 
+    console.log(`[LastRun] lastRun=${activities?.[0]?.start_date?.slice(0, 10) ?? null} (null = no Strava data)`);
     if (!activities || activities.length === 0) return null;
 
     const act = activities[0];
@@ -487,7 +533,7 @@ export async function computeLastRunContext(
         .limit(1),
       supabase
         .from('sleep_sessions')
-        .select('sleep_score')
+        .select('deep_min, light_min, rem_min')
         .eq('user_id', userId)
         .gte('start_time', runDayStart)
         .lt('start_time', runDayEnd)
@@ -496,11 +542,16 @@ export async function computeLastRunContext(
     ]);
 
     const runHrv = hrvData?.[0]?.sdnn ?? null;
-    const runSleepScore = sleepData?.[0]?.sleep_score ?? null;
+    const s = sleepData?.[0];
+    const runSleepMinutes = s ? (s.deep_min ?? 0) + (s.light_min ?? 0) + (s.rem_min ?? 0) : null;
 
     const hrMed = median(baselines.restingHR);
-    const expectedHR =
-      hrMed != null ? hrMed + (paceMinsPerKm - 4.0) * 12 : avgHR;
+    // HR reserve model: zone-2 running HR ≈ restingHR + 65% of estimated HR reserve
+    // Anchor pace: 5:30/km (easy run). Each min/km faster → +8 bpm, slower → -8 bpm.
+    const estimatedMaxHR = 190;
+    const hrReserve = hrMed != null ? estimatedMaxHR - hrMed : 130;
+    const easyRunHR = (hrMed ?? 60) + hrReserve * 0.65;
+    const expectedHR = Math.round(easyRunHR + (5.5 - paceMinsPerKm) * 8);
 
     let effortVerdict: EffortVerdict = 'as_expected';
     if (avgHR > expectedHR + 8) effortVerdict = 'harder_than_expected';
@@ -533,7 +584,7 @@ export async function computeLastRunContext(
       explanation,
       bodyStateAtRun: {
         readinessScore: null, // not backfilled for MVP
-        sleepScore: runSleepScore,
+        sleepMinutes: runSleepMinutes,
         hrvVsNorm,
       },
     };

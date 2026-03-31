@@ -193,6 +193,10 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
     }
 
     if (_v8Emitter) {
+      subs.push(_v8Emitter.addListener('V8RealTimeData', (data: any) => {
+        console.log('[LiveHR] RAW V8RealTimeData:', JSON.stringify(data));
+        handleHR(Number(data?.heartRate ?? 0));
+      }));
       subs.push(_v8Emitter.addListener('V8MeasurementResult', (data: any) => {
         console.log('[LiveHR] RAW V8MeasurementResult:', JSON.stringify(data));
         if (data.type === 'heartRate') handleHR(Number(data?.heartRate ?? 0));

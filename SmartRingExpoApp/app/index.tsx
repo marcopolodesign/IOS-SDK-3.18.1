@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { router } from 'expo-router';
 import { useOnboarding } from '../src/context/OnboardingContext';
 
@@ -8,6 +9,9 @@ export default function Index() {
 
   useEffect(() => {
     if (isLoading) return;
+
+    // Hide native splash now that we know where to navigate
+    SplashScreen.hideAsync();
 
     if (!isAuthenticated) {
       router.replace('/(auth)/login');
@@ -18,19 +22,13 @@ export default function Index() {
     }
   }, [isAuthenticated, hasConnectedDevice, isLoading]);
 
-  // Show loading while checking state
-  return (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color="#6366F1" />
-    </View>
-  );
+  // Keep screen blank — native splash is still visible on top
+  return <View style={styles.container} />;
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: '#0F0F1A',
   },
 });

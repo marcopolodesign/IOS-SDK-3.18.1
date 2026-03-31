@@ -7,6 +7,7 @@
  */
 
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import JstyleService from './JstyleService';
 import V8Service from './V8Service';
 import type {
@@ -36,6 +37,14 @@ class UnifiedSmartRingService {
   private connectedSDKType: SDKType = 'none';
   private connectedDeviceType: DeviceType | null = null;
   private autoReconnectInFlight: Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> | null = null;
+
+  private async getPersistedSDKType(): Promise<SDKType> {
+    try {
+      const stored = await AsyncStorage.getItem('connectedSDKType');
+      if (stored === 'jstyle' || stored === 'v8') return stored;
+    } catch (_) {}
+    return 'none';
+  }
 
   // JavaScript-side connection state listeners (for manual state notifications)
   private jsConnectionListeners: Set<(state: ConnectionState) => void> = new Set();
@@ -100,10 +109,15 @@ class UnifiedSmartRingService {
    * Set which SDK type is being used for the current connection
    * Called by useSmartRing when connecting to a device with a known sdkType
    */
-  setConnectedSDKType(type: SDKType): void {
+  setConnectedSDKType(type: SDKType, deviceType?: DeviceType): void {
     console.log('📱 [UnifiedService] Setting connected SDK type:', type);
     this.connectedSDKType = type;
-    this.connectedDeviceType = type === 'v8' ? 'band' : type === 'jstyle' ? 'ring' : null;
+    this.connectedDeviceType = deviceType ?? (type === 'v8' ? 'band' : type === 'jstyle' ? 'ring' : null);
+    if (type === 'jstyle' || type === 'v8') {
+      AsyncStorage.setItem('connectedSDKType', type).catch(() => {});
+    } else {
+      AsyncStorage.removeItem('connectedSDKType').catch(() => {});
+    }
   }
 
   /**
@@ -176,11 +190,11 @@ class UnifiedSmartRingService {
     }
   }
 
-  async connect(mac: string, sdkType?: SDKType): Promise<{ success: boolean; message: string }> {
+  async connect(mac: string, sdkType?: SDKType, deviceType?: DeviceType): Promise<{ success: boolean; message: string }> {
     this.ensureSDKAvailable();
 
     const type = sdkType || 'jstyle';
-    this.setConnectedSDKType(type);
+    this.setConnectedSDKType(type, deviceType);
 
     if (type === 'v8') {
       return await V8Service.connect(mac);
@@ -255,24 +269,33 @@ class UnifiedSmartRingService {
     hasPairedDevice: boolean;
     device: DeviceInfo | null;
   }> {
-    // Check Jstyle first
-    if (JstyleService.isAvailable()) {
-      const jResult = await JstyleService.getPairedDevice();
-      if (jResult.hasPairedDevice && jResult.device) {
+    const persistedSDKType = await this.getPersistedSDKType();
+
+    // Check Jstyle first (uses NSUserDefaults, not active connection)
+    if (JstyleService.isAvailable() && persistedSDKType !== 'v8') {
+      const jResult = await JstyleService.hasPairedDevice();
+      if (jResult.hasPairedDevice) {
         return {
           hasPairedDevice: true,
-          device: { ...jResult.device, sdkType: 'jstyle', deviceType: 'ring' },
+          device: {
+            id: jResult.deviceId ?? 'jstyle-paired',
+            mac: jResult.deviceId ?? 'jstyle-paired',
+            name: jResult.deviceName ?? 'Focus X3',
+            rssi: -50,
+            sdkType: 'jstyle',
+            deviceType: 'ring',
+          },
         };
       }
     }
 
-    // Check V8
-    if (V8Service.isAvailable()) {
+    // Check V8 (uses NSUserDefaults)
+    if (V8Service.isAvailable() && persistedSDKType !== 'jstyle') {
       const vResult = await V8Service.getPairedDevice();
       if (vResult.hasPairedDevice && vResult.device) {
         return {
           hasPairedDevice: true,
-          device: { ...vResult.device, sdkType: 'v8', deviceType: 'band' },
+          device: { ...vResult.device, sdkType: 'v8', deviceType: /x6/i.test(vResult.device.name ?? '') ? 'ring' : 'band' },
         };
       }
     }
@@ -281,13 +304,13 @@ class UnifiedSmartRingService {
   }
 
   async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
-    if (this.connectedSDKType === 'v8') {
-      return await V8Service.forgetPairedDevice();
-    }
-    if (this.connectedSDKType === 'jstyle' || JstyleService.isAvailable()) {
-      return await JstyleService.forgetPairedDevice();
-    }
-    return { success: false, message: 'No SDK available' };
+    // Always clear both SDKs to avoid stale NSUserDefaults causing misdetection
+    await Promise.allSettled([
+      JstyleService.isAvailable() ? JstyleService.forgetPairedDevice() : Promise.resolve(),
+      V8Service.isAvailable() ? V8Service.forgetPairedDevice() : Promise.resolve(),
+    ]);
+    this.setConnectedSDKType('none');
+    return { success: true, message: 'All paired devices forgotten' };
   }
 
   async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
@@ -296,12 +319,15 @@ class UnifiedSmartRingService {
     }
 
     this.autoReconnectInFlight = (async () => {
+      const persistedSDKType = await this.getPersistedSDKType();
+
       // Check Jstyle already connected
       if (JstyleService.isAvailable()) {
         try {
           const jStatus = await JstyleService.isConnected();
           if (jStatus.connected) {
             this.setConnectedSDKType('jstyle');
+            V8Service.forgetPairedDevice().catch(() => {});
             return {
               success: true,
               message: 'Already connected',
@@ -319,7 +345,9 @@ class UnifiedSmartRingService {
         try {
           const vStatus = await V8Service.isConnected();
           if (vStatus.connected) {
-            this.setConnectedSDKType('v8');
+            const vDevType = /x6/i.test(vStatus.deviceName ?? '') ? 'ring' : 'band';
+            this.setConnectedSDKType('v8', vDevType);
+            JstyleService.forgetPairedDevice().catch(() => {});
             return {
               success: true,
               message: 'Already connected',
@@ -332,8 +360,8 @@ class UnifiedSmartRingService {
         }
       }
 
-      // Try Jstyle reconnect
-      if (JstyleService.isAvailable()) {
+      // Try Jstyle reconnect — skip if persisted type is v8 (avoids misdetection from stale NSUserDefaults)
+      if (JstyleService.isAvailable() && persistedSDKType !== 'v8') {
         try {
           const jPaired = await JstyleService.hasPairedDevice();
           if (jPaired.hasPairedDevice) {
@@ -341,6 +369,7 @@ class UnifiedSmartRingService {
             const result = await JstyleService.autoReconnect();
             if (result.success) {
               setTimeout(() => this.emitConnectionState('connected'), 50);
+              V8Service.forgetPairedDevice().catch(() => {});
               return result;
             }
             this.connectedSDKType = 'none';
@@ -350,15 +379,18 @@ class UnifiedSmartRingService {
         }
       }
 
-      // Try V8 reconnect
-      if (V8Service.isAvailable()) {
+      // Try V8 reconnect — skip if persisted type is jstyle (avoids misdetection from stale NSUserDefaults)
+      if (V8Service.isAvailable() && persistedSDKType !== 'jstyle') {
         try {
           const vPaired = await V8Service.hasPairedDevice();
           if (vPaired.hasPairedDevice) {
-            this.setConnectedSDKType('v8');
+            const vPairedDev = await V8Service.getPairedDevice().catch(() => null);
+            const vDevType = /x6/i.test(vPairedDev?.device?.name ?? '') ? 'ring' : 'band';
+            this.setConnectedSDKType('v8', vDevType);
             const result = await V8Service.autoReconnect();
             if (result.success) {
               setTimeout(() => this.emitConnectionState('connected'), 50);
+              JstyleService.forgetPairedDevice().catch(() => {});
               return result;
             }
             this.connectedSDKType = 'none';
@@ -755,7 +787,14 @@ class UnifiedSmartRingService {
     }
     if (V8Service.isAvailable()) {
       unsubs.push(V8Service.onDeviceDiscovered((device) => {
-        callback({ ...device, sdkType: 'v8', deviceType: 'band' });
+        const name = (device.name || '').toLowerCase();
+        const isX3 = name.includes('x3');
+        const isX6 = name.includes('x6');
+        callback({
+          ...device,
+          sdkType: isX3 ? 'jstyle' : 'v8',
+          deviceType: isX3 || isX6 ? 'ring' : 'band',
+        });
       }));
     }
 
@@ -863,9 +902,8 @@ class UnifiedSmartRingService {
     this.ensureConnected();
     console.log(`📱 [UnifiedService] getSleepDataRaw via ${this.connectedSDKType}`);
     if (this.isV8()) {
-      const result = await V8Service.getSleepByDay(0);
-      // Wrap V8 SleepData into the records shape useHomeData expects
-      return { records: result ? [result] : [], timestamp: Date.now() };
+      // Return raw SDK records so deriveFromRaw() can parse them
+      return await V8Service.getSleepDataRaw();
     }
     return await JstyleService.getSleepData();
   }
@@ -983,6 +1021,8 @@ class UnifiedSmartRingService {
     this.ensureConnected();
     console.log(`📱 [UnifiedService] startHeartRateMeasuring via ${this.connectedSDKType}`);
     if (this.isV8()) {
+      // Start realtime stream first (provides continuous HR), then manual measurement as fallback
+      try { await V8Service.startRealTimeData(); } catch (e) { console.log('[UnifiedService] V8 startRealTimeData error:', e); }
       return await V8Service.startHeartRateMeasuring();
     }
     const result = await JstyleService.startHeartRateMeasuring();
@@ -1007,7 +1047,7 @@ class UnifiedSmartRingService {
   async stopRealTimeData(): Promise<void> {
     console.log(`📱 [UnifiedService] stopRealTimeData via ${this.connectedSDKType}`);
     if (this.isV8()) {
-      // V8 doesn't have a separate real-time data stream to stop
+      try { await V8Service.stopRealTimeData(); } catch (e) { console.log('[UnifiedService] V8 stopRealTimeData error:', e); }
       return;
     }
     await JstyleService.stopRealTimeData();

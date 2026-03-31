@@ -34,6 +34,7 @@ const { width: SCREEN_WIDTH, height } = Dimensions.get('window');
 const WELCOME_BG = require('../../assets/welcome-bg.jpg');
 const SCANNING_BG = require('../../assets/scanning_bg.jpg');
 const CONNECT_MOCK_IMG = require('../../assets/connect-mock.png');
+const X6_MOCK_IMG = require('../../assets/x6-mock-connect.png');
 const BAND_MOCK_IMG = require('../../assets/v8-mock-connect.png');
 const SCAN_RING_IMG = require('../../assets/scan-ring.png');
 
@@ -320,8 +321,12 @@ export default function ConnectScreen() {
     }
   };
 
+  const isX6Device = (d: DeviceInfo | null | undefined): boolean =>
+    d?.sdkType === 'v8' && d?.deviceType === 'ring' || false;
   const isBandDevice = (d: DeviceInfo | null | undefined): boolean =>
-    d?.sdkType === 'v8' || d?.deviceType === 'band' || false;
+    (d?.sdkType === 'v8' || d?.deviceType === 'band') && !isX6Device(d) || false;
+  const getDeviceImage = (d: DeviceInfo | null | undefined) =>
+    isX6Device(d) ? X6_MOCK_IMG : isBandDevice(d) ? BAND_MOCK_IMG : CONNECT_MOCK_IMG;
 
   console.log('🔎 [ConnectScreen] RAW devices from hook:', devices.map(d => ({
     name: d.name, mac: d.mac, sdkType: d.sdkType, deviceType: d.deviceType, id: d.id,
@@ -419,8 +424,8 @@ export default function ConnectScreen() {
 
   const renderDeviceCard = ({ item }: { item: DeviceInfo }) => (
     <View style={styles.deviceCard}>
-      <Image source={isBandDevice(item) ? BAND_MOCK_IMG : CONNECT_MOCK_IMG} style={styles.deviceRingImg} resizeMode="contain" />
-      <Text style={styles.deviceCardName}>{item.name || (isBandDevice(item) ? 'FOCUS BAND' : 'FOCUS X3')}</Text>
+      <Image source={getDeviceImage(item)} style={styles.deviceRingImg} resizeMode="contain" />
+      <Text style={styles.deviceCardName}>{item.name || (isX6Device(item) ? 'FOCUS X6' : isBandDevice(item) ? 'FOCUS BAND' : 'FOCUS X3')}</Text>
       <Text style={styles.deviceCardMac}>{item.mac}</Text>
       <TouchableOpacity style={styles.connectButton} onPress={() => handleConnect(item)} activeOpacity={0.85}>
         <Text style={styles.connectButtonText}>{t('onboarding.button_connect_device')}</Text>

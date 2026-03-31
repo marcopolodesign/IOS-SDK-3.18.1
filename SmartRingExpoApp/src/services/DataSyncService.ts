@@ -94,21 +94,37 @@ class DataSyncService {
       return { success: false, error: 'Sync already in progress' };
     }
 
+    // Skip sync if ring is not connected — avoids cascading NOT_CONNECTED errors
+    // when sync is triggered immediately after a connection event that hasn't settled yet.
+    const connectionStatus = await UnifiedSmartRingService.isConnected();
+    if (!connectionStatus.connected) {
+      console.log('[Sync] Skipping syncAllData — ring not connected');
+      return { success: false, error: 'NOT_CONNECTED' };
+    }
+
     this._syncStatus = { ...this._syncStatus, isSyncing: true, error: null };
     this.notifyListeners();
 
     try {
       const smartRingService = UnifiedSmartRingService;
 
-      // Create a sync record
-      const battery = await smartRingService.getBattery();
-      const version = await smartRingService.getVersion();
-      
+      // Create a sync record (tolerate failures so sync continues)
+      let batteryLevel: number | undefined;
+      let versionStr: string | undefined;
+      try {
+        const battery = await smartRingService.getBattery();
+        batteryLevel = battery?.battery;
+      } catch (e) { console.warn('[Sync] getBattery failed:', (e as Error).message); }
+      try {
+        const version = await smartRingService.getVersion();
+        versionStr = version?.version;
+      } catch (e) { console.warn('[Sync] getVersion failed:', (e as Error).message); }
+
       const syncId = await supabaseService.createRingSync(
         userId,
         'unknown', // device mac - would come from actual device
-        battery?.battery,
-        version?.version
+        batteryLevel,
+        versionStr
       );
 
       // Sync all data types
@@ -223,6 +239,12 @@ class DataSyncService {
     userId: string,
     service: typeof UnifiedSmartRingService
   ) {
+    // Fetch existing night sessions for the past 7 days once, to detect overlaps
+    const since = new Date();
+    since.setDate(since.getDate() - 8);
+    const existingNights = await supabaseService.getSleepSessions(userId, since, new Date());
+    const nightSessions = existingNights.filter(s => s.session_type === 'night');
+
     // Sync up to 7 days of sleep history so detail screen can show past days
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
       try {
@@ -253,6 +275,20 @@ class DataSyncService {
           const totalSleepMin = sleepData.deep + sleepData.light + (sleepData.rem || 0);
           const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
           const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
+
+          // Skip naps that fall entirely within or overlap an existing night session
+          // (e.g. the ring reports the last hour of a night as a separate block)
+          if (classification.sessionType === 'nap') {
+            const overlapsNight = nightSessions.some(night => {
+              const nightStart = new Date(night.start_time).getTime();
+              const nightEnd = new Date(night.end_time).getTime();
+              return startTime.getTime() < nightEnd && endTime.getTime() > nightStart;
+            });
+            if (overlapsNight) {
+              console.log(`[Sync] Sleep day ${dayIndex}: skipping nap ${startTime.toISOString()} — overlaps existing night session`);
+              continue;
+            }
+          }
 
           // Compute nap score if it's a nap
           const napScore = classification.sessionType === 'nap'

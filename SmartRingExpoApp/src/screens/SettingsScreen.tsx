@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -10,13 +11,16 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { router, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { colors, spacing, borderRadius, fontSize, fontFamily, shadows } from '../theme/colors';
-import { BatteryIndicator } from '../components';
+import { colors, spacing, borderRadius, fontSize, fontFamily, shadows, getBatteryColor } from '../theme/colors';
+const CONNECT_MOCK_IMG = require('../../assets/connect-mock.png');
+const X6_MOCK_IMG = require('../../assets/x6-mock-connect.png');
+const BAND_MOCK_IMG = require('../../assets/v8-mock-connect.png');
 import { useSmartRing, useAuth } from '../hooks';
 import { useOnboarding } from '../context/OnboardingContext';
 import { useLanguage } from '../hooks/useLanguage';
@@ -44,6 +48,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   const [isMetric, setIsMetric] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [healthConnected, setHealthConnected] = useState(false);
+  const [deviceBattery, setDeviceBattery] = useState<number | null>(null);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -66,6 +71,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     useCallback(() => {
       if (!isConnected) return;
       void loadSettings();
+      UnifiedSmartRingService.getBattery()
+        .then((b) => setDeviceBattery(b.battery))
+        .catch(() => {});
     }, [isConnected, loadSettings])
   );
 
@@ -265,29 +273,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         {/* ── Device ──────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('profile.sections.device')}</Text>
-          {isConnected && connectedDevice ? (
-            <View style={styles.deviceCard}>
-              <View style={styles.deviceIconWrap}>
-                <Svg width={40} height={40} viewBox="0 0 48 48">
-                  <Circle cx="24" cy="24" r="20" fill={`${colors.primary}20`} />
-                  <Circle cx="24" cy="24" r="14" fill="none" stroke={colors.primary} strokeWidth="2" />
-                  <Circle cx="24" cy="24" r="6" fill={colors.primary} />
-                </Svg>
-              </View>
-              <View style={styles.deviceInfo}>
-                <Text style={styles.deviceName}>{connectedDevice.localName}</Text>
-                <Text style={styles.deviceMac}>{connectedDevice.mac}</Text>
-                <View style={styles.deviceStatsRow}>
-                  <BatteryIndicator level={battery || 0} size="small" />
-                  <Text style={styles.deviceVersion}>v{version || connectedDevice.ver}</Text>
+          {isConnected ? (
+            <>
+              <View style={styles.profileDeviceCard}>
+                {deviceBattery != null && (
+                  <View style={styles.batteryCorner}>
+                    <BatteryIcon />
+                    <Text style={[styles.batteryCornerText, { color: getBatteryColor(deviceBattery) }]}>
+                      {deviceBattery}%
+                    </Text>
+                  </View>
+                )}
+                <Image
+                  source={
+                    connectedDevice?.sdkType === 'v8' && connectedDevice?.deviceType === 'ring'
+                      ? X6_MOCK_IMG
+                      : connectedDevice?.sdkType === 'v8' || connectedDevice?.deviceType === 'band'
+                      ? BAND_MOCK_IMG
+                      : CONNECT_MOCK_IMG
+                  }
+                  style={styles.profileDeviceImg}
+                  resizeMode="contain"
+                />
+                <Text style={styles.profileDeviceName}>
+                  {connectedDevice?.localName || connectedDevice?.name ||
+                    (connectedDevice?.sdkType === 'v8' && connectedDevice?.deviceType === 'ring'
+                      ? 'FOCUS X6'
+                      : connectedDevice?.sdkType === 'v8' || connectedDevice?.deviceType === 'band'
+                      ? 'FOCUS BAND'
+                      : 'FOCUS X3')}
+                </Text>
+                {connectedDevice?.mac ? (
+                  <Text style={styles.profileDeviceMac}>{connectedDevice.mac}</Text>
+                ) : null}
+                <View style={styles.profileConnectedBadge}>
+                  <Text style={styles.profileConnectedBadgeText}>{t('profile.account.connected')}</Text>
                 </View>
+                {isMockMode && (
+                  <View style={styles.demoBadge}>
+                    <Text style={styles.demoBadgeText}>{t('profile.device.demo')}</Text>
+                  </View>
+                )}
               </View>
-              {isMockMode && (
-                <View style={styles.demoBadge}>
-                  <Text style={styles.demoBadgeText}>{t('profile.device.demo')}</Text>
-                </View>
-              )}
-            </View>
+            </>
           ) : (
             <View style={styles.glassCard}>
               <View style={[styles.glassRow, styles.glassRowFirst, styles.glassRowLast]}>
@@ -464,7 +492,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           <View style={styles.glassCard}>
             <View style={[styles.glassRow, styles.glassRowFirst]}>
               <Text style={styles.rowLabel}>{t('profile.about.app_version')}</Text>
-              <Text style={styles.rowValue}>1.0.0</Text>
+              <Text style={styles.rowValue}>{Constants.expoConfig?.version ?? '—'}</Text>
             </View>
             <View style={[styles.glassRow, styles.glassRowLast, { borderBottomWidth: 0 }]}>
               <Text style={styles.rowLabel}>{t('profile.about.sdk_version')}</Text>
@@ -499,6 +527,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
 };
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
+
+const BatteryIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 24 24">
+    <Path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" fill="rgba(255,255,255,0.5)" />
+  </Svg>
+);
 
 const FindIcon = () => (
   <Svg width={16} height={16} viewBox="0 0 24 24">
@@ -645,50 +679,77 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  // Device card
-  deviceCard: {
-    flexDirection: 'row',
+  // Onboarding-style device card
+  profileDeviceCard: {
     alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingTop: 28,
+    paddingBottom: 24,
     backgroundColor: 'rgba(255,255,255,0.07)',
-    borderColor: `${colors.primary}40`,
+    borderColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
     borderRadius: borderRadius.xl,
-    padding: spacing.lg,
     marginBottom: spacing.md,
   },
-  deviceIconWrap: {
-    marginRight: spacing.md,
+  profileDeviceImg: {
+    width: 244,
+    height: 207,
+    marginBottom: 13,
   },
-  deviceInfo: {
-    flex: 1,
+  profileDeviceName: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: '#fff',
+    textAlign: 'center',
+    letterSpacing: -0.44,
+    lineHeight: 21,
+    marginBottom: 13,
   },
-  deviceName: {
-    fontSize: fontSize.lg,
-    fontFamily: fontFamily.demiBold,
-    color: colors.text,
-    marginBottom: 2,
+  profileDeviceMac: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
+    textAlign: 'center',
+    letterSpacing: -0.32,
+    lineHeight: 21,
   },
-  deviceMac: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    fontFamily: fontFamily.regular,
-    marginBottom: spacing.xs,
-  },
-  deviceStatsRow: {
+  batteryCorner: {
+    position: 'absolute',
+    top: 12,
+    right: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: 4,
+    zIndex: 1,
   },
-  deviceVersion: {
-    fontSize: fontSize.xs,
-    fontFamily: fontFamily.regular,
-    color: colors.textSecondary,
+  batteryCornerText: {
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
   },
+  profileConnectedBadge: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    marginTop: 24,
+  },
+  profileConnectedBadgeText: {
+    color: colors.success,
+    fontSize: 16,
+    fontFamily: fontFamily.demiBold,
+    letterSpacing: -0.32,
+  },
+
+  // Demo badge
   demoBadge: {
     backgroundColor: colors.warning,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.sm,
+    marginTop: spacing.sm,
   },
   demoBadgeText: {
     fontSize: fontSize.xs,

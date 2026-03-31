@@ -273,7 +273,42 @@ class JstyleService {
   async connect(peripheralId: string): Promise<{ success: boolean; message: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
     this._sleepRecordsCache = null; // clear cache so new connection fetches fresh sleep data
-    return await JstyleBridge.connectToDevice(peripheralId);
+
+    // Race the native promise against the connection event.
+    // When iOS CoreBluetooth skips the didConnectPeripheral callback (e.g. peripheral
+    // already connected from background autoReconnect), pendingConnectResolver is never
+    // called and the promise hangs forever. The event listener catches that case.
+    let unsub: (() => void) | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let settled = false;
+
+    try {
+      return await Promise.race([
+        JstyleBridge.connectToDevice(peripheralId),
+        new Promise<{ success: boolean; message: string }>((resolve, reject) => {
+          timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error('Jstyle connect timed out after 15000ms'));
+          }, 15000);
+
+          unsub = this.onConnectionStateChanged((state) => {
+            if (settled) return;
+            if (state === 'connected') {
+              settled = true;
+              resolve({ success: true, message: 'Connected' });
+            } else if (state === 'disconnected') {
+              settled = true;
+              reject(new Error('Connection failed - device disconnected'));
+            }
+          });
+        }),
+      ]);
+    } finally {
+      // Always clean up timer and listener regardless of which promise won
+      if (timer !== null) clearTimeout(timer);
+      unsub?.();
+    }
   }
 
   async disconnect(): Promise<{ success: boolean; message: string }> {
@@ -309,11 +344,9 @@ class JstyleService {
 
   // ========== Paired Device Management ==========
 
-  async hasPairedDevice(): Promise<{ hasPairedDevice: boolean }> {
-    // Check NSUserDefaults via autoReconnect
+  async hasPairedDevice(): Promise<{ hasPairedDevice: boolean; deviceId?: string; deviceName?: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
-    const result = await JstyleBridge.autoReconnect();
-    return { hasPairedDevice: result.success };
+    return await JstyleBridge.hasPairedDevice();
   }
 
   async getPairedDevice(): Promise<{
@@ -336,13 +369,13 @@ class JstyleService {
 
   async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
-    return await JstyleBridge.autoReconnect();
+    return await withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')
+      .catch(() => ({ success: false, message: 'autoReconnect timed out' }));
   }
 
   async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
-    // Disconnect will clear the paired device
-    return await JstyleBridge.disconnect();
+    return await JstyleBridge.forgetPairedDevice();
   }
 
   // ========== Time & Settings ==========

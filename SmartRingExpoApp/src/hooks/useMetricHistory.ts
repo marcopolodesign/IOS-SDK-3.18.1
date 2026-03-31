@@ -189,6 +189,7 @@ async function fetchSleepHistory(userId: string): Promise<Map<string, DaySleepDa
     .from('sleep_sessions')
     .select('*')
     .eq('user_id', userId)
+    .eq('session_type', 'night')
     .gte('start_time', since.toISOString())
     .order('start_time', { ascending: false });
 

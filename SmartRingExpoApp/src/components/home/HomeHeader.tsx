@@ -1,11 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, Animated } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, G } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
-import Constants from 'expo-constants';
-import { spacing, fontSize, fontFamily } from '../../theme/colors';
+import { spacing, fontSize, fontFamily, getBatteryColor } from '../../theme/colors';
+import * as Haptics from 'expo-haptics';
 import { RingIcon, BandIcon, DeviceType } from '../../assets/icons';
-import { useBaselineMode } from '../../context/BaselineModeContext';
 
 interface HomeHeaderProps {
   userName?: string;
@@ -20,6 +19,7 @@ interface HomeHeaderProps {
   onReconnect?: () => void;
   isSyncing?: boolean;
   onRefresh?: () => void;
+  onBatteryPress?: () => void;
 }
 
 // // Battery icon component
@@ -52,35 +52,78 @@ function StreakIcon() {
   );
 }
 
-// Default avatar
-function DefaultAvatar() {
-  return (
-    <View style={styles.defaultAvatar}>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Circle cx={12} cy={8} r={4} fill="rgba(255,255,255,0.8)" />
-        <Path
-          d="M4 20C4 16 8 14 12 14C16 14 20 16 20 20"
-          stroke="rgba(255,255,255,0.8)"
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
-      </Svg>
-    </View>
-  );
-}
 
 // Device icon component - switches between ring and band
-function DeviceIcon({ deviceType, color }: { deviceType: DeviceType; color: string }) {
+function DeviceIcon({ deviceType, color, size = 12 }: { deviceType: DeviceType; color: string; size?: number }) {
   if (deviceType === 'band') {
-    return <BandIcon width={16} height={16} fill={color} />;
+    return <BandIcon width={size} height={size} fill={color} />;
   }
-  return <RingIcon width={16} height={16} fill={color} />;
+  return <RingIcon width={size} height={size} fill={color} />;
+}
+
+// Compact circular battery indicator
+const BATTERY_SIZE = 38;
+const BATTERY_STROKE = 2.5;
+const BATTERY_RADIUS = (BATTERY_SIZE - BATTERY_STROKE) / 2;
+const BATTERY_CIRCUMFERENCE = 2 * Math.PI * BATTERY_RADIUS;
+
+function BatteryCircle({
+  level,
+  color,
+  deviceType,
+  isCharging,
+}: {
+  level: number;
+  color: string;
+  deviceType: DeviceType;
+  isCharging: boolean;
+}) {
+  const progress = Math.max(0, Math.min(100, level)) / 100;
+  const strokeDashoffset = BATTERY_CIRCUMFERENCE * (1 - progress);
+  const center = BATTERY_SIZE / 2;
+
+  return (
+    <View style={styles.batteryCircleWrap}>
+      <Svg width={BATTERY_SIZE} height={BATTERY_SIZE}>
+        <G rotation="-90" origin={`${center}, ${center}`}>
+          {/* Track */}
+          <Circle
+            cx={center}
+            cy={center}
+            r={BATTERY_RADIUS}
+            stroke="rgba(255,255,255,0.15)"
+            strokeWidth={BATTERY_STROKE}
+            fill="none"
+          />
+          {/* Battery arc */}
+          <Circle
+            cx={center}
+            cy={center}
+            r={BATTERY_RADIUS}
+            stroke={color}
+            strokeWidth={BATTERY_STROKE}
+            fill="none"
+            strokeDasharray={BATTERY_CIRCUMFERENCE}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+      <View style={styles.batteryCircleCenter}>
+        {isCharging ? (
+          <ChargingBoltIcon />
+        ) : (
+          <DeviceIcon deviceType={deviceType} color={color} size={20} />
+        )}
+      </View>
+    </View>
+  );
 }
 
 // Reconnect icon
 function ReconnectIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="M4 12C4 7.58172 7.58172 4 12 4C14.5 4 16.75 5.1 18.25 6.85L20 5V11H14L16.1 8.9C15 7.7 13.55 7 12 7C9.24 7 7 9.24 7 12C7 14.76 9.24 17 12 17C14.06 17 15.84 15.68 16.56 13.8H19.72C18.86 17.38 15.69 20 12 20C7.58172 20 4 16.4183 4 12Z"
         fill="rgba(255,255,255,0.9)"
@@ -91,7 +134,7 @@ function ReconnectIcon() {
 
 function RefreshIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
         fill="rgba(255,255,255,0.75)"
@@ -149,53 +192,26 @@ export function HomeHeader({
   onReconnect,
   isSyncing = false,
   onRefresh,
+  onBatteryPress,
 }: HomeHeaderProps) {
   const { t } = useTranslation();
-  const { isInBaselineMode, daysWithData } = useBaselineMode();
-
-  const getBatteryColor = (level: number): string => {
-    if (level < 5) return '#EF4444';
-    if (level < 10) return '#FF6B6B';
-    if (level < 20) return '#F59E0B';
-    return 'rgba(255, 255, 255, 0.7)';
-  };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return t('home.greeting_morning');
-    if (hour < 17) return t('home.greeting_afternoon');
-    return t('home.greeting_evening');
-  };
 
   const batteryColor = getBatteryColor(ringBattery);
 
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+
   return (
     <View style={styles.container}>
-      {/* Left side: Avatar + Greeting */}
       <View style={styles.leftSection}>
         <TouchableOpacity onPress={onAvatarPress} style={styles.avatarContainer}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
-            <DefaultAvatar />
+            <Text style={styles.initialText}>{userName[0]?.toUpperCase() ?? '?'}</Text>
           )}
         </TouchableOpacity>
-
-        <View style={styles.greetingContainer}>
-          <Text style={styles.greeting}>{getGreeting()},</Text>
-          <View style={styles.userNameRow}>
-            <Text style={styles.userName}>{userName}</Text>
-            {isInBaselineMode ? (
-              <View style={styles.baselineChip}>
-                <Text style={styles.baselineChipText}>
-                  {t('baseline.header_chip', { current: Math.min(daysWithData, 3), required: 3 })}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.versionBadge}>v{Constants.expoConfig?.version ?? '—'}</Text>
-            )}
-          </View>
-        </View>
+        <Text style={styles.dateText}>{dateLabel}</Text>
       </View>
 
       {/* Right side: Reconnect button (when disconnected and not syncing) or Streak + Battery */}
@@ -203,11 +219,10 @@ export function HomeHeader({
         {!isConnected && !isSyncing && !isReconnecting && onReconnect ? (
           <TouchableOpacity
             style={styles.reconnectButton}
-            onPress={onReconnect}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onReconnect(); }}
             disabled={isReconnecting}
           >
             <ReconnectIcon />
-            <Text style={styles.reconnectText}>{t('home.reconnect')}</Text>
           </TouchableOpacity>
         ) : (
           <>
@@ -219,7 +234,6 @@ export function HomeHeader({
             )}
 
             <View style={styles.batteryContainer}>
-              <DeviceIcon deviceType={deviceType} color={batteryColor} />
               {isReconnecting ? (
                 <View style={styles.syncingContainer}>
                   <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" style={styles.syncingSpinner} />
@@ -231,10 +245,14 @@ export function HomeHeader({
                   <Text style={styles.syncingText}>{t('home.syncing')}</Text>
                 </View>
               ) : (
-                <View style={styles.batteryValueRow}>
-                  {isCharging && <ChargingBoltIcon />}
-                  <Text style={[styles.batteryText, { color: batteryColor }]}>{ringBattery}%</Text>
-                </View>
+                <TouchableOpacity onPress={onBatteryPress} activeOpacity={0.7}>
+                  <BatteryCircle
+                    level={ringBattery}
+                    color={batteryColor}
+                    deviceType={deviceType}
+                    isCharging={isCharging}
+                  />
+                </TouchableOpacity>
               )}
               {isConnected && !isReconnecting && onRefresh && (
                 <RefreshButton onPress={onRefresh} spinning={isSyncing} />
@@ -274,35 +292,9 @@ const styles = StyleSheet.create({
     height: 35,
     borderRadius: 17.5,
   },
-  defaultAvatar: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  greetingContainer: {
-    gap: 2,
-  },
-  userNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  versionBadge: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: fontSize.xs,
-    fontFamily: fontFamily.regular,
-  },
-  greeting: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-  },
-  userName: {
+  initialText: {
     color: '#FFFFFF',
-    fontSize: fontSize.lg,
+    fontSize: 16,
     fontFamily: fontFamily.demiBold,
   },
   rightSection: {
@@ -329,15 +321,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  batteryValueRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 3,
+  batteryCircleWrap: {
+    width: BATTERY_SIZE,
+    height: BATTERY_SIZE,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  batteryText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
+  batteryCircleCenter: {
+    position: 'absolute',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   syncingContainer: {
     flexDirection: 'row',
@@ -353,43 +346,28 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
   },
   refreshButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: BATTERY_SIZE,
+    height: BATTERY_SIZE,
+    borderRadius: BATTERY_SIZE / 2,
     backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
   },
   reconnectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     backgroundColor: 'rgba(255, 107, 53, 0.3)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 53, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  reconnectText: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: fontSize.sm,
+  dateText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: fontSize.md,
     fontFamily: fontFamily.demiBold,
-  },
-  baselineChip: {
-    backgroundColor: 'rgba(0,212,170,0.12)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(0,212,170,0.2)',
-  },
-  baselineChipText: {
-    color: '#00D4AA',
-    fontSize: fontSize.xs,
-    fontFamily: fontFamily.demiBold,
-    letterSpacing: 0.3,
   },
 });
 

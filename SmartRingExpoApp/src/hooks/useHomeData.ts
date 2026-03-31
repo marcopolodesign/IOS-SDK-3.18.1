@@ -23,6 +23,26 @@ import { stravaService } from '../services/StravaService';
 import { mergeActivities } from '../services/ActivityDeduplicator';
 import { formatSleepDuration, calculateSleepScore } from '../utils/ringData/sleep';
 
+type AuthUser = { user_metadata?: Record<string, any>; email?: string | null } | null | undefined;
+
+/** Resolve display name: nickname → full_name → email prefix → '' */
+function resolveUserName(user: AuthUser): string {
+  if (!user) return '';
+  const meta = user.user_metadata;
+  if (meta?.display_name) return meta.display_name;
+  if (meta?.full_name) return meta.full_name;
+  if (meta?.name) return meta.name;
+  if (user.email) return user.email.split('@')[0];
+  return '';
+}
+
+/** Resolve avatar URL from Google/OAuth metadata */
+function resolveAvatarUrl(user: AuthUser): string {
+  if (!user) return '';
+  const meta = user.user_metadata;
+  return meta?.avatar_url || meta?.picture || '';
+}
+
 const CACHE_KEY = 'home_data_cache';
 const BASELINES_KEY = 'home_metric_baselines_v1';
 const SYNC_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes — skip foreground sync if last sync was recent
@@ -105,6 +125,7 @@ export interface HomeData {
   isSyncing: boolean;
   error: string | null;
   userName: string;
+  avatarUrl: string;
   isRingConnected: boolean;
   hrChartData: Array<{ timeMinutes: number; heartRate: number }>;
   hrvSdnn: number;
@@ -456,7 +477,14 @@ async function saveMetricBaselines(baselines: MetricBaselines): Promise<void> {
 
 const sanitizeActivity = (activity?: Partial<ActivityData>): ActivityData => {
   const rawCalories = Math.round(activity?.calories ?? 0);
-  const distanceMeters = (activity as any)?.distance ?? 0;
+  const steps = Math.round(activity?.steps ?? 0);
+  let distanceMeters = (activity as any)?.distance ?? 0;
+
+  // Estimate distance from steps when no distance source is available (~0.75m/step average stride)
+  if (distanceMeters === 0 && steps > 0) {
+    distanceMeters = steps * 0.75;
+  }
+
   const distanceKm = distanceMeters / 1000;
   const distanceActiveEstimate = Math.max(0, distanceKm * PROFILE.weightKg); // ~1 kcal/kg/km
 
@@ -465,7 +493,7 @@ const sanitizeActivity = (activity?: Partial<ActivityData>): ActivityData => {
 
   return {
     score: Math.round(activity?.score ?? 0),
-    steps: Math.round(activity?.steps ?? 0),
+    steps,
     calories: rawCalories,
     distance: Math.round(distanceMeters),
     adjustedActiveCalories: Math.round(adjustedActive),
@@ -691,8 +719,19 @@ function extractSleepVitalsFromRaw(rawRecords: any[]): { restingHR: number; resp
  * builds a continuous 1-min timeline, and chooses the most recent sleep block.
  * Ported from testing.tsx (the cheatsheet).
  */
-function deriveFromRaw(rawRecords: any[]): { night: SleepData; ringNaps: RingNapBlock[] } | null {
+function deriveFromRaw(rawRecords: any[]): { night: SleepData | null; ringNaps: RingNapBlock[] } | null {
   if (!rawRecords || rawRecords.length === 0) return null;
+
+  // ── RAW RECORD DUMP ────────────────────────────────────────────────────────
+  console.log(`😴 [deriveFromRaw] RAW RECORDS (${rawRecords.length}):`);
+  rawRecords.forEach((r, i) => {
+    const startTs = r.startTimestamp || parseStart(r.startTime_SleepData);
+    const startStr = startTs ? new Date(startTs).toLocaleString() : 'NO_START';
+    const dur = Number(r.totalSleepTime) || (r.arraySleepQuality?.length || 0) * (Number(r.sleepUnitLength) || 1);
+    console.log(`  [${i}] date=${r.date} startTime_SleepData=${r.startTime_SleepData} startTimestamp=${r.startTimestamp} → parsed=${startStr} totalSleepTime=${r.totalSleepTime} arraySleepQuality.length=${r.arraySleepQuality?.length} deep=${r.deepSleepTime} light=${r.lightSleepTime} durMin=${dur}`);
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
   const extractedVitals = extractSleepVitalsFromRaw(rawRecords);
 
   const normalizedAll = rawRecords.map(r => {
@@ -728,45 +767,63 @@ function deriveFromRaw(rawRecords: any[]): { night: SleepData; ringNaps: RingNap
   if (block) blocks.push(block);
   if (blocks.length === 0) return null;
 
-  // Pick most recent night-length block (≥180min), fallback to most recent overall
+  console.log(`😴 [deriveFromRaw] BLOCKS (${blocks.length}):`);
+  blocks.forEach((b, i) => {
+    console.log(`  [${i}] ${new Date(b.start).toLocaleString()} → ${new Date(b.end).toLocaleString()} (${Math.round((b.end - b.start) / 60000)}min, ${b.records.length} records)`);
+  });
+
+  // Pick most recent night-length block (≥180min), fallback using Oura-style nap detection
   const NIGHT_THRESHOLD_MS = 180 * 60 * 1000; // 3 hours
   const nightCandidates = blocks.filter(b => (b.end - b.start) >= NIGHT_THRESHOLD_MS);
-  const chosen = nightCandidates.length > 0
-    ? nightCandidates.reduce((acc, b) => (b.end > acc.end ? b : acc), nightCandidates[0])
-    : blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
-  console.log(`🛏️ [deriveFromRaw] ${blocks.length} blocks, ${nightCandidates.length} night candidates → chosen: ${new Date(chosen.start).toLocaleString()} → ${new Date(chosen.end).toLocaleString()} (${Math.round((chosen.end - chosen.start) / 60000)}min)`);
 
-  const nightResult = buildBlockResult(chosen, extractedVitals);
+  // Oura-style: long block → always night; short block starting 8 PM–4 AM → disrupted night;
+  // short block starting 4 AM–8 PM → nap (daytime), not night sleep
+  let nightBlock: typeof blocks[0] | null = null;
+  if (nightCandidates.length > 0) {
+    nightBlock = nightCandidates.reduce((acc, b) => (b.end > acc.end ? b : acc), nightCandidates[0]);
+  } else {
+    const mostRecent = blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
+    const startHour = new Date(mostRecent.start).getHours();
+    const isNapLike = startHour >= 4 && startHour < 20; // daytime start → nap
+    if (!isNapLike) nightBlock = mostRecent; // nighttime short sleep → treat as disrupted night
+  }
+
+  if (nightBlock) {
+    console.log(`🛏️ [deriveFromRaw] ${blocks.length} blocks, ${nightCandidates.length} night candidates → chosen: ${new Date(nightBlock.start).toLocaleString()} → ${new Date(nightBlock.end).toLocaleString()} (${Math.round((nightBlock.end - nightBlock.start) / 60000)}min)`);
+  } else {
+    console.log(`🛏️ [deriveFromRaw] ${blocks.length} blocks are nap-like (daytime start) → no night block, will use Supabase fallback`);
+  }
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+
+  // When all ring blocks are nap-like, return them as ringNaps with null night
+  if (!nightBlock) {
+    const ringNapsFromNullNight = blocks
+      .filter(b => b.start >= todayStartMs && (b.end - b.start) <= NIGHT_THRESHOLD_MS)
+      .map(blockToRingNap)
+      .filter(n => n.totalMin > 0);
+    console.log(`🛏️ [deriveFromRaw] ringNaps (null-night path): ${ringNapsFromNullNight.length}`);
+    return { night: null, ringNaps: ringNapsFromNullNight };
+  }
+
+  const nightResult = buildBlockResult(nightBlock, extractedVitals);
   if (!nightResult) return null;
 
   // Remaining blocks are ring-detected nap candidates
   // Only include blocks from TODAY that are short (<180min = nap threshold from NapClassifierService)
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStartMs = todayStart.getTime();
   const MAX_NAP_DURATION_MS = 180 * 60 * 1000; // 3 hours
 
   const ringNaps: RingNapBlock[] = blocks
-    .filter(b => b !== chosen)
+    .filter(b => b !== nightBlock)
     .filter(b => {
       const dur = b.end - b.start;
       const isToday = b.start >= todayStartMs;
       const isShort = dur <= MAX_NAP_DURATION_MS;
       return isToday && isShort;
     })
-    .map(b => {
-      const segs = buildBlockSegments(b);
-      const totalMin = Math.max(0, Math.round((b.end - b.start) / 60000));
-      let deepMin = 0, lightMin = 0, remMin = 0, awakeMin = 0;
-      for (const seg of segs) {
-        const durMin = Math.round((seg.endTime.getTime() - seg.startTime.getTime()) / 60000);
-        if (seg.stage === 'deep') deepMin += durMin;
-        else if (seg.stage === 'core') lightMin += durMin;
-        else if (seg.stage === 'rem') remMin += durMin;
-        else awakeMin += durMin;
-      }
-      return { startMs: b.start, endMs: b.end, segments: segs, deepMin, lightMin, remMin, awakeMin, totalMin };
-    })
+    .map(blockToRingNap)
     .filter(n => n.totalMin > 0);
 
   console.log(`🛏️ [deriveFromRaw] ringNaps after filter: ${ringNaps.length}`);
@@ -783,6 +840,20 @@ interface RingNapBlock {
   remMin: number;
   awakeMin: number;
   totalMin: number;
+}
+
+function blockToRingNap(b: { start: number; end: number; records: any[] }): RingNapBlock {
+  const segs = buildBlockSegments(b);
+  const totalMin = Math.max(0, Math.round((b.end - b.start) / 60000));
+  let deepMin = 0, lightMin = 0, remMin = 0, awakeMin = 0;
+  for (const seg of segs) {
+    const durMin = Math.round((seg.endTime.getTime() - seg.startTime.getTime()) / 60000);
+    if (seg.stage === 'deep') deepMin += durMin;
+    else if (seg.stage === 'core') lightMin += durMin;
+    else if (seg.stage === 'rem') remMin += durMin;
+    else awakeMin += durMin;
+  }
+  return { startMs: b.start, endMs: b.end, segments: segs, deepMin, lightMin, remMin, awakeMin, totalMin };
 }
 
 function buildBlockSegments(block: { start: number; end: number; records: Array<{ start: number | undefined; unit: number; arr: number[]; durationMin: number }> }): SleepSegment[] {
@@ -947,6 +1018,7 @@ const getEmptyData = (): HomeData => ({
   isSyncing: true, // Start with syncing true so we show syncing indicator on app open
   error: null,
   userName: '',
+  avatarUrl: '',
   isRingConnected: false,
   hrChartData: [],
   hrvSdnn: 0,
@@ -1131,21 +1203,26 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
     if (!enabled) return;
     // Get initial user
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.user_metadata?.display_name) {
+      const name = resolveUserName(user);
+      const avatar = resolveAvatarUrl(user);
+      if (name || avatar) {
         setData(prev => ({
           ...prev,
-          userName: user.user_metadata.display_name,
+          ...(name && { userName: name }),
+          ...(avatar && { avatarUrl: avatar }),
         }));
       }
     });
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const displayName = session?.user?.user_metadata?.display_name;
-      if (displayName) {
+      const name = resolveUserName(session?.user);
+      const avatar = resolveAvatarUrl(session?.user);
+      if (name || avatar) {
         setData(prev => ({
           ...prev,
-          userName: displayName,
+          ...(name && { userName: name }),
+          ...(avatar && { avatarUrl: avatar }),
         }));
       }
     });
@@ -1189,7 +1266,8 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         supabase.auth.getUser(),
       ]);
       const alreadyConnected = (statusResult as any).connected ?? false;
-      const userName = authResult.data?.user?.user_metadata?.display_name || '';
+      const userName = resolveUserName(authResult.data?.user);
+      const avatarUrl = resolveAvatarUrl(authResult.data?.user);
       const userId = authResult.data?.user?.id;
 
       // Fire reconnect immediately if needed (don't await yet)
@@ -1200,17 +1278,28 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         console.log('🔄 [useHomeData] autoReconnect...');
       }
 
-      // Fire-and-forget background Strava sync (non-blocking)
-      // By the time ring data finishes, Strava sync is likely done and data is in Supabase
-      const stravaSyncPromise = stravaService.backgroundSync(7).catch(() => null);
-      stravaSyncPromise.then(r => {
-        if (r?.success) console.log(`🏃 [useHomeData] Background Strava sync: ${r.count} activities`);
-      });
+      // Auto-sync Strava before reading from Supabase (rate-limited: once per 30 min).
+      // Awaited so the Supabase query below always sees the freshest activities.
+      // Runs in parallel with ring reconnect above — no added wall-clock time on most calls.
+      const STRAVA_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+      try {
+        const lastSyncRaw = await AsyncStorage.getItem('strava_last_auto_sync_v1');
+        if (!lastSyncRaw || Date.now() - Number(lastSyncRaw) > STRAVA_SYNC_INTERVAL_MS) {
+          const r = await stravaService.backgroundSync(3).catch(() => null);
+          if (r !== null) {
+            await AsyncStorage.setItem('strava_last_auto_sync_v1', String(Date.now()));
+            console.log(`🏃 [useHomeData] Auto Strava sync: ${r.count} new activities`);
+          }
+        }
+      } catch {}
 
-      // Fetch Strava + naps + HealthKit workouts in parallel while ring connects
+      // Fetch Strava + naps + HealthKit workouts + HK activity metrics in parallel while ring connects
       let stravaActivities: StravaActivitySummary[] = [];
       let todayNaps: HomeData['todayNaps'] = [];
       let hkWorkouts: import('../types/activity.types').HKWorkoutResult[] = [];
+      let hkSteps = 0;
+      let hkActiveCalories = 0;
+      let hkDistanceM = 0;
       if (userId) {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -1219,7 +1308,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         const todayEnd = new Date(todayStart);
         todayEnd.setDate(todayEnd.getDate() + 1);
 
-        const [stravaResult, napResult, hkWorkoutResult] = await Promise.all([
+        const [stravaResult, napResult, hkWorkoutResult, hkStepsResult, hkCalResult, hkDistResult] = await Promise.all([
           supabase
             .from('strava_activities')
             .select('id, name, sport_type, start_date, distance_m, moving_time_sec, average_heartrate, max_heartrate, suffer_score, calories, splits_metric_json, zones_json')
@@ -1236,9 +1325,19 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
             .order('start_time', { ascending: true }),
           // HealthKit workouts (7 days, iOS only — returns [] on Android)
           HealthKitService.fetchWeekWorkouts().catch(() => []),
+          // HealthKit activity metrics (iOS only — for max() blending with ring)
+          Platform.OS === 'ios' ? HealthKitService.fetchSteps().catch(() => ({ steps: 0, samples: [], source: 'error' })) : { steps: 0, samples: [], source: 'skip' },
+          Platform.OS === 'ios' ? HealthKitService.fetchActiveCalories().catch(() => ({ calories: 0, source: 'error' })) : { calories: 0, source: 'skip' },
+          Platform.OS === 'ios' ? HealthKitService.fetchDistance().catch(() => ({ distanceM: 0, source: 'error' })) : { distanceM: 0, source: 'skip' },
         ]);
         stravaActivities = (stravaResult.data as unknown as StravaActivitySummary[]) ?? [];
         hkWorkouts = hkWorkoutResult;
+        hkSteps = (hkStepsResult as any).steps || 0;
+        hkActiveCalories = (hkCalResult as any).calories || 0;
+        hkDistanceM = (hkDistResult as any).distanceM || 0;
+        if (hkSteps > 0 || hkActiveCalories > 0 || hkDistanceM > 0) {
+          console.log(`🍎 [useHomeData] HealthKit activity: steps=${hkSteps}, cal=${hkActiveCalories}, dist=${hkDistanceM}m`);
+        }
         todayNaps = ((napResult.data as any[]) ?? []).map(s => ({
           id: s.id,
           startTime: s.start_time,
@@ -1265,11 +1364,10 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
                 console.log('🍎 [useHomeData] Ring not connected, trying HealthKit fallback...');
                 const hkData = await HealthKitService.fetchAllHealthData().catch(() => null);
                 if (hkData) {
-                  const hkSleep = hkData.sleep;
-                  const hkSteps = hkData.steps;
-                  const hkHR = hkData.heartRate;
-                  const hkHRV = hkData.hrv;
-                  const hkSpo2 = hkData.spo2;
+                  const hkFbSleep = hkData.sleep;
+                  const hkFbSteps = hkData.steps;
+                  const hkFbHR = hkData.heartRate;
+                  const hkFbHRV = hkData.hrv;
 
                   setData(prev => ({
                     ...prev,
@@ -1280,35 +1378,43 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
                     error: null,
                     syncProgress: { ...sp, phase: 'idle' },
                     // Fill in HealthKit data as fallback
-                    ...(hkSleep ? {
-                      sleepScore: hkSleep.sleepEfficiency,
+                    ...(hkFbSleep ? {
+                      sleepScore: hkFbSleep.sleepEfficiency,
                       lastNightSleep: {
-                        score: hkSleep.sleepEfficiency,
-                        timeAsleep: formatSleepDuration(hkSleep.totalSleep),
-                        timeAsleepMinutes: hkSleep.totalSleep,
+                        score: hkFbSleep.sleepEfficiency,
+                        timeAsleep: formatSleepDuration(hkFbSleep.totalSleep),
+                        timeAsleepMinutes: hkFbSleep.totalSleep,
                         restingHR: prev.lastNightSleep.restingHR,
                         respiratoryRate: prev.lastNightSleep.respiratoryRate,
                         segments: prev.lastNightSleep.segments,
-                        bedTime: hkSleep.bedTime ? new Date(hkSleep.bedTime) : prev.lastNightSleep.bedTime,
-                        wakeTime: hkSleep.wakeTime ? new Date(hkSleep.wakeTime) : prev.lastNightSleep.wakeTime,
+                        bedTime: hkFbSleep.bedTime ? new Date(hkFbSleep.bedTime) : prev.lastNightSleep.bedTime,
+                        wakeTime: hkFbSleep.wakeTime ? new Date(hkFbSleep.wakeTime) : prev.lastNightSleep.wakeTime,
                       },
                     } : {}),
-                    ...(hkSteps.steps > 0 ? {
-                      activity: {
-                        ...prev.activity,
-                        steps: hkSteps.steps,
-                      },
+                    ...((hkFbSteps.steps > 0 || hkActiveCalories > 0 || hkDistanceM > 0) ? {
+                      activity: (() => {
+                        const s = Math.max(prev.activity.steps, hkFbSteps.steps);
+                        return sanitizeActivity({
+                          ...prev.activity,
+                          steps: s,
+                          calories: Math.max(prev.activity.calories, hkActiveCalories),
+                          distance: Math.max(prev.activity.distance, hkDistanceM),
+                          score: Math.min(100, Math.round((s / 10000) * 100)),
+                        });
+                      })(),
                     } : {}),
-                    ...(hkHRV ? { hrvSdnn: hkHRV.sdnn } : {}),
+                    ...(hkFbHRV ? { hrvSdnn: hkFbHRV.sdnn } : {}),
                     // Unified activities from Strava + HealthKit (no ring sessions when disconnected)
                     stravaActivities,
                     unifiedActivities: mergeActivities(stravaActivities, hkWorkouts, []),
                   }));
                   console.log('🍎 [useHomeData] HealthKit fallback applied:', {
-                    sleep: hkSleep?.totalSleep,
-                    steps: hkSteps.steps,
-                    hr: hkHR?.heartRate,
-                    hrv: hkHRV?.sdnn,
+                    sleep: hkFbSleep?.totalSleep,
+                    steps: hkFbSteps.steps,
+                    calories: hkActiveCalories,
+                    distance: hkDistanceM,
+                    hr: hkFbHR?.heartRate,
+                    hrv: hkFbHRV?.sdnn,
                   });
                   return;
                 }
@@ -1319,7 +1425,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           }
 
           updateSP({ phase: 'idle' });
-          setData(prev => ({ ...prev, userName, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.', syncProgress: sp }));
+          setData(prev => ({ ...prev, userName, avatarUrl, isLoading: false, isSyncing: false, isRingConnected: false, error: 'Ring not connected.', syncProgress: sp }));
           return;
         }
         updateSP({ phase: 'connected' });
@@ -1346,9 +1452,9 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt} records:`, rawRecords.length);
           const derived = deriveFromRaw(rawRecords);
           if (derived) {
-            finalSleepData = derived.night;
+            finalSleepData = derived.night; // may be null if all ring blocks were nap-like
             ringNaps = derived.ringNaps;
-            console.log('✅ [useHomeData] sleep derived:', derived.night.score, derived.night.timeAsleep, 'ringNaps:', ringNaps.length);
+            console.log('✅ [useHomeData] sleep derived:', derived.night?.score, derived.night?.timeAsleep, 'ringNaps:', ringNaps.length);
           }
         } catch (e: any) {
           console.log(`😴 [useHomeData] getSleepData attempt ${attempt} failed:`, e?.message);
@@ -1599,6 +1705,23 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         updateSP(prev => updateMetric(prev, 'steps', 'error'));
       }
 
+      // Blend HealthKit activity metrics using max(ring, healthKit)
+      if (Platform.OS === 'ios' && (hkSteps > 0 || hkActiveCalories > 0 || hkDistanceM > 0)) {
+        const blendedSteps = Math.max(activity.steps, hkSteps);
+        const blendedCalories = Math.max(activity.calories, hkActiveCalories);
+        const blendedDistance = Math.max(activity.distance, hkDistanceM);
+        if (blendedSteps > activity.steps || blendedCalories > activity.calories || blendedDistance > activity.distance) {
+          activity = sanitizeActivity({
+            ...activity,
+            steps: blendedSteps,
+            calories: blendedCalories,
+            distance: blendedDistance,
+            score: Math.min(100, Math.round((blendedSteps / 10000) * 100)),
+          });
+          console.log(`🍎 [useHomeData] HealthKit blended into activity: steps=${activity.steps}, cal=${activity.calories}, dist=${activity.distance}m, score=${activity.score}`);
+        }
+      }
+
       const featureAvailability = UnifiedSmartRingService.getFeatureAvailability();
 
       let activitySessions: X3ActivitySession[] = [];
@@ -1765,6 +1888,21 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           recoveryContributors
         );
 
+        // Blend unified workout calories/distance into activity total
+        const unifiedActs = mergeActivities(stravaActivities, hkWorkouts, activitySessions);
+        const todayMidnightMs = new Date().setHours(0, 0, 0, 0);
+        const todayActs = unifiedActs.filter(a => new Date(a.startDate).getTime() >= todayMidnightMs);
+        const workoutCalories = todayActs.reduce((sum, a) => sum + (a.calories || 0), 0);
+        const workoutDistance = todayActs.reduce((sum, a) => sum + (a.distanceM || 0), 0);
+        if (workoutCalories > activity.calories || workoutDistance > activity.distance) {
+          activity = sanitizeActivity({
+            ...activity,
+            calories: Math.max(activity.calories, workoutCalories),
+            distance: Math.max(activity.distance, workoutDistance),
+          });
+          console.log(`🏋️ [useHomeData] Workout calories/distance blended: cal=${activity.calories}, dist=${activity.distance}m`);
+        }
+
         const newData: HomeData = {
           overallScore, strain, readiness,
           sleepScore: sleep.score,
@@ -1788,7 +1926,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           recoveryContributors,
           syncProgress: sp,
           stravaActivities,
-          unifiedActivities: mergeActivities(stravaActivities, hkWorkouts, activitySessions),
+          unifiedActivities: unifiedActs,
           todayNaps,
           totalNapMinutesToday: totalNapMinutesUpdated,
           unifiedSleepSessions,
@@ -1877,7 +2015,8 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         supabase.auth.getUser().then(({ data: { user } }) => {
           setData(prev => ({
             ...getEmptyData(),
-            userName: user?.user_metadata?.display_name || '',
+            userName: resolveUserName(user),
+            avatarUrl: resolveAvatarUrl(user),
             isLoading: false,
             isSyncing: false,
             isRingConnected: false,

@@ -31,13 +31,23 @@ function RunIcon() {
 function useFormatRunDate() {
   const { t } = useTranslation();
   return (iso: string): string => {
-    const d = new Date(iso);
+    // iso is YYYY-MM-DD (date-only string from Strava/Supabase).
+    // new Date("YYYY-MM-DD") parses as UTC midnight, which causes off-by-one
+    // in negative UTC offset timezones. Compare local date strings instead.
+    const runDate = iso.slice(0, 10);
     const now = new Date();
-    const diffDays = Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays === 0) return t('last_run.date_today');
-    if (diffDays === 1) return t('last_run.date_yesterday');
-    if (diffDays < 7) return t('last_run.date_days_ago', { days: diffDays });
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localToday = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const yest = new Date(now.getTime() - 86400000);
+    const localYesterday = `${yest.getFullYear()}-${pad(yest.getMonth() + 1)}-${pad(yest.getDate())}`;
+
+    if (runDate === localToday) return t('last_run.date_today');
+    if (runDate === localYesterday) return t('last_run.date_yesterday');
+    // Use noon to avoid DST edge cases in diff calculation
+    const runNoon = new Date(`${runDate}T12:00:00`);
+    const daysAgo = Math.round((now.getTime() - runNoon.getTime()) / 86400000);
+    if (daysAgo < 7) return t('last_run.date_days_ago', { days: daysAgo });
+    return runNoon.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 }
 
@@ -141,9 +151,11 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
             <View style={styles.expandedSection}>
               <Text style={styles.sectionHeading}>{t('last_run.body_state')}</Text>
               <View style={styles.bodyStateRow}>
-                <Text style={styles.bodyStateLabel}>{t('last_run.sleep_score')}</Text>
+                <Text style={styles.bodyStateLabel}>{t('last_run.sleep_time')}</Text>
                 <Text style={styles.bodyStateValue}>
-                  {lastRun.bodyStateAtRun.sleepScore != null ? String(lastRun.bodyStateAtRun.sleepScore) : '--'}
+                  {lastRun.bodyStateAtRun.sleepMinutes != null
+                    ? `${Math.floor(lastRun.bodyStateAtRun.sleepMinutes / 60)}h ${lastRun.bodyStateAtRun.sleepMinutes % 60}m`
+                    : '--'}
                 </Text>
               </View>
               <View style={styles.bodyStateRow}>

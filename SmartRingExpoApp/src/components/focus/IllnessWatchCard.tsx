@@ -106,9 +106,9 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
         <Text style={styles.emptyText}>{t('illness_watch.empty_sync')}</Text>
       ) : expanded ? (
         <View style={styles.signals}>
-          <SignalRow label={t('illness_watch.signal_temp')} flagged={illness.signals.tempDeviation} status={status} elevatedLabel={t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
-          <SignalRow label={t('illness_watch.signal_resting_hr')} flagged={illness.signals.restingHRElevated} status={status} elevatedLabel={t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
-          <SignalRow label={t('illness_watch.signal_hrv')} flagged={illness.signals.hrvSuppressed} status={status} elevatedLabel={t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
+          <SignalRow label={t('illness_watch.signal_temp')} flagged={illness.signals.tempDeviation} status={status} elevatedLabel={illness.details?.tempDelta ?? t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
+          <SignalRow label={t('illness_watch.signal_resting_hr')} flagged={illness.signals.restingHRElevated} status={status} elevatedLabel={illness.details?.hrDelta ?? t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
+          <SignalRow label={t('illness_watch.signal_hrv')} flagged={illness.signals.hrvSuppressed} status={status} elevatedLabel={illness.details?.hrvDelta ?? t('illness_watch.value_suppressed')} normalLabel={t('illness_watch.value_normal')} />
           <SignalRow label={t('illness_watch.signal_sleep')} flagged={illness.signals.sleepFragmented} status={status} elevatedLabel={t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
           <SignalRow label={t('illness_watch.signal_breathing')} flagged={illness.signals.respiratoryRateElevated} status={status} elevatedLabel={t('illness_watch.value_elevated')} normalLabel={t('illness_watch.value_normal')} />
           <Text style={styles.summaryText}>{illness.summary}</Text>

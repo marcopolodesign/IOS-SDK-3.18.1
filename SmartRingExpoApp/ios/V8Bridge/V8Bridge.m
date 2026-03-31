@@ -575,6 +575,26 @@ RCT_EXPORT_METHOD(getStepGoal:(RCTPromiseResolveBlock)resolve
     [self writeCommand:cmd];
 }
 
+RCT_EXPORT_METHOD(startRealTimeData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) { reject(@"NOT_CONNECTED", @"V8 not connected", nil); return; }
+
+    [self claimDelegate];
+    NSMutableData *cmd = [[BleSDK_V8 sharedManager] RealTimeDataWithType:1];
+    [self writeCommand:cmd];
+    resolve(@{@"success": @YES});
+}
+
+RCT_EXPORT_METHOD(stopRealTimeData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) { reject(@"NOT_CONNECTED", @"V8 not connected", nil); return; }
+
+    [self claimDelegate];
+    NSMutableData *cmd = [[BleSDK_V8 sharedManager] RealTimeDataWithType:0];
+    [self writeCommand:cmd];
+    resolve(@{@"success": @YES});
+}
+
 RCT_EXPORT_METHOD(startManualMeasurement:(int)dataType
                   measurementTime:(int)time
                   resolver:(RCTPromiseResolveBlock)resolve

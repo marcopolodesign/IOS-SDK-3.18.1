@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import Reanimated from 'react-native-reanimated';
+import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +13,7 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
+import { ChatBar } from '../../components/focus/ChatFAB';
 import type { UnifiedActivity } from '../../types/activity.types';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatSleepDuration } from '../../utils/ringData/sleep';
@@ -160,11 +163,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const homeData = useHomeDataContext();
   const { t } = useTranslation();
   const [refreshing, setRefreshing] = React.useState(false);
-  const scrollRef = React.useRef<any>(null);
-
-  useEffect(() => {
-    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [isActive]);
+  const { scrollRef, scrollY, handleScroll, isScrolled, firstCardStyle } = useTabScroll(isActive, onScroll);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -194,7 +193,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const caloriesRounded = Math.round(activity.adjustedActiveCalories || activity.calories || 0);
   const stepsRounded = Math.round(activity.steps || 0);
   const distanceKm = Math.max(0, (activity.distance || 0) / 1000);
-  const distanceKmRounded = Math.round(distanceKm);
+  const distanceKmDisplay = distanceKm >= 10 ? Math.round(distanceKm) : parseFloat(distanceKm.toFixed(1));
 
   // Temperature status
   const tempC = homeData.todayVitals.temperatureC ?? 0;
@@ -219,7 +218,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={16}
-      onScroll={onScroll}
+      onScroll={handleScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -246,14 +245,16 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
         <MetricInsightCard
           metrics={[
             { label: t('activity.steps'), value: stepsRounded },
-            { label: t('activity.est_km'), value: distanceKmRounded },
+            { label: t('activity.est_km'), value: distanceKmDisplay },
             { label: t('activity.active_kcal'), value: caloriesRounded },
           ]}
+          scrollY={scrollY}
+          isScrolled={isScrolled}
         />
       </TouchableOpacity>
 
       {/* Recent Workouts */}
-      <View style={styles.workoutsSection}>
+      <Reanimated.View style={[styles.workoutsSection, firstCardStyle]}>
         <Text style={styles.sectionTitle}>{t('activity.recent_workouts')}</Text>
         <GlassCard style={styles.workoutsCard} noPadding>
           {homeData.unifiedActivities?.length > 0 ? (
@@ -277,7 +278,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
             </View>
           )}
         </GlassCard>
-      </View>
+      </Reanimated.View>
 
       {/* Goals Progress */}
       <View style={styles.goalsSection}>
@@ -401,6 +402,11 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           </GlassCard>
         </View>
       )}
+
+      {/* Ask Coach */}
+      <View style={styles.chatBarSection}>
+        <ChatBar />
+      </View>
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
@@ -604,6 +610,10 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 50,
+  },
+  chatBarSection: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
   vitalsSection: {
     paddingHorizontal: spacing.lg,

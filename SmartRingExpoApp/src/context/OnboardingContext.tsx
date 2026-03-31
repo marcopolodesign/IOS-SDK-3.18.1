@@ -126,6 +126,10 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   const resetOnboarding = useCallback(async () => {
     await OnboardingStorage.reset();
+    // Also clear native SDK pairings so stale NSUserDefaults don't affect the next pairing
+    try {
+      await UnifiedSmartRingService.forgetPairedDevice();
+    } catch (_) {}
     setHasConnectedDevice(false);
     setPairedDeviceMac(null);
   }, []);

@@ -35,6 +35,7 @@ import { HomeDataProvider } from '../src/context/HomeDataContext';
 import { AddOverlayProvider } from '../src/context/AddOverlayContext';
 import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
 import { BaselineModeProvider } from '../src/context/BaselineModeContext';
+import { FocusDataProvider } from '../src/context/FocusDataContext';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 
 function RootLayout() {
@@ -86,12 +87,12 @@ function RootLayout() {
     'TT-Interphases-Pro-DemiBold': require('../assets/fonts/TT_Interphases_Pro_DemiBold.ttf'),
   });
 
+  // Splash hide is deferred to index.tsx once onboarding state resolves
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      if (fontError) console.warn('[RootLayout] Font loading error, proceeding anyway:', fontError);
-      SplashScreen.hideAsync();
+    if (fontError) {
+      console.warn('[RootLayout] Font loading error, proceeding anyway:', fontError);
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontError]);
 
   // Safety timeout — never let splash hang more than 5s
   useEffect(() => {
@@ -112,6 +113,7 @@ function RootLayout() {
       <OnboardingProvider>
         <HomeDataProvider>
         <BaselineModeProvider>
+        <FocusDataProvider>
         <MetricExplainerProvider>
         <AddOverlayProvider>
         <StatusBar style="light" />
@@ -129,11 +131,13 @@ function RootLayout() {
           <Stack.Screen name="detail/activity-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/recovery-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/sleep-debt-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="chat" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="profile" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
         </AddOverlayProvider>
         </MetricExplainerProvider>
+        </FocusDataProvider>
         </BaselineModeProvider>
         </HomeDataProvider>
       </OnboardingProvider>

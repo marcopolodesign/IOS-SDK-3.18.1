@@ -1,6 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import Reanimated from 'react-native-reanimated';
+import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
 import { SemiCircularGauge } from '../../components/home/SemiCircularGauge';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
@@ -21,6 +23,7 @@ import { InfoButton } from '../../components/common/InfoButton';
 import { useSleepDebt } from '../../hooks/useSleepDebt';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { BaselineProgressCard } from '../../components/home/BaselineProgressCard';
+import { ChatBar } from '../../components/focus/ChatFAB';
 import type { SleepDebtCategory } from '../../types/sleepDebt.types';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
@@ -65,11 +68,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
     return () => setActionHandler(null);
   }, [setActionHandler, handleOverlayAction]);
 
-  const scrollRef = React.useRef<any>(null);
-
-  React.useEffect(() => {
-    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [isActive]);
+  const { scrollRef, scrollY, handleScroll, isScrolled, firstCardStyle } = useTabScroll(isActive, onScroll as any);
 
   const { sleepDebt } = useSleepDebt();
   const baseline = useBaselineMode();
@@ -97,7 +96,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={16}
-      onScroll={onScroll}
+      onScroll={handleScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -131,12 +130,18 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                 { label: t('overview.readiness'), value: homeData.readiness },
                 { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
               ]}
-              insight={[scoreMessage, homeData.insight].filter(Boolean).join(' ')}
+              insight={[
+                homeData.userName ? `${homeData.userName} — ` : null,
+                scoreMessage,
+                homeData.insight,
+              ].filter(Boolean).join('')}
+              scrollY={scrollY}
+              isScrolled={isScrolled}
             />
           </TouchableOpacity>
 
           {/* Sleep Score */}
-          <View style={styles.gradientCardSection}>
+          <Reanimated.View style={[styles.gradientCardSection, firstCardStyle]}>
             <GradientInfoCard
               icon={<SleepScoreIcon />}
               title={t('overview.sleep_score')}
@@ -180,7 +185,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                 </View>
               )}
             </GradientInfoCard>
-          </View>
+          </Reanimated.View>
         </>
       )}
 
@@ -199,6 +204,11 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           todayNaps={homeData.todayNaps}
           onAddPress={() => showOverlay()}
         />
+      </View>
+
+      {/* Ask Coach */}
+      <View style={styles.chatBarSection}>
+        <ChatBar />
       </View>
 
       {/* Spacer for bottom padding */}
@@ -288,6 +298,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   gradientCardSection: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  chatBarSection: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
   },

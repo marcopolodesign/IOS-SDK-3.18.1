@@ -153,6 +153,14 @@ export const shadows = {
   }),
 };
 
+/** Battery level → color for UI indicators (header, device sheet, settings) */
+export function getBatteryColor(level: number): string {
+  if (level < 5) return '#EF4444';
+  if (level < 10) return '#FF6B6B';
+  if (level < 20) return '#F59E0B';
+  return 'rgba(255, 255, 255, 0.7)';
+}
+
 export default colors;
 
 

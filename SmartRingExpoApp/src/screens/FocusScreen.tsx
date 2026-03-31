@@ -14,12 +14,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { colors, fontFamily, fontSize, spacing } from '../theme/colors';
-import { useFocusData } from '../hooks/useFocusData';
+import { useFocusDataContext } from '../context/FocusDataContext';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
 import { ReadinessCard } from '../components/focus/ReadinessCard';
 import { IllnessWatchCard } from '../components/focus/IllnessWatchCard';
 import { LastRunContextCard } from '../components/focus/LastRunContextCard';
-import { ChatBar } from '../components/focus/ChatFAB';
+import { AskCoachButton } from '../components/focus/AskCoachButton';
 import { BaselineJourneyCard } from '../components/focus/BaselineJourneyCard';
 
 function getTodayLabel(): string {
@@ -34,7 +34,7 @@ function getTodayLabel(): string {
 
 export default function FocusScreen() {
   const { t } = useTranslation();
-  const focusData = useFocusData();
+  const focusData = useFocusDataContext();
   const hasStrava = focusData.lastRun != null || focusData.isLoading;
   const daysLogged = focusData.baselines?.daysLogged ?? 0;
 
@@ -86,9 +86,9 @@ export default function FocusScreen() {
             </View>
           )}
 
-          {/* ── Chat bar -- inline, above metric cards ── */}
+          {/* ── Ask Coach button -- inline, above metric cards ── */}
           <View style={styles.cardWrap}>
-            <ChatBar />
+            <AskCoachButton />
           </View>
 
           {/* Metric cards */}

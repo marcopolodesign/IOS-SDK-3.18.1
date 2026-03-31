@@ -48,6 +48,8 @@ const formatDeviceName = (device: DeviceInfo): string => {
   const id = device.id || '';
   const lower = name.toLowerCase();
 
+  // V8 X6 ring
+  if (device.sdkType === 'v8' && (lower.includes('x6') || device.deviceType === 'ring')) return 'FOCUS X6';
   // V8 band devices
   if (device.sdkType === 'v8' || device.deviceType === 'band') return 'FOCUS BAND';
 
@@ -201,10 +203,17 @@ export const useSmartRing = (): UseSmartRingReturn => {
   useEffect(() => {
     // Check initial connection state on mount
     // This is critical for components that mount after connection is already established
-    UnifiedSmartRingService.isConnected().then((status) => {
+    UnifiedSmartRingService.isConnected().then(async (status) => {
       console.log('📱 [useSmartRing] Initial connection check:', status.connected);
       if (status.connected) {
         setConnectionState('connected');
+        // Also populate connectedDevice from paired device info
+        try {
+          const { hasPairedDevice, device } = await UnifiedSmartRingService.getPairedDevice();
+          if (hasPairedDevice && device) {
+            setConnectedDevice(device);
+          }
+        } catch {}
       }
     });
 
@@ -352,10 +361,11 @@ export const useSmartRing = (): UseSmartRingReturn => {
       return false;
     }
 
-    // Determine SDK type from device and set it on the unified service
+    // Determine SDK type and device type, then set on the unified service
     const sdkType = device.sdkType || 'jstyle' as 'jstyle' | 'v8';
-    console.log('🔗 [useSmartRing] Device sdkType:', sdkType);
-    UnifiedSmartRingService.setConnectedSDKType(sdkType);
+    const deviceType = device.deviceType;
+    console.log('🔗 [useSmartRing] Device sdkType:', sdkType, 'deviceType:', deviceType);
+    UnifiedSmartRingService.setConnectedSDKType(sdkType, deviceType);
 
     try {
       // Jstyle native bridge expects the CoreBluetooth peripheral UUID (device.id),
@@ -364,7 +374,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       console.log('🔗 [useSmartRing] Calling UnifiedSmartRingService.connect() with:', connectId);
       const startTime = Date.now();
 
-      const result = await UnifiedSmartRingService.connect(connectId, sdkType);
+      const result = await UnifiedSmartRingService.connect(connectId, sdkType, deviceType);
 
       const elapsed = Date.now() - startTime;
       console.log(`🔗 [useSmartRing] connect() returned after ${elapsed}ms:`, result);

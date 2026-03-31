@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Haptics from 'expo-haptics';
 import {
   View,
   Text,
@@ -161,6 +162,10 @@ export function AuthScreen() {
     [],
   );
 
+  const handleSheetChange = useCallback((_from: number, toIndex: number) => {
+    if (toIndex >= 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
   return (
     <View style={styles.container}>
       <ImageBackground
@@ -239,9 +244,11 @@ export function AuthScreen() {
         snapPoints={snapPoints}
         enablePanDownToClose
         enableDynamicSizing={false}
+        onAnimate={handleSheetChange}
         backdropComponent={renderBackdrop}
         backgroundStyle={styles.sheetBackground}
-        handleIndicatorStyle={styles.sheetHandle}
+        handleComponent={null}
+        handleStyle={styles.handle}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -430,9 +437,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
   },
-  sheetHandle: {
-    backgroundColor: '#D0D0D0',
-    width: 36,
+  handle: {
+    height: 0,
   },
   sheetContent: {
     paddingHorizontal: 32,

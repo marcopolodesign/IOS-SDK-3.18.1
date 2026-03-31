@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, StatusBar, Platform, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Animated, StatusBar, Platform, Text } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -306,42 +306,16 @@ function MainApp() {
   );
 }
 
-// App with auth flow
-function AppWithAuth() {
-  const { isAuthenticated, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <SafeAreaProvider>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <AuthScreen />
-      </SafeAreaProvider>
-    );
-  }
-
-  return (
-    <NavigationContainer theme={DarkTheme}>
-      <MainApp />
-    </NavigationContainer>
-  );
-}
-
 function App() {
-  const [showSplash, setShowSplash] = React.useState(true);
+  const [splashAnimDone, setSplashAnimDone] = React.useState(false);
+  const { isAuthenticated, isLoading } = useAuth();
 
   const handleSplashComplete = React.useCallback(() => {
-    setShowSplash(false);
+    setSplashAnimDone(true);
   }, []);
 
-  if (showSplash) {
+  // Keep splash visible until both animation completes AND auth resolves
+  if (!splashAnimDone || isLoading) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={colors.background} />
@@ -350,11 +324,24 @@ function App() {
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaProvider>
+          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <AuthScreen />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <AppWithAuth />
+        <NavigationContainer theme={DarkTheme}>
+          <MainApp />
+        </NavigationContainer>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -365,11 +352,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabBar: {
+tabBar: {
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
     borderTopWidth: 0.5,
     borderTopColor: 'rgba(255, 255, 255, 0.1)',

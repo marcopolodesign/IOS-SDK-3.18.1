@@ -1,9 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+  type SharedValue,
+} from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import * as Haptics from 'expo-haptics';
 import { fontFamily, fontSize, spacing } from '../../theme/colors';
+import { useTypewriter } from '../../hooks/useTypewriter';
 
 type Metric = {
   label: string;
@@ -38,21 +47,76 @@ function FocusIcon() {
   );
 }
 
+function SendIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 12H19M19 12L13 6M19 12L13 18"
+        stroke="black"
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Scroll range over which the button collapses — wider range = slower feel
+const COLLAPSE_START = 10;
+const COLLAPSE_END = 160;
+
 interface MetricInsightCardProps {
   metrics: Metric[];
   insight?: string;
+  scrollY?: SharedValue<number>;
+  isScrolled?: boolean;
 }
 
-export function MetricInsightCard({ metrics, insight }: MetricInsightCardProps) {
+export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = false }: MetricInsightCardProps) {
   const { t } = useTranslation();
+  const [containerWidth, setContainerWidth] = useState(0);
+  const typewriterText = useTypewriter();
+  // Fallback when no scrollY is provided (SleepTab / ActivityTab) — stays expanded
+  const fallbackScrollY = useSharedValue(0);
+  const activeScrollY = scrollY ?? fallbackScrollY;
+
+  const animatedBtnStyle = useAnimatedStyle(() => {
+    const progress = interpolate(
+      activeScrollY.value,
+      [COLLAPSE_START, COLLAPSE_END],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    return {
+      minWidth: interpolate(progress, [0, 1], [0, containerWidth * 0.9]),
+      paddingHorizontal: interpolate(progress, [0, 1], [16, 20]),
+      paddingVertical: interpolate(progress, [0, 1], [14, 22]),
+      borderRadius: interpolate(progress, [0, 1], [50, 12]),
+    };
+  });
+
+  const rightGroupStyle = useAnimatedStyle(() => {
+    const progress = interpolate(
+      activeScrollY.value,
+      [COLLAPSE_START, COLLAPSE_END],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity: progress,
+      maxWidth: interpolate(progress, [0, 1], [0, 120]),
+      overflow: 'hidden',
+    };
+  });
+
   return (
     <View style={styles.card}>
-      {/* Insight text */}
       {insight ? (
         <Text style={styles.insightText}>{insight}</Text>
       ) : null}
 
-      {/* Metrics row */}
       <View style={styles.metricsRow}>
         {metrics.map((metric, index) => (
           <React.Fragment key={`${metric.label}-${index}`}>
@@ -70,17 +134,29 @@ export function MetricInsightCard({ metrics, insight }: MetricInsightCardProps) 
         ))}
       </View>
 
-      {/* Ask Coach row */}
-      <View style={styles.askCoachRow}>
+      <View
+        style={styles.askCoachRow}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      >
         <View style={styles.askCoachLine} />
-        <TouchableOpacity
-          style={styles.askCoachBtn}
+        <AnimatedTouchableOpacity
+          style={[styles.askCoachBtn, animatedBtnStyle]}
           activeOpacity={0.8}
-          onPress={() => router.push('/(tabs)/settings/chat')}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/chat');
+          }}
         >
-          <FocusIcon />
-          <Text style={styles.askCoachText}>{t('overview.ask_coach')}</Text>
-        </TouchableOpacity>
+          <View style={styles.askCoachLeft}>
+            <FocusIcon />
+            <Text style={styles.askCoachText} numberOfLines={1}>
+              {isScrolled ? t('overview.ask_coach') : typewriterText}
+            </Text>
+          </View>
+          <Animated.View style={[styles.askCoachRight, rightGroupStyle]}>
+            <SendIcon />
+          </Animated.View>
+        </AnimatedTouchableOpacity>
         <View style={styles.askCoachLine} />
       </View>
     </View>
@@ -142,17 +218,25 @@ const styles = StyleSheet.create({
   askCoachBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 50,
+    justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
   },
-  askCoachText: {
+  askCoachLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  askCoachRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+askCoachText: {
     color: '#000000',
     fontSize: fontSize.md,
     fontFamily: fontFamily.demiBold,
+    flexShrink: 1,
   },
 });
 

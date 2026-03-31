@@ -293,6 +293,8 @@ RCT_EXPORT_METHOD(connectToDevice:(NSString *)deviceId
         return;
     }
 
+    // Re-claim delegate in case V8 scanner stole it during parallel scan
+    [[NewBle sharedManager] setDelegate:self];
     self.pendingConnectResolver = resolve;
     self.pendingConnectRejecter = reject;
 
@@ -354,6 +356,36 @@ RCT_EXPORT_METHOD(cancelPendingDataRequest:(RCTPromiseResolveBlock)resolve
     resolve(@{@"success": @YES});
 }
 
+RCT_EXPORT_METHOD(hasPairedDevice:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    NSString *pairedUUID = [[NSUserDefaults standardUserDefaults] stringForKey:kPairedDeviceUUIDKey];
+    NSString *pairedName = [[NSUserDefaults standardUserDefaults] stringForKey:kPairedDeviceNameKey];
+    resolve(@{
+        @"hasPairedDevice": @(pairedUUID != nil),
+        @"deviceId": pairedUUID ?: [NSNull null],
+        @"deviceName": pairedName ?: [NSNull null]
+    });
+}
+
+RCT_EXPORT_METHOD(forgetPairedDevice:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kPairedDeviceUUIDKey];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kPairedDeviceNameKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+
+    if (self.connectedPeripheral) {
+        self.isDisconnecting = YES;
+        [self stopReconnectionTimer];
+        [self rejectPendingDataRequestWithCode:@"DISCONNECTED" message:@"Paired device forgotten"];
+        [self clearAccumulatedDataBuffers];
+        [[NewBle sharedManager] Disconnect];
+        self.connectedPeripheral = nil;
+        self.connectedDeviceId = nil;
+    }
+
+    resolve(@{@"success": @YES, @"message": @"Paired device forgotten"});
+}
+
 RCT_EXPORT_METHOD(autoReconnect:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
     [self debugLog:@"Attempting auto-reconnect"];
@@ -371,6 +403,7 @@ RCT_EXPORT_METHOD(autoReconnect:(RCTPromiseResolveBlock)resolve
         NSArray *peripherals = [[NewBle sharedManager].CentralManage retrievePeripheralsWithIdentifiers:@[uuid]];
         if (peripherals.count > 0) {
             CBPeripheral *peripheral = peripherals[0];
+            [[NewBle sharedManager] setDelegate:self];
             self.pendingConnectResolver = resolve;
             self.pendingConnectRejecter = reject;
             [[NewBle sharedManager] connectDevice:peripheral];
@@ -384,6 +417,7 @@ RCT_EXPORT_METHOD(autoReconnect:(RCTPromiseResolveBlock)resolve
 
     if (peripherals.count > 0) {
         CBPeripheral *peripheral = peripherals[0];
+        [[NewBle sharedManager] setDelegate:self];
         self.pendingConnectResolver = resolve;
         self.pendingConnectRejecter = reject;
         [[NewBle sharedManager] connectDevice:peripheral];

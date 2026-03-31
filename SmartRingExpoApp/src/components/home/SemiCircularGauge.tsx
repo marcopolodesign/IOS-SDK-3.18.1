@@ -81,8 +81,6 @@ export function SemiCircularGauge({
 
   return (
     <View style={[styles.container, { width: size, height: scaledHeight + 80 }]}>
-      <Text style={styles.label}>{label}</Text>
-      
       <View style={styles.gaugeContainer}>
         <Svg
           width={size}
@@ -159,6 +157,7 @@ export function SemiCircularGauge({
 
         {/* Score display */}
         <View style={[styles.scoreContainer, { top: size / 10 }]}>
+          <Text style={styles.label}>{label}</Text>
           <View style={styles.scoreRow}>
             <Text style={styles.scoreText}>{displayScore}</Text>
             <Text style={styles.percentText}>%</Text>
@@ -178,13 +177,15 @@ export function SemiCircularGauge({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
+    marginTop: 20,
   },
   label: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: fontSize.sm,
     fontFamily: fontFamily.demiBold,
     letterSpacing: 2,
-    marginBottom: 16,
+    marginTop: 15,
+    marginBottom: -12,
   },
   gaugeContainer: {
     position: 'relative',

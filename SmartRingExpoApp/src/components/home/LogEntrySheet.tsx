@@ -174,8 +174,6 @@ export default function LogEntrySheet({ visible, mode, onClose, onSave }: LogEnt
           <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
 
           <View style={styles.sheetContent}>
-            {/* Handle */}
-            <View style={styles.handle} />
 
             {/* Header */}
             <View style={styles.headerRow}>
@@ -297,14 +295,6 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     padding: spacing.lg,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    alignSelf: 'center',
-    marginBottom: spacing.md,
   },
   headerRow: {
     flexDirection: 'row',

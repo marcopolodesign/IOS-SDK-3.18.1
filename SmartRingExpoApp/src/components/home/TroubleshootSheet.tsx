@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -51,15 +52,21 @@ export const TroubleshootSheet = memo(function TroubleshootSheet({
     [],
   );
 
+  const handleChange = useCallback((_from: number, toIndex: number) => {
+    if (toIndex >= 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
   return (
     <BottomSheetModal
       ref={modalRef}
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={onDismiss}
+      onAnimate={handleChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={styles.background}
-      handleIndicatorStyle={styles.handle}
+      handleComponent={null}
+      handleStyle={styles.handle}
     >
       <BottomSheetView style={styles.container}>
         <View style={styles.iconWrapper}>
@@ -94,12 +101,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   handle: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    width: 36,
+    height: 0,
   },
   container: {
     paddingHorizontal: 24,

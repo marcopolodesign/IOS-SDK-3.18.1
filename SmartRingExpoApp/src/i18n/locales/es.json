@@ -264,6 +264,7 @@
     "signal_sleep": "Calidad del sueño",
     "signal_breathing": "Frecuencia respiratoria",
     "value_elevated": "Elevado",
+    "value_suppressed": "Suprimido",
     "value_normal": "Normal",
     "empty_sync": "Sincroniza tu dispositivo para ver señales de enfermedad"
   },
@@ -276,7 +277,7 @@
     "connect_strava": "Conectar Strava",
     "no_runs": "No se encontraron carreras recientes. ¡Ve a correr!",
     "body_state": "Tu cuerpo esa mañana",
-    "sleep_score": "Puntuación de sueño",
+    "sleep_time": "Tiempo de sueño",
     "hrv_vs_norm": "VFC vs norma",
     "date_today": "Hoy",
     "date_yesterday": "Ayer",
@@ -440,7 +441,7 @@
     "troubleshoot_dismiss": "Entendido"
   },
   "baseline": {
-    "title": "Construyendo tu línea base",
+    "title": "Bienvenido a Focus. Estamos construyendo tus métricas de referencia.",
     "subtitle": "Usa tu dispositivo durante la noche y sincroniza cada mañana. Tus puntuaciones personalizadas aparecerán después de 3 días de datos.",
     "day_of": "de {{required}}",
     "day_progress": "Día {{current}} de {{required}}",
@@ -455,7 +456,8 @@
     "complete_subtitle": "Focus ahora tiene suficientes datos para mostrar tus puntuaciones personalizadas.",
     "header_chip": "Día {{current}}/{{required}}",
     "sleep_tracking": "{{current}}/{{required}} noches registradas",
-    "sleep_subtitle": "Usa tu dispositivo esta noche para registrar tu sueño."
+    "sleep_subtitle": "Usa tu dispositivo esta noche para registrar tu sueño.",
+    "view_baseline": "Ver Baseline"
   },
   "log_entry": {
     "header_recovery": "Registrar Recuperación",

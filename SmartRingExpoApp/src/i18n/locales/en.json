@@ -250,6 +250,7 @@
     "signal_sleep": "Sleep quality",
     "signal_breathing": "Breathing rate",
     "value_elevated": "Elevated",
+    "value_suppressed": "Suppressed",
     "value_normal": "Normal",
     "empty_sync": "Sync your device to see illness signals"
   },
@@ -262,7 +263,7 @@
     "connect_strava": "Connect Strava",
     "no_runs": "No recent runs found. Go for a run!",
     "body_state": "Your body that morning",
-    "sleep_score": "Sleep score",
+    "sleep_time": "Sleep time",
     "hrv_vs_norm": "HRV vs norm",
     "date_today": "Today",
     "date_yesterday": "Yesterday",
@@ -426,7 +427,7 @@
     "troubleshoot_dismiss": "Got it"
   },
   "baseline": {
-    "title": "Building Your Baseline",
+    "title": "Welcome to Focus. We're building your baseline metrics.",
     "subtitle": "Wear your device overnight and sync each morning. Your personalized scores will appear after 3 days of data.",
     "day_of": "of {{required}}",
     "day_progress": "Day {{current}} of {{required}}",
@@ -441,7 +442,8 @@
     "complete_subtitle": "Focus now has enough data to show your personalized scores.",
     "header_chip": "Day {{current}}/{{required}}",
     "sleep_tracking": "{{current}}/{{required}} nights tracked",
-    "sleep_subtitle": "Wear your device tonight for sleep tracking."
+    "sleep_subtitle": "Wear your device tonight for sleep tracking.",
+    "view_baseline": "View Baseline"
   },
   "log_entry": {
     "header_recovery": "Log Recovery",

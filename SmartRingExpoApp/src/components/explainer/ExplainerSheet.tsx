@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -25,6 +26,10 @@ export function ExplainerSheet() {
     closeExplainer();
   }, [closeExplainer]);
 
+  const handleChange = useCallback((_from: number, toIndex: number) => {
+    if (toIndex >= 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -44,9 +49,11 @@ export function ExplainerSheet() {
       enableDynamicSizing
       enablePanDownToClose
       onDismiss={handleDismiss}
+      onAnimate={handleChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={styles.background}
-      handleIndicatorStyle={styles.handle}
+      handleComponent={null}
+      handleStyle={styles.handle}
       maxDynamicContentSize={700}
     >
       <BottomSheetView>
@@ -63,12 +70,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
   },
   handle: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    width: 36,
+    height: 0,
   },
 });
 

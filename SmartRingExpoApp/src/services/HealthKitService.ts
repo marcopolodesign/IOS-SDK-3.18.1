@@ -11,7 +11,7 @@ import HealthKitSleepProcessor from './HealthKit/HealthKitSleepProcessor';
 import HealthKitSubscriptions from './HealthKit/HealthKitSubscriptions';
 import HealthKitWorkoutFetcher from './HealthKit/HealthKitWorkoutFetcher';
 import type { HealthKitCallbacks } from './HealthKit/HealthKitSubscriptions';
-import type { HKStepsResult, HKHeartRateResult, HKHRVResult, HKSpO2Result } from './HealthKit/HealthKitDataFetchers';
+import type { HKStepsResult, HKHeartRateResult, HKHRVResult, HKSpO2Result, HKActiveCaloriesResult, HKDistanceResult } from './HealthKit/HealthKitDataFetchers';
 import type { HKSleepResult } from './HealthKit/HealthKitSleepProcessor';
 import type { HKWorkoutResult } from '../types/activity.types';
 
@@ -81,6 +81,14 @@ class HealthKitService {
     return this.dataFetchers.fetchSpO2Data();
   }
 
+  async fetchActiveCalories(): Promise<HKActiveCaloriesResult> {
+    return this.dataFetchers.fetchActiveCaloriesData();
+  }
+
+  async fetchDistance(): Promise<HKDistanceResult> {
+    return this.dataFetchers.fetchDistanceData();
+  }
+
   async fetchSleep(): Promise<HKSleepResult | null> {
     return this.sleepProcessor.fetchSleepData();
   }
@@ -144,4 +152,4 @@ class HealthKitService {
 
 export default new HealthKitService();
 
-export type { HKStepsResult, HKHeartRateResult, HKHRVResult, HKSpO2Result, HKSleepResult, HKWorkoutResult, HealthKitCallbacks };
+export type { HKStepsResult, HKHeartRateResult, HKHRVResult, HKSpO2Result, HKActiveCaloriesResult, HKDistanceResult, HKSleepResult, HKWorkoutResult, HealthKitCallbacks };

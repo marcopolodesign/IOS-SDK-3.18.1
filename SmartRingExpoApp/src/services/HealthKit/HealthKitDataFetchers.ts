@@ -29,6 +29,22 @@ export interface HKSpO2Result {
   timestamp: number;
 }
 
+export interface HKActiveCaloriesResult {
+  calories: number;
+  source: string;
+}
+
+export interface HKDistanceResult {
+  distanceM: number;
+  source: string;
+}
+
+/** Returns midnight of the current local day */
+function startOfToday(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 class HealthKitDataFetchers {
   async fetchHeartRateData(): Promise<HKHeartRateResult | null> {
     try {
@@ -47,14 +63,12 @@ class HealthKitDataFetchers {
   async fetchStepsData(): Promise<HKStepsResult> {
     try {
       const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
       const todayQuery = await queryQuantitySamples(
         'HKQuantityTypeIdentifierStepCount',
         {
           limit: 0, // 0 = unlimited
           filter: {
-            date: { startDate: startOfDay, endDate: now },
+            date: { startDate: startOfToday(), endDate: now },
           },
         }
       );
@@ -111,6 +125,52 @@ class HealthKitDataFetchers {
     } catch (error) {
       console.log('[HealthKit] Error fetching SpO2:', error);
       return null;
+    }
+  }
+
+  async fetchActiveCaloriesData(): Promise<HKActiveCaloriesResult> {
+    try {
+      const now = new Date();
+      const samples = await queryQuantitySamples(
+        'HKQuantityTypeIdentifierActiveEnergyBurned',
+        {
+          limit: 0,
+          filter: {
+            date: { startDate: startOfToday(), endDate: now },
+          },
+        }
+      );
+
+      const total = (Array.isArray(samples) ? samples : [])
+        .reduce((sum, s: any) => sum + (Number(s.quantity) || 0), 0);
+
+      return { calories: Math.round(total), source: 'appleHealth' };
+    } catch (error) {
+      console.log('[HealthKit] Error fetching active calories:', error);
+      return { calories: 0, source: 'error' };
+    }
+  }
+
+  async fetchDistanceData(): Promise<HKDistanceResult> {
+    try {
+      const now = new Date();
+      const samples = await queryQuantitySamples(
+        'HKQuantityTypeIdentifierDistanceWalkingRunning',
+        {
+          limit: 0,
+          filter: {
+            date: { startDate: startOfToday(), endDate: now },
+          },
+        }
+      );
+
+      const totalM = (Array.isArray(samples) ? samples : [])
+        .reduce((sum, s: any) => sum + (Number(s.quantity) || 0), 0);
+
+      return { distanceM: Math.round(totalM), source: 'appleHealth' };
+    } catch (error) {
+      console.log('[HealthKit] Error fetching distance:', error);
+      return { distanceM: 0, source: 'error' };
     }
   }
 

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, G } from 'react-native-svg';
 import Animated, {
@@ -113,6 +114,7 @@ export function SyncStatusSheet({ syncProgress, isSyncing, onFindRings }: SyncSt
     }
     if (!isVisibleRef.current) {
       // First appearance — mount the Modal then slide up
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       isVisibleRef.current = true;
       translateY.value = SHEET_CONTENT_HEIGHT + 100;
       setModalVisible(true);
@@ -324,14 +326,6 @@ export function SyncStatusSheet({ syncProgress, isSyncing, onFindRings }: SyncSt
         ]}
       >
         <BlurView intensity={80} tint="dark" style={styles.blurFill}>
-          {/* Top border */}
-          <View style={styles.topBorder} />
-
-          {/* Handle pill */}
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
           {/* Content */}
           <View style={[styles.content, { paddingBottom: insets.bottom + spacing.md }]}>
             {/* Ring */}
@@ -418,26 +412,6 @@ const styles = StyleSheet.create({
   },
   blurFill: {
     flex: 1,
-  },
-  topBorder: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    zIndex: 1,
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   content: {
     flex: 1,

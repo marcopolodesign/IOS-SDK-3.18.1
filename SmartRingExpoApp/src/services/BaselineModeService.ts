@@ -103,9 +103,9 @@ export async function loadBaselineCompletedAt(): Promise<string | null> {
     if (!user) return null;
 
     const { data } = await (supabase as any)
-      .from('user_profiles')
+      .from('profiles')
       .select('baseline_completed_at')
-      .eq('user_id', user.id)
+      .eq('id', user.id)
       .single();
 
     const completedAt = (data as any)?.baseline_completed_at as string | null;
@@ -134,10 +134,10 @@ export async function persistBaselineCompletion(): Promise<string> {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       await (supabase as any)
-        .from('user_profiles')
+        .from('profiles')
         .upsert(
-          { user_id: user.id, baseline_completed_at: now },
-          { onConflict: 'user_id' }
+          { id: user.id, baseline_completed_at: now },
+          { onConflict: 'id' }
         );
     }
   } catch (err) {

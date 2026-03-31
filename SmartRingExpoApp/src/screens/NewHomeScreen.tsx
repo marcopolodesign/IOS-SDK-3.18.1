@@ -23,6 +23,7 @@ import { spacing, fontFamily } from '../theme/colors';
 import { OverviewIcon, SleepIcon, ActivityIcon } from '../assets/icons';
 import { BatteryAlertStorage } from '../utils/storage';
 import { SyncStatusSheet } from '../components/home/SyncStatusSheet';
+import { DeviceSheet } from '../components/home/DeviceSheet';
 import { BaselineCompleteOverlay } from '../components/home/BaselineCompleteOverlay';
 import { NotificationService } from '../services/NotificationService';
 import { maybeSendSleepNotificationFromForeground } from '../services/BackgroundSleepTask';
@@ -51,9 +52,10 @@ function NewHomeScreenContent() {
   const wasFullyCollapsed = useRef(false);
   const homeData = useHomeDataContext();
   const scrollViewRef = useRef<ScrollView>(null);
-  const { autoConnect, isAutoConnecting } = useSmartRing();
+  const { autoConnect, isAutoConnecting, connectedDevice } = useSmartRing();
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [tabScrollEnabled, setTabScrollEnabled] = useState(true);
+  const [deviceSheetVisible, setDeviceSheetVisible] = useState(false);
   const previousBatteryRef = useRef<number | null>(null);
   const shownBatteryAlertsRef = useRef<Set<number>>(new Set());
   const prevSyncPhaseRef = useRef<string>('');
@@ -274,6 +276,7 @@ function NewHomeScreenContent() {
         {/* Header (pinned) */}
         <HomeHeader
           userName={homeData.userName || 'there'}
+          avatarUrl={homeData.avatarUrl || undefined}
           streakDays={homeData.streakDays}
           ringBattery={homeData.ringBattery}
           isCharging={homeData.isRingCharging}
@@ -283,6 +286,7 @@ function NewHomeScreenContent() {
           isSyncing={homeData.isSyncing}
           onRefresh={homeData.refresh}
           onAvatarPress={() => router.push('/profile')}
+          onBatteryPress={() => setDeviceSheetVisible(true)}
         />
 
         <Animated.View style={styles.contentWrapper}>
@@ -388,6 +392,13 @@ function NewHomeScreenContent() {
         onFindRings={() => router.push('/(onboarding)/connect')}
       />
       <BaselineCompleteOverlay />
+      <DeviceSheet
+        visible={deviceSheetVisible}
+        onDismiss={() => setDeviceSheetVisible(false)}
+        connectedDevice={connectedDevice}
+        battery={homeData.ringBattery}
+        isConnected={isConnected}
+      />
     </AnimatedGradientBackground>
   );
 }

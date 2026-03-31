@@ -1,25 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, TouchableOpacity } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
-import type { BaselineMetrics } from '../../types/baseline.types';
 
 const RING_SIZE = 120;
 const STROKE_WIDTH = 8;
 const RADIUS = (RING_SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-const METRIC_CONFIG: { key: keyof BaselineMetrics; icon: string; colorFrom: string; colorTo: string }[] = [
-  { key: 'sleep', icon: 'moon', colorFrom: '#6B8EFF', colorTo: '#8AAAFF' },
-  { key: 'heartRate', icon: 'heart', colorFrom: '#FF6B6B', colorTo: '#FF8888' },
-  { key: 'hrv', icon: 'pulse', colorFrom: '#C4FF6B', colorTo: '#D4FF8B' },
-  { key: 'temperature', icon: 'thermometer', colorFrom: '#6BFFF5', colorTo: '#8BFFF8' },
-  { key: 'spo2', icon: 'water', colorFrom: '#B16BFF', colorTo: '#C48BFF' },
-  { key: 'activity', icon: 'footsteps', colorFrom: '#00D4AA', colorTo: '#33DDBB' },
-];
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -77,8 +67,8 @@ export function BaselineProgressCard() {
         <Svg width={RING_SIZE} height={RING_SIZE}>
           <Defs>
             <LinearGradient id="progressGrad" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor="#00D4AA" />
-              <Stop offset="100%" stopColor="#00A88A" />
+              <Stop offset="0%" stopColor="#6B8EFF" />
+              <Stop offset="100%" stopColor="#5070E0" />
             </LinearGradient>
           </Defs>
           {/* Background circle */}
@@ -115,46 +105,21 @@ export function BaselineProgressCard() {
       <Text style={styles.title}>{t('baseline.title')}</Text>
       <Text style={styles.subtitle}>{t('baseline.subtitle')}</Text>
 
-      {/* Per-metric progress rows */}
-      <View style={styles.metricsContainer}>
-        {METRIC_CONFIG.map(({ key, icon, colorFrom }) => {
-          const metric = baseline.metrics[key];
-          return (
-            <View key={key} style={styles.metricRow}>
-              <View style={[styles.metricIcon, { backgroundColor: `${colorFrom}15` }]}>
-                <Ionicons name={icon as any} size={14} color={colorFrom} />
-              </View>
-              <Text style={styles.metricLabel}>{t(`baseline.metric_${key}`)}</Text>
-              <View style={styles.metricProgress}>
-                {Array.from({ length: metric.required }).map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.progressDot,
-                      i < metric.current
-                        ? { backgroundColor: colorFrom }
-                        : { backgroundColor: 'rgba(255,255,255,0.08)' },
-                    ]}
-                  />
-                ))}
-              </View>
-              {metric.ready && (
-                <Ionicons name="checkmark-circle" size={16} color="#00D4AA" />
-              )}
-            </View>
-          );
-        })}
-      </View>
+      {/* View Baseline button */}
+      <TouchableOpacity
+        style={styles.viewButton}
+        activeOpacity={0.7}
+        onPress={() => router.push('/detail/baseline-detail')}
+      >
+        <Text style={styles.viewButtonText}>{t('baseline.view_baseline')}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     padding: spacing.xl,
     alignItems: 'center',
     marginBottom: spacing.lg,
@@ -184,7 +149,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   title: {
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontFamily: fontFamily.demiBold,
     color: '#FFFFFF',
     textAlign: 'center',
@@ -192,41 +157,21 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: spacing.xl,
     paddingHorizontal: spacing.md,
   },
-  metricsContainer: {
-    width: '100%',
-    gap: 10,
+  viewButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 50,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
   },
-  metricRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  metricIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metricLabel: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  metricProgress: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  progressDot: {
-    width: 18,
-    height: 5,
-    borderRadius: 3,
+  viewButtonText: {
+    color: '#000000',
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
   },
 });

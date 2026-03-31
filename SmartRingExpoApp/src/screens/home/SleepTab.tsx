@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated, FlatList, ImageBackground, Dimensions } from 'react-native';
+import Reanimated from 'react-native-reanimated';
+import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +19,7 @@ import { getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useBaselineMode } from '../../context/BaselineModeContext';
+import { ChatBar } from '../../components/focus/ChatFAB';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -78,11 +81,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
     homeData.refreshMissingCardData,
   ]);
 
-  const scrollRef = React.useRef<any>(null);
-
-  useEffect(() => {
-    if (isActive) scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [isActive]);
+  const { scrollRef, scrollY, handleScroll, isScrolled, firstCardStyle } = useTabScroll(isActive, onScroll);
 
   const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
@@ -126,7 +125,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={16}
-      onScroll={onScroll}
+      onScroll={handleScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -143,14 +142,12 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         </View>
       )}
 
-      {/* Sleep Score Gauge — or baseline pill */}
+      {/* Sleep Score Gauge — or baseline banner */}
       {baseline.isInBaselineMode && !baseline.metrics.sleep.ready ? (
         <View style={styles.baselineBanner}>
-          <View style={styles.baselinePill}>
-            <Text style={styles.baselinePillText}>
-              {t('baseline.sleep_tracking', { current: baseline.metrics.sleep.current, required: baseline.metrics.sleep.required })}
-            </Text>
-          </View>
+          <Text style={styles.baselineTitle}>
+            {t('baseline.sleep_tracking', { current: baseline.metrics.sleep.current, required: baseline.metrics.sleep.required })}
+          </Text>
           <Text style={styles.baselineBannerText}>{t('baseline.sleep_subtitle')}</Text>
         </View>
       ) : (
@@ -178,6 +175,8 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
                 })() },
               ]}
               insight={[sleepMessage, sleepInsight].filter(Boolean).join(' ')}
+              scrollY={scrollY}
+              isScrolled={isScrolled}
             />
           </View>
         </>
@@ -198,7 +197,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         const hasNaps = allSessions.length > 1;
 
         return (
-          <View style={styles.gradientCardSection}>
+          <Reanimated.View style={[styles.gradientCardSection, firstCardStyle]}>
             <GradientInfoCard
               icon={<SleepScoreIcon />}
               title={hasNaps ? t('sleep.stages') + ' + Nap' : t('sleep.stages')}
@@ -221,7 +220,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
                 onTouchEnd={onHypnogramTouchEnd}
               />
             </GradientInfoCard>
-          </View>
+          </Reanimated.View>
         );
       })()}
 
@@ -365,6 +364,11 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         />
       </View>
 
+      {/* Ask Coach */}
+      <View style={styles.chatBarSection}>
+        <ChatBar />
+      </View>
+
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
@@ -374,6 +378,10 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  chatBarSection: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
   metricsInsightSection: {
     marginHorizontal: spacing.md,
@@ -577,19 +585,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
-  baselinePill: {
-    backgroundColor: 'rgba(0,212,170,0.12)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,212,170,0.2)',
-    marginBottom: 10,
-  },
-  baselinePillText: {
-    color: '#00D4AA',
-    fontSize: fontSize.sm,
+  baselineTitle: {
+    fontSize: fontSize.xxl,
     fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   baselineBannerText: {
     color: 'rgba(255,255,255,0.45)',

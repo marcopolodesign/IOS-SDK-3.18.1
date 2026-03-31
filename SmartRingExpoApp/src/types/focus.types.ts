@@ -27,10 +27,17 @@ export interface IllnessSignals {
   sleepFragmented: boolean;
 }
 
+export interface IllnessWatchDetails {
+  hrvDelta: string | null;   // e.g. "−22%" (negative = suppressed)
+  hrDelta: string | null;    // e.g. "+7 bpm"
+  tempDelta: string | null;  // e.g. "+0.8°C"
+}
+
 export interface IllnessWatch {
   status: IllnessStatus;
   signals: IllnessSignals;
   summary: string;
+  details: IllnessWatchDetails;
 }
 
 export type EffortVerdict = 'as_expected' | 'harder_than_expected' | 'easier_than_expected';
@@ -46,7 +53,7 @@ export interface LastRunContext {
   explanation: string;
   bodyStateAtRun: {
     readinessScore: number | null;
-    sleepScore: number | null;
+    sleepMinutes: number | null;  // sleep_score is never stored; use total minutes instead
     hrvVsNorm: 'above' | 'below' | 'normal' | null;
   };
 }
@@ -56,6 +63,7 @@ export interface FocusBaselines {
   restingHR: number[];
   temperature: number[];
   sleepScore: number[];
+  sleepMinutes: number[];
   respiratoryRate: number[];
   updatedAt: string | null;  // ISO date string (YYYY-MM-DD)
   daysLogged: number;

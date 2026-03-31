@@ -4,6 +4,885 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-03-30: Coach chat bar as real input on all tabs + auto-send from query
+
+**Change:** The "Ask Coach" prompt on every tab is now a real `TextInput`. The typewriter-animated questions become the placeholder text; users can type a question directly and tap send (or press return) from Overview, Sleep, Activity, and Coach tabs. The query is passed to the AI chat screen via `?q=` route param and auto-sent on mount so the answer loads immediately without any extra tap.
+
+**Files modified:**
+- `src/components/focus/AskCoachButton.tsx` — Converted from a `TouchableOpacity` display button to a `TextInput` + send button. Typewriter result is now the `placeholder` prop. Send navigates to `/chat?q=<text>` when text is present, else plain `/chat`.
+- `src/components/focus/ChatFAB.tsx` — Same conversion for `ChatBar`. Added `SendIcon`, replaced static placeholder with `useTypewriter()`, added `TextInput` + send button. Navigates to `/chat?q=<text>` on submit.
+- `src/screens/AIChatScreen.tsx` — Added `useLocalSearchParams` + `useEffect` to read `q` param and call `sendMessage(q)` on mount (fires once via `initialQueryFired` ref). Added `useEffect` to imports.
+- `src/screens/home/OverviewTab.tsx` — Added `ChatBar` import and renders it before the bottom spacer. Added `chatBarSection` style.
+- `src/screens/home/SleepTab.tsx` — Same: added `ChatBar` import, renders it before the bottom spacer, added `chatBarSection` style.
+- `src/screens/home/ActivityTab.tsx` — Same: added `ChatBar` import, renders it before the bottom spacer, added `chatBarSection` style.
+
+**Key notes:**
+- `useTypewriter` hook is now used in both components — placeholder animates only when the field is empty (standard TextInput behavior)
+- `initialQueryFired` ref prevents double-send on re-renders
+- 120ms `setTimeout` before auto-send gives the component time to mount and context to hydrate
+- Coach tab already covered by `AskCoachButton` in `FocusScreen` — no duplicate bar added there
+
+---
+
+## 2026-03-30: AI Coach chat lifted to global root modal
+
+**Change:** The AI coach chat screen (`AIChatScreen`) was nested inside `(tabs)/settings/chat` and could only be reached via the Coach/Focus tab. It is now a global root-stack modal (`/chat`) accessible from any tab or screen via `router.push('/chat')`.
+
+**Files created:**
+- `app/chat.tsx` — New global entry point; renders `<AIChatScreen />`
+
+**Files deleted:**
+- `app/(tabs)/settings/chat.tsx` — Removed (replaced by root-level `app/chat.tsx`)
+
+**Files modified:**
+- `app/_layout.tsx` — Added `FocusDataProvider` wrapper (moved up from settings layout) + registered `Stack.Screen name="chat"` with `presentation: 'fullScreenModal'`
+- `app/(tabs)/settings/_layout.tsx` — Removed `FocusDataProvider` and the `chat` `Stack.Screen` entry; now a plain Stack with only the `index` screen
+- `src/components/focus/AskCoachButton.tsx` — `router.push` path updated to `/chat`
+- `src/components/focus/ChatFAB.tsx` — `router.push` path updated to `/chat`
+- `src/components/home/MetricInsightCard.tsx` — `router.push` path updated to `/chat`
+
+**Key notes:**
+- `FocusDataProvider` now lives at root level so `useFocusDataContext()` inside `AIChatScreen` is satisfied regardless of which tab the user was on when they opened chat
+- Chat still presents as a native iOS `fullScreenModal` (slides up, swipe-down to dismiss)
+- All three call sites (`AskCoachButton`, `ChatFAB`/`ChatBar`, `MetricInsightCard`) updated — no orphaned references remain
+
+---
+
+## 2026-03-29: Score label moved above big number in gauge components
+
+**Change:** The score label text ("OVERALL SCORE", "LAST NIGHT", "ACTIVE CALORIES") now appears directly above the large percentage/number instead of at the very top of the component above the arc or bar. Arc and bar animations are unaffected.
+
+**Files modified:**
+- `src/components/home/SemiCircularGauge.tsx` — Removed label from top of container; placed it inside `scoreContainer` above `scoreRow`
+- `src/components/home/HeroLinearGauge.tsx` — Removed label from top of container; placed it inside `valueWrapper` above the big number
+
+---
+
+## 2026-03-29: HomeHeader cleanup — remove greeting, show initials, bigger icons
+
+**Change:** Decluttered the home screen header by removing the time-of-day greeting ("Good Evening") and user name text. The avatar button now shows the user's first-name initial instead of a generic person icon. The user's name is surfaced in the insight text beneath the overview score gauge ("Mat — Your recovery is excellent."). Ring and reconnect icons are larger for better visibility. About section now shows the live app version dynamically.
+
+**Files modified:**
+- `src/components/home/HomeHeader.tsx` — Removed `getGreeting()`, removed `greetingContainer`/`userName` text blocks, removed `DefaultAvatar` SVG component, replaced with initial letter from `userName[0]`, removed `useBaselineMode` and `Constants` imports, removed `useCallback`, increased `DeviceIcon` size 12→16, increased `ReconnectIcon` 14→20
+- `src/screens/home/OverviewTab.tsx` — `insight` prop on `MetricInsightCard` now prepends `homeData.userName` (e.g. "Mat — Your recovery is good.")
+- `src/screens/SettingsScreen.tsx` — Added `import Constants from 'expo-constants'`, About section app version changed from hardcoded `'1.0.0'` to `Constants.expoConfig?.version ?? '—'`
+
+**Key notes:**
+- `userName` prop is still passed to `HomeHeader` (needed for the initial letter display)
+- The `useTranslation` hook is retained — still used for reconnect/syncing/connecting labels
+- Baseline chip (shown during onboarding) was removed from the header along with the name row; baseline state is shown elsewhere (BaselineProgressCard)
+
+---
+
+### 2026-03-29: Fix V8 sleep fragmentation — date-grouped aggregation
+
+**Root cause:** `V8Service.getSleepByDay(dayIndex)` used a raw array index (`items[dayIndex]`) instead of filtering by calendar date. The V8 band reports sleep as multiple separate sessions per night. Each fragment was synced independently — the last one (e.g. 07:48–09:34) was only 5 min after the prior night session ended, triggering the proximity guard in `NapClassifierService` and inserting it as a nap.
+
+**Fix:** Rewrote `getSleepByDay` to mirror `JstyleService` — fetch all records once (cached), filter by local calendar date (`YYYY-MM-DD`), then aggregate all same-day sessions into one `SleepData` (earliest start, latest end, summed deep/light/rem/awake, merged `rawQualityRecords`). With the fragments merged, the total duration exceeds 180 min → classified as night.
+
+Also: added `_sleepRecordsCache` so the SDK is only called once across the 7-day sync loop (was calling `V8Bridge.getSleepData()` 7 times). Cache is cleared on `disconnect()` so each new sync gets fresh data. `getSleepDataRaw` also shares the cache.
+
+**Files modified:** `src/services/V8Service.ts`
+
+---
+
+### 2026-03-29: Ask Coach button — layout, padding, active indicator
+
+- `MetricInsightCard.tsx`: Button layout changed to `justifyContent: 'space-between'` — left group holds AI icon + "Ask Coach" text, right group holds green "Active" dot + label + send arrow.
+- `paddingVertical` is now animated: 22px when expanded (not scrolled), shrinks to 14px as user scrolls (was always 14px).
+- New "Active" indicator (6px green dot + "Active" text in muted black) is visible by default and fades out with the send icon as the user scrolls.
+
+Files modified: `src/components/home/MetricInsightCard.tsx`
+
+---
+
+## 2026-03-29: Refactor — extract useTabScroll hook
+
+**What changed:**
+- Extracted repeated scroll-tracking boilerplate (`scrollRef`, `scrollY` SharedValue, `handleScroll`, `isActive` reset) that was duplicated across all three home tabs into a single `useTabScroll(isActive, onScroll)` hook.
+- Each tab previously had ~12 lines of identical scroll setup; those are now replaced with a single `useTabScroll` call.
+
+**Files created:**
+- `src/hooks/useTabScroll.ts`
+
+**Files modified:**
+- `src/screens/home/OverviewTab.tsx`
+- `src/screens/home/SleepTab.tsx`
+- `src/screens/home/ActivityTab.tsx`
+
+---
+
+## 2026-03-29: Ask Coach button animation — slower + extended to Sleep/Activity tabs
+
+**What changed:**
+- **`MetricInsightCard.tsx`:** Widened collapse scroll range from 60px (10→70) to 150px (10→160), making the button collapse ~2.5× slower as the user scrolls.
+- **`SleepTab.tsx`:** Added `useSharedValue` scroll tracking (`scrollY`), intercepts `onScroll` via `handleScroll`, resets scrollY when tab becomes active, passes `scrollY` to `MetricInsightCard`.
+- **`ActivityTab.tsx`:** Same changes as SleepTab — the ask coach button now collapses on scroll in all three tabs consistently.
+
+**Files modified:**
+- `src/components/home/MetricInsightCard.tsx`
+- `src/screens/home/SleepTab.tsx`
+- `src/screens/home/ActivityTab.tsx`
+
+---
+
+## 2026-03-30: Fix baseline_completed_at — wrong table name
+
+**Bug:** `BaselineModeService` was reading/writing `baseline_completed_at` to a table called `user_profiles`, which doesn't exist. The real table is `profiles` with PK `id`. The old migration `20260323_baseline_completed_at.sql` also targeted the wrong table. As a result, baseline completion was never persisted to Supabase — only AsyncStorage — so reinstalling the app resets baseline mode.
+
+**Fix:**
+- Added migration `20260330_fix_baseline_completed_at_profiles.sql` (`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS baseline_completed_at`)
+- Applied migration to production (pxuemdkxdjuwxtupeqoa)
+- Fixed `BaselineModeService.ts`: `.from('user_profiles').eq('user_id', ...)` → `.from('profiles').eq('id', ...)` (both read and upsert)
+- Backfilled `baseline_completed_at` for matmarcopolo@gmail.com
+
+**Files modified:**
+- `src/services/BaselineModeService.ts`
+- `supabase/migrations/20260330_fix_baseline_completed_at_profiles.sql` (new)
+
+---
+
+## 2026-03-29: Baseline Copy + Gradient Cards + Consistency Rule
+
+**What changed:**
+- **Baseline card copy:** "Building Your Baseline" → "Welcome to Focus. We're building your baseline metrics." (en.json + es.json `baseline.title`)
+- **Baseline detail gradient cards:** Each metric card in `app/detail/baseline-detail.tsx` now uses `LinearGradient` (from `expo-linear-gradient`) instead of a flat `rgba(255,255,255,0.04)` background. Gradient goes from `accentColor` at 15% opacity → 3% opacity diagonally, giving each card (Sleep/HR/HRV/Temp/SpO₂/Activity) its own colour-tinted identity.
+- **CLAUDE.md consistency rule:** Added "Component consistency" design convention — reuse and extend existing components with special props before creating new ones.
+
+**Files modified:**
+- `src/i18n/locales/en.json`
+- `src/i18n/locales/es.json`
+- `app/detail/baseline-detail.tsx`
+- `CLAUDE.md`
+
+---
+
+## 2026-03-29: Fix Today Screen Freeze — Add Timeout to JstyleService.autoReconnect()
+
+**What changed:**
+The Today screen would intermittently freeze (showing the sync spinner indefinitely) when the ring was previously paired but not nearby. Root cause: `JstyleService.autoReconnect()` was calling `JstyleBridge.autoReconnect()` without any timeout. The native implementation stores a `pendingConnectResolver` and only resolves when CoreBluetooth fires `didConnectPeripheral` — which never fires if the ring is out of range. This left `isFetchingData.current = true` permanently, blocking all future syncs for the session.
+
+Fix: wrapped the call with `withNativeTimeout(…, 12000)` and a `.catch()` fallback that returns `{ success: false }`. The screen now shows "Ring not connected" within 12 seconds instead of hanging forever. Note: V8Service already had this timeout (15s); Jstyle was the only one missing it.
+
+**Files modified:** `src/services/JstyleService.ts`
+
+---
+
+## 2026-03-29: Word-by-word AI response animation + TestFlight 1.0.15 (build 16)
+
+**What changed:**
+AI coach responses now animate in word by word with a staggered entrance (opacity 0→1, translateY 6→0, 30ms stagger per word). Each word is an `AnimatedWord` component using `useSharedValue` + `withDelay` + `withTiming` (500ms, bezier 0.4,0,0,1). Words laid out via `flexDirection:'row', flexWrap:'wrap'`.
+
+TestFlight build 1.0.15 (build 16) uploaded and processing.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`, `app.config.js`, `ios/SmartRing.xcodeproj/project.pbxproj`
+
+---
+
+## 2026-03-28: Fix Coach Screen Keyboard — Replace useAnimatedKeyboard with KeyboardAvoidingView
+
+**What changed:**
+The Coach/Chat screen input bar now correctly slides up with the keyboard. Previously, `useAnimatedKeyboard` + `Reanimated.View` was used but the animation was broken — the content stayed pinned to the bottom even when the keyboard appeared.
+
+**Fix:**
+Removed `useAnimatedKeyboard`, `useAnimatedStyle`, and the `Reanimated` default import entirely. Replaced `<Reanimated.View style={inputAnimStyle}>` with `<KeyboardAvoidingView behavior="padding">` (iOS). The `insets.bottom + 12` offset previously applied via `marginBottom` is now an inline `paddingBottom` on the `inputWrapper` View.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-29: X6 Ring Detection + Correct Image + SDK Routing
+
+**What changed:**
+X6 ring devices (BLE name `X6F …`, V8 SDK) are now properly recognized as rings throughout the app — shown with the `x6-mock-connect.png` image, labeled "FOCUS X6", and tracked as `deviceType: 'ring'` so SDK routing is correct.
+
+**Root cause:**
+All V8 SDK devices were hardcoded as `deviceType: 'band'` in three layers (V8Service, UnifiedSmartRingService, useSmartRing), causing the X6 ring to show the band image and be treated as a band internally.
+
+**Fix:**
+- Device type now inferred from the BLE device name at discovery time (`/x6/i` check).
+- `setConnectedSDKType` accepts an optional `deviceType` override so connect/autoReconnect can propagate the correct ring/band distinction.
+- `connect()` in `useSmartRing` passes `device.deviceType` through to the unified service.
+- `autoReconnect` looks up the paired device name to determine device type on reconnect.
+
+**Files modified:**
+- `src/services/V8Service.ts` — `onDeviceDiscovered`: X6 sets `deviceType: 'ring'`
+- `src/services/UnifiedSmartRingService.ts` — `setConnectedSDKType` accepts `deviceType?`; `connect()` forwards it; `autoReconnect` infers from paired device name; `onDeviceDiscovered` V8 path adds `isX6` check
+- `src/hooks/useSmartRing.ts` — passes `device.deviceType` to `setConnectedSDKType` and `connect()`; `formatDeviceName` returns 'FOCUS X6' for v8 ring devices
+- `src/components/home/DeviceSheet.tsx` — adds `X6_MOCK_IMG`; shows correct image per device type
+- `src/screens/SettingsScreen.tsx` — adds `X6_MOCK_IMG`; shows correct image + name per device type
+- `app/(onboarding)/connect.tsx` — adds `X6_MOCK_IMG` + `isX6Device()`/`getDeviceImage()` helpers; device card shows correct image + name
+
+**Key notes:**
+- X6 still communicates via V8Service/V8Bridge (same BLE protocol) — only the semantic type is corrected to `'ring'`
+- All three images are now distinct: `connect-mock.png` (X3), `x6-mock-connect.png` (X6), `v8-mock-connect.png` (Band)
+
+---
+
+## 2026-03-29: Auto Strava Sync on Home Load
+
+**What changed:**
+Strava activities now sync automatically when the home screen loads, so new runs appear in the Activity tab without needing a manual sync tap.
+
+**Root cause of the bug:**
+`backgroundSync()` was fire-and-forget — it started in parallel with the Supabase `strava_activities` query, which almost always won the race and read stale data. New runs done hours ago never appeared until the user manually tapped Sync in the Strava screen.
+
+**Fix:**
+Changed the background Strava sync to an **awaited, rate-limited** call (30-min interval). The sync now runs before the Supabase query, so the DB always has fresh data by the time it's read. Rate limiting means it only adds ~1–2s of latency on the first load or after 30 min idle — all other loads are instant.
+
+The sync still runs **in parallel with ring reconnect** (which was already fire-and-forget above it), so wall-clock time is unchanged on most app opens.
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+---
+
+## 2026-03-28: "Ask Coach" Button Scroll-Driven Animation
+
+**What changed:**
+The "Ask Coach" pill is always in its expanded state (90% width, send icon, extra padding) and collapses as the user scrolls — exactly like the header. Scrolling back to top re-expands it.
+
+**Architecture:**
+- `OverviewTab` creates a Reanimated `useSharedValue(0)` for `scrollY`
+- `handleScroll` callback intercepts the scroll event: updates `scrollY.value` and forwards to the existing `onScroll` (header animation), so nothing else breaks
+- `scrollY` is reset to 0 when the tab re-activates (so button re-expands on tab switch)
+- `scrollY` is passed as a new optional prop to `MetricInsightCard`
+
+**MetricInsightCard:**
+- All timer/sync/phase logic removed
+- `animatedBtnStyle` and `sendIconStyle` derive directly from `scrollY.value` via `interpolate` (scroll 10–70px maps 1→0)
+- `fallbackScrollY = useSharedValue(0)` used when no `scrollY` prop (SleepTab / ActivityTab stay expanded)
+- No separate `expandProgress` needed — purely scroll-driven
+
+**Files modified:** `src/screens/home/OverviewTab.tsx`, `src/components/home/MetricInsightCard.tsx`
+
+---
+
+## 2026-03-28: Extended Artifact System + Full Coach Health Context
+
+**What changed:**
+The AI coach now has access to all available health data and can render 6 artifact types inline in chat.
+
+**Health data context (edge function):**
+- Readiness score breakdown with raw baseline values — e.g. "HRV 42ms vs 14-day median 58ms" instead of vague "below baseline"
+- Full sleep history (7+ sessions), HRV/SpO2/temp readings, steps, Strava last run, strain score all passed as system prompt context
+- `max_tokens` bumped 600→1000 for richer responses
+- Medians computed server-side from already-fetched data (no new Supabase queries)
+
+**Artifact types (keyword-triggered, rendered inline below coach message):**
+| Artifact | Trigger keywords |
+|---|---|
+| `sleep_hypnogram` | sleep, slept, rem, deep sleep, bedtime… |
+| `readiness_score` | readiness, focus score, ready to train… |
+| `heart_rate` | heart rate, bpm, pulse, resting heart… |
+| `sleep_trend` | sleep trend, weekly sleep, 7 day sleep… |
+| `sleep_debt` | sleep debt, sleep deficit, catch up on sleep… |
+| `steps` | steps today, step count, how many steps… |
+
+**FocusDataContext:** Shared context wraps the settings stack so `FocusScreen` and `AIChatScreen` share one `useFocusData()` fetch instead of two.
+
+**Fixes from simplify pass:**
+- `ReadinessArtifactCard` now takes explicit `score`/`recommendation` props (no hidden context dependency)
+- Removed dead `chipStyles.container: {}`
+- `StepsArtifactCard` pct capped at 100 with `Math.min`
+- `readiness` prop wired through `MessageBubble` render call
+
+**Files modified:** `src/screens/AIChatScreen.tsx`, `supabase/functions/coach-chat/index.ts`, `src/context/FocusDataContext.tsx` (new), `src/screens/FocusScreen.tsx`, `app/(tabs)/settings/_layout.tsx`
+
+---
+
+## 2026-03-28: Fix NOT_CONNECTED Cascade on Sync After Connect
+
+**Problem:** Right after the ring connected, 5 separate `Error syncing X data: NOT_CONNECTED` errors appeared in logs — one per sub-sync (vitals, heart rate, sport, blood pressure, steps).
+
+**Root cause:** `fetchData` in `useHomeData` fires `dataSyncService.syncAllData()` immediately after completing. BLE can drop momentarily as the SDK settles post-connection, so by the time `syncAllData` runs its ring calls, the connection reads as NOT_CONNECTED. Each sub-sync logged its own error independently.
+
+**Fix:** Added a single `UnifiedSmartRingService.isConnected()` guard at the top of `syncAllData()` before setting `isSyncing = true` or touching the ring. If not connected, returns early with a silent log — no cascading errors.
+
+**Files modified:** `src/services/DataSyncService.ts`
+
+---
+
+## 2026-03-27: Coach Screen — Layout & Style Refinements
+
+**Changes (5 items):**
+- **AI footer vertical stack:** Copy icon (24×24, full white) now sits on top, AI icon (22×22, full white) below — `flexDirection:'column'` with `gap:8`. Previously side-by-side.
+- **Header removed:** The menu icon + "Coach" title + X close button header has been deleted entirely. The gradient + blob design now fills the full screen from top.
+- **Metrics card restyled:** Exact same styles as `MetricInsightCard` in OverviewTab — no card background, `fontSize:32` values, `rgba(255,255,255,0.6)` labels, `height:48` dividers. Removed the old glassy card wrapper.
+- **Suggestion chips repositioned:** Moved from inside the hero section (near metrics) to directly above the input bar, 20px gap. Appear as a sibling between hero/messages and the input panel.
+- **Input bar redesigned (Figma 647-543):** Full-width frosted glass panel `rgba(255,255,255,0.3)` with rounded top corners only (20px), no side margins. Inner pill row `borderRadius:100` with same translucent bg. Removed old bordered wrapper.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-28: Chat Bubble UI Redesign
+
+**Changes:** Cleaned up the AI chat message layout significantly:
+- Removed the AI avatar circle that was sitting to the left of every AI response
+- AI responses now render as plain text — no background, no border, no padding (fully transparent)
+- AI icon (brain SVG) moved to below the response text, left-aligned in the footer row
+- Copy button moved outside the bubble to the footer row (right side), icon only (no "Copy" label text)
+- Font size increased from 14 → 17px with lineHeight 26 for both user and AI messages
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-28: AI Coach — Baseline Raw Values in Readiness Context
+
+**Change:** Coach now cites actual numbers when explaining the readiness score. Previously it could say "HRV is below baseline (58/100)" but not *why*. Now it says "today 42ms vs 14-day median 58ms". Computed directly from already-fetched data (no new queries). Also bumped max_tokens 600 → 1000 to prevent cut-off on detailed answers.
+
+**Context now includes per-component raw values:**
+- HRV: today Xms vs 14-day median Xms
+- Sleep: last night Xh Xm vs 7-night median Xh Xm
+- Resting HR: today Xbpm vs 7-day median Xbpm
+
+**Files modified:** `supabase/functions/coach-chat/index.ts`
+
+---
+
+## 2026-03-28: AI Coach — Readiness Score Context + FocusDataContext
+
+**Change:** The AI coach now knows why your readiness score is what it is. When you ask "why is my score 69?" the coach can explain the component breakdown, which metric is dragging the score down, and what each factor means.
+
+**What users see:**
+- Coach answers score breakdown questions accurately: "Your HRV is below your 14-day baseline (58/100, 35% of score), which is the primary drag pulling your score down from the sleep component which is solid at 72/100"
+- If illness watch is active (WATCH or SICK), the coach mentions the active signals and deltas vs baseline
+- Readiness context includes confidence level so the coach can caveat when there's not enough baseline data yet
+
+**Technical:** Readiness is computed client-side (uses AsyncStorage baselines) so it's passed in the request body rather than re-computed in the edge function. Created `FocusDataContext` to avoid double-fetching — both `FocusScreen` and `AIChatScreen` were calling `useFocusData()` independently, causing duplicate Supabase queries on every chat open. Now a single `FocusDataProvider` at the settings stack layout level shares one data instance.
+
+**Score breakdown in context:**
+- HRV: X/100 (good/near baseline/below baseline, 35% weight)
+- Sleep quality: X/100 (25% weight)
+- Resting HR: X/100 (20% weight)
+- Training load: X/100 (20% weight)
+- Primary drag identified as the lowest-scoring component below 60
+
+**Files created:** `src/context/FocusDataContext.tsx`
+**Files modified:** `src/screens/AIChatScreen.tsx`, `src/screens/FocusScreen.tsx`, `app/(tabs)/settings/_layout.tsx`, `supabase/functions/coach-chat/index.ts`
+
+---
+
+## 2026-03-27: AI Coach — Full Health Data Context + Copy Response
+
+**Change:** Fully rewrote the `coach-chat` Supabase Edge Function to give Claude access to all available health data. Previously the coach only had basic sleep/steps data and couldn't answer questions like "how many hours did I sleep?" or "what was my HRV this week?". Now it fetches 8 data sources in parallel and builds a structured 4-section context.
+
+**What users see:**
+- Coach now accurately answers questions about sleep duration, sleep debt, HRV (RMSSD/SDNN), resting HR (uses `hr_min` not `hr_avg`), SpO2, body temp trend, daily steps, and Strava training
+- Added copy button to AI responses — taps open the iOS share sheet with the reply text
+- Suggestion chips now work: tapping them sends the message instantly
+
+**Data sources added:**
+1. Sleep history — last 7 nights with per-night breakdown (deep/light/REM/awake minutes + score) + sleep debt vs target
+2. Today's metrics — HRV (RMSSD + SDNN), resting HR, SpO2, steps, stress level, body temp with 7-day delta
+3. 7-day trends — avg sleep duration, avg HRV, avg daily steps
+4. Training — last 5 Strava activities (14-day window) with pace, elevation, avg HR, suffer score
+
+**Key fixes in edge function:**
+- Sleep duration now computed from `deep_min + light_min + rem_min` (not a `sleep_score` that's often null)
+- Resting HR uses `hr_min` (daily minimum, proxy for resting HR) not `hr_avg` (full-day avg inflated by activity)
+- HRV prefers raw `rmssd`/`sdnn` from `hrv_readings` table, falls back to `hrv_avg` in `daily_summaries`
+- Profiles table queried for `sleep_target_min` to compute accurate sleep debt
+
+**Files modified:** `supabase/functions/coach-chat/index.ts`, `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-27: Coach Screen Full Redesign (Figma Match)
+
+**Change:** Complete visual redesign of the AIChatScreen to match the Figma mockup (node 647-486). The Coach tab now opens to a cinematic warm-gradient hero screen instead of a plain dark chat UI.
+
+**What users see:**
+- Warm red-burgundy gradient background (fades to black at bottom) with two soft decorative glow blobs
+- New header: circular menu icon (left) + "Coach" title (center) + X close button (right, navigates back)
+- Hero section (before any conversation): centered AI icon → personalized insight text built from real Strain/Sleep/Readiness data → glassmorphic metrics card showing Strain | Readiness | Sleep → 3 white translucent suggestion chip pills
+- Once a message is sent, the hero disappears and chat messages appear on the same gradient background
+- Redesigned input bar: glassmorphic container, "Ask your coach anything..." placeholder, dark circular up-arrow send button
+
+**Key details:** `LinearGradient` from `expo-linear-gradient`; hero shown when `messages.length === 0`; `buildInsightText()` memoized via `useMemo`; close button wired to `router.back()`; message bubbles updated to work on gradient bg. Gradient corrected to match Figma CSS exactly (`105deg, #000 1.12%, rgba(172,13,13,0.99) 135.8%` → `start:{x:0,y:0.37} end:{x:1,y:0.63}`). Blob decoration replaced with the exact Figma SVG (`SvgXml`, two ellipses at #AC0D0D + #FF753F with Gaussian blur, 90% screen height, top-right anchored).
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-27: Remove handle indicator and top border from all bottom sheets
+
+**Change:** Removed the drag handle pill and top border from all 5 bottom sheets for a cleaner, borderless look. `handleComponent={null}` replaces `handleIndicatorStyle` on all sheets; `borderWidth`/`borderColor` removed from dark sheet background styles.
+
+**Files modified:** `DeviceSheet.tsx`, `FirmwareUpdateSheet.tsx`, `TroubleshootSheet.tsx`, `ExplainerSheet.tsx`, `AuthScreen.tsx`
+
+---
+
+## 2026-03-27: Suggested Questions Chips in Coach Chat
+
+**Change:** Added pre-made question chips to the Coach chat screen. When the conversation is fresh (only the welcome message showing), a horizontal scrollable row of 6 shortcut chips appears below the AI greeting. Tapping any chip instantly sends that question to the coach — no typing needed. Chips disappear once the conversation starts.
+
+**Questions offered:** "How did I sleep?", "Am I recovered?", "My HRV trend", "Improve sleep", "Activity today?", "Weekly summary"
+
+**Design:** Blue-tinted chips (`#6B8EFF`, 10% opacity bg, 30% border) matching the tertiary color convention. Horizontal scroll handles overflow without wrapping.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-27: Sleep Hypnogram Artifact in Coach Chat
+
+**Change:** Coach chat now renders the sleep hypnogram chart inline when the user asks about sleep. The edge function checks if the user message is sleep-related (keywords: sleep, slept, last night, rem, deep sleep, nap, woke, bedtime, hypnogram) and returns `artifact: { type: 'sleep_hypnogram' }` alongside the text reply. The app reads the artifact and renders the existing `SleepHypnogram` component directly below the AI text bubble using live data already loaded in `useHomeDataContext` — no extra fetch needed. Also fixed suggestion chips to send on tap and fixed the sleep data and resting HR values in the health context.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`, `supabase/functions/coach-chat/index.ts`
+
+---
+
+## 2026-03-27: Real AI Coach Chat (Claude via Supabase Edge Function)
+
+**Change:** Replaced the mock AI chat in the Coach tab with a real Claude-powered conversation. The chat now reads the user's actual health data from Supabase and responds with personalized coaching.
+
+**How it works:**
+- New Supabase Edge Function `coach-chat` authenticates the user via JWT, fetches their latest sleep score/duration, HRV, resting HR, and 7-day trends from `sleep_sessions` and `daily_summaries`, builds a health-context system prompt, and calls `claude-haiku-4-5-20251001`
+- `AIChatScreen.tsx` now calls `supabase.functions.invoke('coach-chat')` passing the message + last 20 messages of history (windowed to control token costs)
+- Error handling shows a friendly "Couldn't reach Coach" message on failure
+
+**Setup required:** `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` (one-time, no rebuild needed)
+
+**Files created:** `supabase/functions/coach-chat/index.ts`
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-03-27: EAS OTA Deploy — Resting HR + Coach Page Fixes
+
+**Change:** Deployed all Coach/Focus page fixes via EAS OTA update to production channel (`ceb88fd3-d610-433e-9ae0-62c3f58bb6a4`). This includes: cache key v4 to evict stale readiness data, `home_data_cache` fallback for restingHR, population-norm HR scoring, sleep minutes fallback, illness watch optional chaining, last run timezone fix, and HR reserve expected HR model.
+
+**Files modified:** (no new changes — deploy only)
+
+**Key notes:**
+- Previous EAS update deployed before cache key v4 + restingHR fallback were written — this deploy gets them live
+- App must be fully killed and relaunched (not just backgrounded) to pick up the OTA update
+- iOS update ID: `019d2f38-f421-796a-9d6f-e9004656d52d`
+
+---
+
+## 2026-03-27: Fix Resting HR Still Empty in Readiness (Ring Data Fallback)
+
+**Root cause:** The `scoreRestingHRComponent` fix (population-norm fallback) only helps when `hr` is non-null. The actual problem is that `restingHR` from Supabase `heart_rate_readings` is `null` — either the ring hasn't synced to Supabase yet when the coach page loads, or continuous HR data wasn't written for today. With `hr = null`, the scorer returns null → 0% bar, regardless of the formula.
+
+**Fix:** After the Supabase HR query, fall back to `home_data_cache` (AsyncStorage key written by `useHomeData`) to read `lastNightSleep.restingHR` — the ring-computed value used by the health tab. This value is always populated after a ring sync. Also bumped cache key to `v4` to evict stale cached readiness that had null restingHR baked in.
+
+**Files modified:**
+- `src/hooks/useFocusData.ts` (cache key v4, ring fallback for restingHR)
+
+---
+
+## 2026-03-26: Fix "Sleep score: --" in Last Run Body State
+
+**Root cause:** `computeLastRunContext` queried `sleep_score` from `sleep_sessions`, but `sleep_score` is always `null` in the DB (DataSyncService hardcodes `sleep_score: null` on insert). Result: `bodyStateAtRun.sleepScore` was always `null` → card showed "--".
+
+**Fix:** Changed query to select `deep_min, light_min, rem_min` and compute total sleep minutes. Renamed field from `sleepScore` to `sleepMinutes` in `LastRunContext.bodyStateAtRun`. Card now displays e.g. "6h 20m" instead of a score. Label changed from "Sleep score" → "Sleep time" in en/es.json.
+
+**Files modified:**
+- `src/types/focus.types.ts` (sleepScore → sleepMinutes)
+- `src/services/ReadinessService.ts` (query + field)
+- `src/components/focus/LastRunContextCard.tsx` (format display)
+- `src/i18n/locales/en.json`, `es.json`
+
+---
+
+## 2026-03-26: Fix Resting HR Bar Empty + Illness Watch False Positive
+
+**Changes:**
+
+1. **Resting HR bar was always 0%** — `scoreRestingHRComponent` returned `null` when `baselines.restingHR` was empty (no Supabase historical HR data to bootstrap from). Null score renders as 0% bar. Fixed: when no personal baseline exists, score against population norms instead (`100 - (hr - 40) * 2.5`). For 43 bpm → score ≈ 92 ("Excellent"). Bar is now visible and meaningful even before enough history exists.
+
+2. **Illness watch "elevated HR" false positive** — Added a minimum absolute threshold (`restingHR > 52`) to the elevated-HR check so truly low resting HR (≤52 bpm, i.e. athletic baseline) can never trigger the signal even if the personal baseline gets temporarily skewed by bad data. The primary cause was stale cached illness data (now evicted by cache v3); this guard prevents recurrence.
+
+**Files modified:**
+- `src/services/ReadinessService.ts`
+
+---
+
+## 2026-03-26: Fix Coach Page Crash + Sleep/RestingHR Missing From Readiness
+
+**Changes:**
+
+1. **Crash: `illness.details` undefined** — Old cached `IllnessWatch` objects (from `focus_state_cache_v2`) don't have the `details` field added in the previous fix. Accessing `.details.tempDelta` crashed. Fixed with optional chaining (`illness.details?.tempDelta`) in all three delta signal rows. Bumped cache key to `focus_state_cache_v3` to force eviction of broken cached data.
+
+2. **Sleep component always null** — `sleep_score` is stored as `null` in `sleep_sessions` (DataSyncService line 304 hardcodes `sleep_score: null`). `scoreSleepComponent` was returning null immediately when sleepScore was null. Fixed to fall back to minutes-only scoring: when `sleepScore == null` but `sleepMinutes` is available, computes score as `clamp(minutes / baselineMinutes × 100, 0, 100)`. Sleep sessions do store `deep_min + light_min + rem_min`, so this now produces a real score.
+
+3. **Baselines null on cache hit** — `CachedFocusState` doesn't include baselines. The cache path returned early without calling `setBaselines`, so `baselines` stayed `null`. Fixed by calling `loadBaselines().then(setBaselines)` even on cache hit (AsyncStorage read, non-blocking).
+
+**Files modified:**
+- `src/components/focus/IllnessWatchCard.tsx` (optional chaining)
+- `src/hooks/useFocusData.ts` (cache key bump v3, baseline load on cache hit)
+- `src/services/ReadinessService.ts` (scoreSleepComponent minutes fallback)
+
+---
+
+## 2026-03-26: Fix 4 Coach Page Bugs (HRV label, illness delta, last run date, expected HR)
+
+**Changes:**
+
+1. **Illness Watch: HRV shows "Suppressed" + actual delta** — `SignalRow` for HRV previously showed generic "Elevated" (wrong — HRV being flagged means it's suppressed, not elevated). Now shows the actual percentage delta e.g. "−22%". Resting HR and temp rows similarly show "+7 bpm" and "+0.8°C" instead of just "Elevated". Added `details: IllnessWatchDetails` to `IllnessWatch` type, computed in `computeIllnessWatch`.
+
+2. **Last run shows "Yesterday" instead of "Today"** — Timezone bug in `useFormatRunDate`. `new Date("2026-03-26")` parses as UTC midnight, which in UTC-5 is ~7 hours before local noon, making the ms-diff round to 1 = "Yesterday". Fixed by comparing YYYY-MM-DD strings in local timezone directly. Also reuses the `runNoon` Date object to avoid constructing it twice.
+
+3. **Expected HR = 77 (nonsensical)** — Formula anchored at resting HR (43) and produced completely wrong running HR estimates (43 + pace_offset ≈ 55–79 bpm). Replaced with HR reserve model: `easyRunHR = restingHR + hrReserve × 0.65`, anchored at 5:30/km easy pace. For resting=43: expected HR at 5:30/km ≈ 139, at 6:00/km ≈ 135. Much more realistic.
+
+4. **Code quality:** Added explicit `IllnessWatchDetails` import to `ReadinessService.ts`. Structured delta computation into a typed `details` object.
+
+**Files modified:**
+- `src/types/focus.types.ts`
+- `src/services/ReadinessService.ts`
+- `src/components/focus/IllnessWatchCard.tsx`
+- `src/components/focus/LastRunContextCard.tsx`
+- `src/i18n/locales/en.json` (added `value_suppressed`)
+- `src/i18n/locales/es.json` (added `value_suppressed: "Suprimido"`)
+
+---
+
+## 2026-03-26: Fix Resting HR Wrong on Coach Page
+
+**Root cause:** `useFocusData.ts` queried `heart_rate_readings` from midnight today → end of today. Resting HR is recorded during sleep (9pm–7am), which happens before midnight — so the query missed the sleep window entirely and fell back to daytime readings (higher/wrong values). The health tab correctly uses sleep-derived `restingHR`, which is why it showed the accurate 43 bpm while the coach page showed off values.
+
+**Fix:** Changed the `heart_rate_readings` query start from `todayStart` (midnight) to `sleepLookbackStart` (6pm yesterday), matching the same lookback window already used for sleep session queries. The minimum HR over the overnight window is now the actual resting HR during sleep.
+
+**File modified:**
+- `src/hooks/useFocusData.ts` (1-line change: `.gte('recorded_at', todayStart)` → `.gte('recorded_at', sleepLookbackStart)`)
+
+---
+
+## 2026-03-26: Fix Nap Re-creation + Sleep Detail Shows Night Only
+
+**Changes:**
+
+1. **DataSyncService** (`src/services/DataSyncService.ts`) — `syncSleepData()` now fetches existing night sessions from Supabase once before the 7-day loop. For any block classified as a nap, it checks if that block's time range overlaps any stored night session. If it does, the insert is skipped entirely. This permanently prevents the ring's "last hour of the night" block from being re-inserted as a nap on every sync.
+
+2. **useMetricHistory** (`src/hooks/useMetricHistory.ts`) — `fetchSleepHistory()` now filters to `session_type = 'night'` only. This ensures the sleep detail screen shows the correct single night session per day, and prevents a nap (which may share the same UTC dateKey as the night it follows) from displacing the night entry in the history map.
+
+**Files modified:**
+- `src/services/DataSyncService.ts`
+- `src/hooks/useMetricHistory.ts`
+
+**Key notes:**
+- Overlap detection uses `startTime < nightEnd && endTime > nightStart` (standard interval overlap)
+- Night sessions are fetched once for all 7 days (1 extra query per sync, not 7)
+- The sleep detail nap section (today only) still works — it reads from `homeData.todayNaps`, not from the history map
+
+---
+
+## 2026-03-26: Fix ConnectScreen SDK Delegate Theft (X3 ring connection timeout)
+
+**Change:** After fixing auth, the Coach tab crashed before computing readiness: `"Cannot convert undefined value to object"`. Root cause: `sleepMinutes: []` was added to `FocusBaselines` recently, but old baselines stored in AsyncStorage under `focus_baselines_v1` don't have this field. When `updateBaselines()` received `readings.sleepMinutes=3` (truthy), it called `pushRolling(undefined, 3)` which tried `[...undefined, 3]` — that's a JSC TypeError.
+
+**Files modified:**
+- `src/services/ReadinessService.ts` — `loadBaselines()` now merges parsed data over `emptyBaselines()` so any field missing from old stored versions gets a default (`[]` for arrays). `pushRolling()` parameter typed as `number[] | undefined` with `?? []` guard as a second safety net.
+
+**Key notes:**
+- This is a schema migration pattern — whenever a new field is added to `FocusBaselines`, `loadBaselines()` auto-heals old stored values via the `{ ...emptyBaselines(), ...parsed }` merge
+- No need to bump the storage key — the merge handles it gracefully
+
+---
+
+## 2026-03-26: Fix Coach Tab Always Showing "--" (Auth + Cache)
+
+**Change:** Coach tab ring showed "--" and cards were empty. Root cause: `supabase.auth.getUser()` makes a server round-trip to verify the JWT — if the token is expired or the network is slow, it returns null and `load()` bails early before computing readiness. Secondary: stale `v2` cache could hold null readiness from a prior broken run and serve it immediately on cache HIT.
+
+**Files modified:**
+- `src/hooks/useFocusData.ts` — Replaced `supabase.auth.getUser()` with `supabase.auth.getSession()` (reads AsyncStorage, no network round-trip, always returns user if signed in). Added `cache.readiness != null && cache.illness != null` guard on cache HIT to prevent serving nulls from a broken prior run.
+
+**Key notes:**
+- `getSession()` is the correct approach for mobile — the Supabase client handles token refresh automatically on subsequent queries
+- Cache guard ensures a partially-written cache (from a session that auth-failed) doesn't get served as a valid hit
+- The `[FocusData]` debug logs already in place will confirm the fix: `Auth user=<uuid>` should now appear in Metro on every Coach tab open
+
+---
+
+## 2026-03-26: Baseline UI Improvements
+
+**Changes:**
+
+1. **BaselineProgressCard (Overview tab)** — Removed border (`borderWidth`/`borderColor`), enlarged title font from `fontSize.xl` (20px) to `fontSize.xxl` (28px), removed the per-metric dot progress rows entirely, added a "View Baseline" teal outline button at the bottom that navigates to the new `/detail/baseline-detail` screen.
+
+2. **SleepTab baseline state** — Replaced the teal pill (small colored badge with tracking text) with a plain title + subtitle layout matching the overview card: large white `fontSize.xxl` bold title showing nights tracked, with the subtitle in muted `rgba(255,255,255,0.45)` below.
+
+3. **New baseline detail screen** (`app/detail/baseline-detail.tsx`) — Full scrollable screen accessible via "View Baseline" button. Shows per-metric cards for all 6 metrics (Sleep, Heart Rate, HRV, Temperature, Blood Oxygen, Activity) with: current value, 7-day rolling average, progress toward baseline (X/Y nights), and a 7-day mini trend bar chart. Includes an overall progress bar at the top.
+
+4. **i18n** — Added `baseline.view_baseline` key to `en.json` ("View Baseline") and `es.json` ("Ver Baseline").
+
+**Files modified:**
+- `src/components/home/BaselineProgressCard.tsx`
+- `src/screens/home/SleepTab.tsx`
+- `src/i18n/locales/en.json`
+- `src/i18n/locales/es.json`
+
+**Files created:**
+- `app/detail/baseline-detail.tsx`
+
+---
+
+## 2026-03-26: Add Debug Logging to Coach Tab Data Pipeline
+
+**Change:** The Coach tab (`FocusScreen`) was non-responsive with no visibility into where the pipeline was failing. Added `console.log` statements at every meaningful checkpoint across the full data pipeline so Metro logs can pinpoint the exact failure point.
+
+**Files modified:**
+- `src/hooks/useFocusData.ts` — Logs at: `load()` entry (skipCache value), cache HIT/MISS with `cachedAt` timestamp, auth user result (null = not signed in), bootstrap trigger, per-query Supabase errors (via extracted `logQueryError()` helper), final metric values (hrv/sleepScore/sleepMin/restingHR/temps), computed readiness score + illness status + lastRun date, cache save, ERROR catch, and load() complete
+- `src/services/ReadinessService.ts` — Logs at: `computeReadiness` inputs + output score/components (guarded with `__DEV__`), `computeIllnessWatch` status + signals (guarded with `__DEV__`), `computeLastRunContext` Strava result, `bootstrapBaselinesFromSupabase` daysLogged
+
+**Key notes:**
+- All logs prefixed `[FocusData]`, `[Readiness]`, `[Illness]`, `[LastRun]`, or `[Bootstrap]` — filter in Metro to isolate
+- `JSON.stringify` calls for components/signals are wrapped in `if (__DEV__)` to avoid serialization cost in production
+- 4 duplicate Supabase per-query error-check blocks extracted into local `logQueryError()` helper
+- Diagnostic flow: auth null → no data fetched; all metrics null → score stays null → ring shows "–"; cache stuck → repeated HIT logs; compute error → surfaces in ERROR catch
+
+---
+
+## 2026-03-26: TestFlight Build 1.0.12 (build 13)
+
+**Bumped** version from 1.0.11 (build 12) → 1.0.12 (build 13). Updated `app.config.js`, `project.pbxproj` (MARKETING_VERSION + CURRENT_PROJECT_VERSION). Ran pod install, committed, pushed, archived, and uploaded to App Store Connect successfully.
+
+---
+
+## 2026-03-26: Fix SDK Misdetection (X3B Ring Showing as V8 Band)
+
+**Change:** After an onboarding reset on a device that had previously connected a V8 band, the app was incorrectly routing all ring calls through the V8 SDK. The user saw the V8 band image in DeviceSheet/SettingsScreen, and all V8 native calls timed out because the X3B ring doesn't implement the V8 protocol.
+
+**Root causes fixed:**
+
+1. **`JstyleService.hasPairedDevice()` attempted a BT connection** — it was calling `JstyleBridge.autoReconnect()` instead of just reading NSUserDefaults. If BT wasn't ready, it returned `success: false` → the unified service concluded no Jstyle device was paired, and fell through to V8's check.
+
+2. **Stale V8 NSUserDefaults** — `kV8PairedDeviceUUIDKey` persisted from the old V8 session. After onboarding reset (which only cleared AsyncStorage, not native NSUserDefaults), `V8Bridge.hasPairedDevice()` still returned `true`. The unified service then set SDK type to `v8`.
+
+3. **No SDK type persistence** — every cold start re-derived SDK type from fragile `hasPairedDevice()` checks; a single race or stale key corrupted the whole session.
+
+**Fixes applied:**
+
+- **`ios/JstyleBridge/JstyleBridge.m`**: Added `hasPairedDevice` native method (reads NSUserDefaults without attempting BT connection, mirroring V8Bridge's existing implementation). Added `forgetPairedDevice` native method (clears NSUserDefaults + disconnects if needed).
+
+- **`src/services/JstyleService.ts`**: `hasPairedDevice()` now calls the new native method directly instead of `autoReconnect()`. `forgetPairedDevice()` now calls the new native `forgetPairedDevice` instead of `disconnect()`.
+
+- **`src/services/UnifiedSmartRingService.ts`**:
+  - Added `getPersistedSDKType()` private helper (reads `connectedSDKType` from AsyncStorage).
+  - `setConnectedSDKType()` now persists the SDK type to AsyncStorage (`connectedSDKType` key).
+  - `autoReconnect()` reads the persisted type at startup: if 'jstyle' is stored, the V8 `hasPairedDevice` check is skipped entirely (and vice versa). After any successful connection, the other SDK's paired device is cleared (fire-and-forget) to remove stale NSUserDefaults.
+  - `forgetPairedDevice()` now clears both SDKs' native pairings unconditionally (not just the active SDK), preventing stale NSUserDefaults from surviving SDK switches.
+  - `getPairedDevice()` uses the new `JstyleService.hasPairedDevice()` (NSUserDefaults-based) instead of `getPairedDevice()` (connection-based), and respects the persisted SDK type.
+
+- **`src/context/OnboardingContext.tsx`**: `resetOnboarding()` now also calls `UnifiedSmartRingService.forgetPairedDevice()` to clear both SDKs' native NSUserDefaults on full reset.
+
+**Files modified:**
+- `ios/JstyleBridge/JstyleBridge.m`
+- `src/services/JstyleService.ts`
+- `src/services/UnifiedSmartRingService.ts`
+- `src/context/OnboardingContext.tsx`
+
+**Native rebuild required** (JstyleBridge.m has new exported methods).
+
+---
+
+## 2026-03-26: Fix Sleep Nap Misclassification (deriveFromRaw Oura-style nap guard)
+
+**Change:** The V8/X3B ring was returning a single 63-min sleep record starting at 5:41 AM. `deriveFromRaw` was blindly picking it as "night sleep" (the old fallback chose the most-recent block regardless of start time), which caused `finalSleepData` to be non-null and suppressed the Supabase fallback that would have loaded the real prior-night sleep. The user saw a 63-min "night" and no nap card.
+
+**Fix:** Applied Oura-style nap detection logic in `deriveFromRaw`: short blocks (< 180 min) that start during daytime hours (4 AM–8 PM) are classified as naps, not night sleep. `nightBlock` is set to `null` in that case, which propagates as `derived.night = null` → `finalSleepData` stays null → the existing Supabase fallback runs and loads the real night sleep. The daytime blocks are returned as `ringNaps` instead. Short blocks starting in nighttime hours (8 PM–4 AM) are still treated as disrupted night sleep.
+
+**Files modified:**
+- `src/hooks/useHomeData.ts` — `deriveFromRaw` return type changed to `{ night: SleepData | null; ringNaps: RingNapBlock[] } | null`; block selection logic replaced with Oura-style guard; null-night early-return path added; `blockToRingNap` helper extracted to eliminate duplicate `.map()` logic; double filter pass on `unifiedActs` combined into single `todayActs` array; `todayStartNullPath` redundant variable eliminated (reuses shared `todayStartMs`); `derived.night?.score` safe-access in fetchData log
+
+**Key notes:**
+- When `nightBlock` is null, `finalSleepData = derived.night` = null, which already triggers the Supabase fallback at the `!finalSleepData` check — no change needed in `fetchData()`
+- Daytime threshold: `startHour >= 4 && startHour < 20` (4 AM–8 PM = nap-like)
+- Short disrupted night sleep at e.g. 2 AM still works (startHour < 4, so `isNapLike = false` → kept as night)
+- Long blocks (≥ 180 min) are unaffected — always picked as night via `nightCandidates`
+- Supabase already had the session classified as `session_type='nap'` via DataSyncService (that was already correct); only the UI display was wrong
+- `blockToRingNap` helper added after `RingNapBlock` interface — used by both the null-night path and the normal ringNap collection, eliminating ~18 lines of duplicate code
+
+---
+
+## 2026-03-26: Fix Connect Screen Hanging on "Connecting" Forever
+
+**Change:** The onboarding connect screen froze indefinitely on the "connecting" step when pairing a new X3 ring. Root cause: `JstyleBridge.connectToDevice()` stores a `pendingConnectResolver` then calls `connectDevice:` on the native peripheral. When iOS CoreBluetooth skips the `didConnectPeripheral` callback (e.g. the peripheral was already connecting/connected from a background `autoReconnect` call), the resolver is never called and the JS promise hangs forever — even though the `onConnectionStateChanged: connected` event fires correctly.
+
+**Fix:** Wrapped `JstyleBridge.connectToDevice()` in a `Promise.race` against the `onConnectionStateChanged` event listener with a 15-second timeout fallback. As soon as the native "connected" event fires, the promise resolves — regardless of whether `pendingConnectResolver` was called. Used a `try/finally` block with a `settled` guard to ensure the timer and event listener are always cleaned up regardless of which race leg wins, preventing listener leaks and orphaned timer rejections.
+
+**Files modified:**
+- `src/services/JstyleService.ts` — `connect()` method replaced simple `JstyleBridge.connectToDevice()` with a `Promise.race` + `onConnectionStateChanged` event + 15s timeout fallback, with cleanup via `try/finally`
+
+**Key notes:**
+- `withNativeTimeout()` helper in the same file was NOT used because this fix needs to race against an event, not just a bare timeout
+- `settled` flag prevents double-resolve/reject if multiple race legs fire simultaneously
+- `finally` block runs `clearTimeout(timer)` and `unsub?.()` in all paths (native resolves first, event fires first, or timeout fires)
+- This same pattern may be worth applying to `V8Service.connect()` if similar hangs are observed with the band
+
+---
+
+## 2026-03-25: Fix V8 Sleep Score = 0 + Data Sync Error
+
+**What:** V8 band sleep data was fetched successfully (1 record) but sleep score showed 0. Separately, cloud sync failed with "V8 data parse error".
+
+**Root cause 1 — Sleep score 0:** `UnifiedSmartRingService.getSleepDataRaw()` wrapped V8's processed `SleepData` (with `deep`/`light`/`rem` fields) into `records`, but `deriveFromRaw()` expects raw SDK records with `arraySleepQuality`, `startTimestamp`, `sleepUnitLength`, `totalSleepTime`. All fields were missing → `deriveFromRaw` returned null → score 0.
+
+**Fix:** Added `V8Service.getSleepDataRaw()` that returns raw sessions directly from native bridge in the format `deriveFromRaw` expects. Updated `UnifiedSmartRingService.getSleepDataRaw()` to use it.
+
+**Root cause 2 — Sync error:** `DataSyncService.syncAllData()` called `getBattery()` and `getVersion()` outside individual try/catches. A `DataError_V8` from either call crashed the entire sync.
+
+**Fix:** Wrapped both calls in their own try/catch so sync continues even if metadata fails.
+
+**Root cause 3 — Cascading BUSY errors:** V8 `enqueueNativeCall` didn't call `cancelPendingDataRequest()` on timeout/BUSY. When HRV request hung (band had no data), the JS timeout fired but native bridge stayed stuck with `pendingDataType = 41` (HRVData_V8). Every subsequent BLE call saw "V8 bridge is busy" and failed.
+
+**Fix:** Enhanced `enqueueNativeCall` in V8Service to call `V8Bridge.cancelPendingDataRequest()` on timeout or BUSY errors (mirroring the Jstyle pattern). After cancel, the native pending state is cleared and the next queued call can proceed.
+
+**Files modified:** `src/services/V8Service.ts`, `src/services/UnifiedSmartRingService.ts`, `src/services/DataSyncService.ts`
+
+---
+
+## 2026-03-25: Remove Loading Spinner Between Splash and Home
+
+**What:** Eliminated the `ActivityIndicator` spinner that briefly flashed after the native splash screen while auth/device state was resolving. Users now see only the native splash screen until the app knows where to navigate (login, onboarding, or home tabs).
+
+**Root cause:** `app/_layout.tsx` was hiding the native splash as soon as fonts loaded, but `app/index.tsx` still needed time for `useOnboarding()` to resolve auth + device state — showing a spinner in the gap.
+
+**Fix:** Deferred `SplashScreen.hideAsync()` from `_layout.tsx` to `index.tsx`, called only after `isLoading` is false and right before `router.replace()`. The index screen renders a blank view (invisible behind the native splash) instead of a spinner.
+
+**Files:** `app/_layout.tsx`, `app/index.tsx`
+
+---
+
+## 2026-03-24: Apple Health Metrics Blended into Activity
+
+**What:** HealthKit steps, active calories, and walking/running distance now contribute to the Activity tab's top-line metrics using `max(ring, healthKit)` — the same no-duplication approach Oura and Ultrahuman use. Previously, only the ring's passive step counter fed steps/calories/distance, even when Apple Watch had more accurate data.
+
+**Key changes:**
+- New `fetchActiveCaloriesData()` and `fetchDistanceData()` methods in HealthKitDataFetchers (queries `ActiveEnergyBurned` and `DistanceWalkingRunning` for today)
+- HealthKit steps/calories/distance fetched in parallel with ring data (adds ~10-50ms)
+- `max()` blending after ring data returns — picks higher source per metric
+- Activity score recalculated after blending so it reflects the true step count
+- Unified workout calories/distance (Strava + HK + ring, already deduplicated) also blended into hero gauge
+- HealthKit-only fallback path (ring disconnected) now includes calories + distance
+- Added step-to-distance estimation fallback (~0.75m/step) when no distance source available
+- Distance display now shows 1 decimal for values under 10 km (was rounding to integer, showing 0 for short distances)
+
+**Files created:** none
+
+**Files modified:**
+- `src/services/HealthKit/HealthKitDataFetchers.ts` — Added `fetchActiveCaloriesData()`, `fetchDistanceData()`, types
+- `src/services/HealthKitService.ts` — Exposed new methods + exported types
+- `src/hooks/useHomeData.ts` — Parallel HK fetches, max() blending, workout cal blending, score recalc, distance estimation fallback
+- `src/screens/home/ActivityTab.tsx` — Distance display uses 1 decimal under 10km
+
+---
+
+## 2026-03-24: Battery Circular Indicator + Device Bottom Sheet
+
+**What:** Replaced the battery percentage text in HomeHeader with a compact circular progress ring (28px SVG donut) containing the device icon. Tapping it opens a bottom sheet showing the full device card (image, name, MAC, battery %, connection status). Battery % also appears in the top-right corner of the device card on the Settings/Profile screen, fetched directly from the service on focus.
+
+**Files created:**
+- `src/components/home/DeviceSheet.tsx` — BottomSheetModal with device image, name, MAC, battery %, connected badge
+
+**Files modified:**
+- `src/components/home/HomeHeader.tsx` — Added `BatteryCircle` component, `onBatteryPress` prop, wrapped circle in TouchableOpacity
+- `src/screens/NewHomeScreen.tsx` — Added `DeviceSheet` + `deviceSheetVisible` state, passes `onBatteryPress` to header
+- `src/screens/SettingsScreen.tsx` — Added `deviceBattery` state fetched via `UnifiedSmartRingService.getBattery()` on focus, battery corner in device card
+
+---
+
+## 2026-03-24: V8 vs X3 SDK Comparison & Documentation
+
+**What:** Performed a deep-dive comparison of the V8 BLE SDK (`V8 IOS/BleSDK/`) vs the X3 BLE SDK (`IOS (X3)/Ble SDK Demo/BleSDK/`) to understand what's new and what changes are needed for V8 band support.
+
+**Key findings:**
+- Both SDKs share identical architecture: same BLE UUIDs (`FFF0`/`FFF6`/`FFF7`), same singleton pattern, same pagination model (50 records, mode 0/2/0x99), same `DeviceData` response wrapper.
+- V8 is a **superset** of X3 — all existing data types and formats are unchanged.
+- V8 adds 5 new data types: **Sleep HRV**, **OSA (sleep apnea detection)**, **EOV (energy of vitality)**, **Continuous SpO2**, and **real-time ECG streaming during HRV**.
+- Migration is mechanical: rename `_X3` → `_V8` suffixes on classes, structs, and enums.
+- No breaking changes to existing data dictionary keys or array formats.
+
+**Docs created:** `V8_VS_X3_SDK_COMPARISON.md` — full reference with API diffs, new data types, migration checklist.
+
+---
+
+## 2026-03-24: Add realtime HR streaming to V8 band (Live HR fix)
+
+**What:** Live Heart Rate on the V8 band was broken — measurement started successfully but no HR samples came back. The V8 bridge only had manual measurement (single-source), while the X3/Jstyle bridge uses dual-source HR (realtime stream + manual measurement fallback).
+
+**Fix:** Added `startRealTimeData` / `stopRealTimeData` to V8Bridge.m using the same `RealTimeDataWithType:1/0` command (identical BLE protocol). Wired it through V8Service → UnifiedSmartRingService → LiveHeartRateCard. The card now listens to `V8RealTimeData` (primary) and `V8MeasurementResult` (fallback), matching the Jstyle pattern.
+
+**User impact:** Tapping the heart icon on the V8 band now streams live HR readings during the 30-second measurement window.
+
+**Files modified:** `ios/V8Bridge/V8Bridge.m`, `src/services/V8Service.ts`, `src/services/UnifiedSmartRingService.ts`, `src/components/home/LiveHeartRateCard.tsx`
+
+**Note:** Requires native Xcode rebuild.
+
+---
+
+## 2026-03-24: Fix V8 scan misclassifying X3B ring
+
+**What:** The V8 BLE scanner was picking up the X3B ring and blindly tagging it as `sdkType: 'v8'`. When the user tapped to connect, it routed to V8Service instead of JstyleService — wrong SDK, broken connection.
+
+**Fix:** Added name-based classification to the V8 discovery callback in `UnifiedSmartRingService.ts`. If the device name contains "x3", it's classified as `jstyle`/`ring`; otherwise it stays `v8`/`band`. This mirrors the logic already present in the Jstyle discovery path.
+
+**User impact:** X3B ring now correctly connects via JstyleService. Two distinct scan entries appear: "FOCUS X3" (ring) and "FOCUS BAND" (V8 band).
+
+**Files modified:** `src/services/UnifiedSmartRingService.ts`
+
+---
+
+## 2026-03-24: Fix Coach Page — Sleep Data, Illness Watch False Positives
+
+**What:** Fixed several data accuracy issues on the Coach/Focus page:
+1. **Sleep query now finds last night's data** — the sleep query was filtering `start_time >= midnight today`, but sleep sessions start the previous evening (9-11pm). Changed to look back to 6pm yesterday, so "last night's sleep" is correctly found.
+2. **Temperature illness watch no longer false-positives** — raised thresholds from 0.3/0.8°C to 0.5/1.0°C, and removed `Math.abs()` so only temperature *increases* (not cold hands) trigger the signal.
+3. **HRV suppression threshold relaxed** — changed from 10% below baseline to 15% below, reducing noise from normal daily HRV variability.
+4. **Sleep minutes tracked in baselines** — added `sleepMinutes` to `FocusBaselines` so sleep scoring uses the user's actual sleep duration baseline instead of a hardcoded 480-minute benchmark.
+5. **Cache key bumped** to `focus_state_cache_v2` to force fresh computation after these fixes.
+
+**User impact:** Readiness card will now show real sleep scores instead of "no data". Illness Watch will stop showing false "WATCH" status from normal sensor noise. Pull-to-refresh on Coach page to see updated results.
+
+**Files modified:** `src/hooks/useFocusData.ts`, `src/services/ReadinessService.ts`, `src/types/focus.types.ts`
+
+---
+
+## 2026-03-24: Google Profile Picture in Header Avatar
+
+**What:** The home header avatar now shows the user's Google profile picture when signed in with Google OAuth. Added `avatarUrl` to `HomeData`, resolved from Supabase `user_metadata.avatar_url` or `user_metadata.picture` (set by Google OAuth). Passed through to `HomeHeader` which already supported the `avatarUrl` prop but was never receiving it.
+
+**User impact:** Users who sign in with Google will see their Google profile picture in the top-left avatar circle instead of the default placeholder.
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/screens/NewHomeScreen.tsx`
+
+---
+
+## 2026-03-24: Onboarding-style Device Card in Profile Screen
+
+**What:** Replaced the generic `DeviceCard` component in the Profile/Settings screen with an onboarding-style centered layout. Now shows the product image (ring or band), device name, MAC address, and a white "Connected" pill badge — matching the visual style from the onboarding connect screen. Band vs ring image is auto-detected from `sdkType`/`deviceType`. Demo badge and action buttons (Find/Disconnect/Forget) preserved below.
+
+**User impact:** The device section in the Profile page now has a polished, centered design with the product image prominently displayed, matching the first-time connect experience.
+
+**Files modified:** `src/screens/SettingsScreen.tsx`
+
+---
+
+## 2026-03-24: Use DeviceCard Component in Profile Screen
+
+**What:** Replaced the custom inline device display in the Profile/Settings screen with the reusable `DeviceCard` component (same one used in the connect/devices screen). This shows the device name, MAC address, version, and signal strength in a consistent card format.
+
+**User impact:** The connected device section in the Profile page now matches the device card style from the connection flow — consistent look with signal strength indicator and "Connected" badge.
+
+**Files modified:** `src/screens/SettingsScreen.tsx`
+
+---
+
+## 2026-03-24: Show User Name in Header When No Nickname Set
+
+**What:** The overview header greeting now falls back to the user's full name or email prefix when no nickname (display_name) is set. Previously it showed an empty name.
+
+**User impact:** Users who signed up without setting a nickname will see their name (or email username) in the "Good morning, ..." greeting instead of a blank.
+
+**Changes:** Added `resolveUserName()` helper in `useHomeData.ts` with fallback chain: `display_name → full_name → name → email prefix`. Updated all 4 places that resolve userName.
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+---
+
 ## 2026-03-24: Route All Data Fetches Through UnifiedSmartRingService for V8 Band Support
 
 **What:** Fixed V8 band data not appearing on home screen by routing all data fetches through `UnifiedSmartRingService` instead of calling `JstyleService` directly. Previously, sleep, HR, HRV, SpO2, and temperature data never showed for V8 bands because `useHomeData`, `useMetricHistory`, `TodayCardVitalsService`, `BackgroundSleepTask`, `DailyHeartRateCard`, and `LiveHeartRateCard` all called `JstyleService` directly — bypassing V8 routing.

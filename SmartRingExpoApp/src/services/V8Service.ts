@@ -58,18 +58,52 @@ function withNativeTimeout<T>(
   ]);
 }
 
+function isBusyOrTimeout(error: any): boolean {
+  const msg = error?.message || '';
+  return msg.includes('BUSY') || msg.includes('busy') || msg.includes('timed out');
+}
+
+/**
+ * Cancel the native bridge's pending resolver so the next call can proceed.
+ * Mirrors JstyleService.cancelPendingNativeRequest().
+ */
+async function cancelPendingNativeRequest(label: string): Promise<void> {
+  if (!V8Bridge || typeof V8Bridge.cancelPendingDataRequest !== 'function') return;
+  try {
+    await withNativeTimeout(
+      Promise.resolve(V8Bridge.cancelPendingDataRequest()),
+      1500,
+      'cancelPendingDataRequest'
+    );
+    await new Promise(r => setTimeout(r, 150));
+  } catch (e) {
+    console.log(`[V8Service] cancelPendingDataRequest failed after ${label}:`, e);
+  }
+}
+
 // Serialized native call queue (one-at-a-time)
 let callQueue: Promise<any> = Promise.resolve();
+
+// Cache raw sleep records so the SDK is only called once per sync cycle
+let _sleepRecordsCache: any[] | null = null;
 
 function enqueueNativeCall<T>(
   fn: () => Promise<T>,
   timeoutMs: number,
   label: string
 ): Promise<T> {
-  const next = callQueue.then(
-    () => withNativeTimeout(fn(), timeoutMs, label),
-    () => withNativeTimeout(fn(), timeoutMs, label)
-  );
+  const run = async (): Promise<T> => {
+    try {
+      return await withNativeTimeout(fn(), timeoutMs, label);
+    } catch (error: any) {
+      // On BUSY or timeout, clear the native pending resolver so subsequent calls work
+      if (isBusyOrTimeout(error)) {
+        await cancelPendingNativeRequest(label);
+      }
+      throw error;
+    }
+  };
+  const next = callQueue.then(run, run);
   callQueue = next.catch(() => {});
   return next;
 }
@@ -140,6 +174,7 @@ const V8Service = {
   },
 
   disconnect(): void {
+    _sleepRecordsCache = null;
     V8Bridge?.disconnect().catch(() => {});
   },
 
@@ -220,37 +255,68 @@ const V8Service = {
 
   async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
     return enqueueNativeCall(async () => {
-      const result = await V8Bridge.getSleepData();
-      const items: any[] = result.data || [];
-      if (items.length === 0) {
+      // Fetch once and cache — same pattern as JstyleService
+      if (!_sleepRecordsCache) {
+        const result = await V8Bridge.getSleepData();
+        _sleepRecordsCache = (result.data || []).map((session: any) => ({
+          arraySleepQuality: session.arraySleepQuality || [],
+          sleepUnitLength: Number(session.sleepUnitLength) || 1,
+          totalSleepTime: Number(session.totalSleepTime) || 0,
+          startTimestamp: parseV8Date(session.startTime_SleepData),
+        }));
+      }
+
+      if (_sleepRecordsCache.length === 0) {
         return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
       }
 
-      // Get the session at dayIndex (0 = most recent)
-      const session = items[dayIndex] || items[0];
-      const qualityArray: number[] = session.arraySleepQuality || [];
-      const unitLength = Number(session.sleepUnitLength) || 1;
-      const totalMinutes = Number(session.totalSleepTime) || 0;
-      const startTimestamp = parseV8Date(session.startTime_SleepData);
+      // Target calendar date using local time (mirrors JstyleService logic)
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - dayIndex);
+      const localDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
 
-      // V8 sleep quality: 1=deep, 2=light, 3=REM, other=awake
-      let deep = 0, light = 0, rem = 0, awake = 0;
-      for (const q of qualityArray) {
-        switch (q) {
-          case 1: deep += unitLength; break;
-          case 2: light += unitLength; break;
-          case 3: rem += unitLength; break;
-          default: awake += unitLength; break;
-        }
+      // Filter sessions that start on the target date
+      const records = _sleepRecordsCache.filter(r => {
+        if (!r.startTimestamp) return dayIndex === 0;
+        const d = new Date(r.startTimestamp);
+        const s = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return s === localDateStr;
+      });
+
+      if (records.length === 0) {
+        return { deep: 0, light: 0, awake: 0, rem: 0, detail: '' };
       }
 
-      const endTimestamp = startTimestamp > 0 ? startTimestamp + totalMinutes * 60000 : 0;
+      // Aggregate all same-day sessions — V8 quality: 1=deep, 2=light, 3=REM, other=awake
+      let deep = 0, light = 0, rem = 0, awake = 0;
+      let earliestStart: number | undefined;
+      let latestEnd: number | undefined;
+      const rawQualityRecords: SleepQualityRecord[] = [];
 
-      const rawQualityRecords: SleepQualityRecord[] = [{
-        arraySleepQuality: qualityArray,
-        sleepUnitLength: unitLength,
-        startTimestamp,
-      }];
+      for (const r of records) {
+        const unitLength = r.sleepUnitLength;
+        for (const q of r.arraySleepQuality as number[]) {
+          switch (q) {
+            case 1: deep += unitLength; break;
+            case 2: light += unitLength; break;
+            case 3: rem += unitLength; break;
+            default: awake += unitLength; break;
+          }
+        }
+
+        if (r.startTimestamp > 0) {
+          const durationMs = r.totalSleepTime * 60000;
+          const endMs = r.startTimestamp + durationMs;
+          earliestStart = earliestStart !== undefined ? Math.min(earliestStart, r.startTimestamp) : r.startTimestamp;
+          latestEnd = latestEnd !== undefined ? Math.max(latestEnd, endMs) : endMs;
+        }
+
+        rawQualityRecords.push({
+          arraySleepQuality: r.arraySleepQuality,
+          sleepUnitLength: unitLength,
+          startTimestamp: r.startTimestamp,
+        });
+      }
 
       return {
         deep,
@@ -258,11 +324,34 @@ const V8Service = {
         awake,
         rem,
         detail: `${deep}m deep, ${light}m light, ${rem}m REM, ${awake}m awake`,
-        startTime: startTimestamp || undefined,
-        endTime: endTimestamp || undefined,
+        startTime: earliestStart || undefined,
+        endTime: latestEnd || undefined,
         rawQualityRecords,
       };
     }, 10000, 'getSleepData');
+  },
+
+  /**
+   * Returns ALL raw sleep sessions in the format deriveFromRaw() expects:
+   * { arraySleepQuality, sleepUnitLength, startTimestamp, totalSleepTime }
+   */
+  async getSleepDataRaw(): Promise<{ records: any[]; timestamp?: number }> {
+    return enqueueNativeCall(async () => {
+      if (!_sleepRecordsCache) {
+        const result = await V8Bridge.getSleepData();
+        _sleepRecordsCache = (result.data || []).map((session: any) => ({
+          arraySleepQuality: session.arraySleepQuality || [],
+          sleepUnitLength: Number(session.sleepUnitLength) || 1,
+          startTimestamp: parseV8Date(session.startTime_SleepData),
+          totalSleepTime: Number(session.totalSleepTime) || 0,
+        }));
+      }
+      return { records: _sleepRecordsCache, timestamp: Date.now() };
+    }, 10000, 'getSleepDataRaw');
+  },
+
+  clearSleepCache(): void {
+    _sleepRecordsCache = null;
   },
 
   async getContinuousHeartRate(): Promise<HeartRateData[]> {
@@ -375,6 +464,18 @@ const V8Service = {
     if (V8Bridge) await V8Bridge.cancelPendingDataRequest().catch(() => {});
   },
 
+  // ========== Real-Time Data Stream ==========
+
+  async startRealTimeData(): Promise<{ success: boolean }> {
+    if (!V8Bridge) return { success: false };
+    return await V8Bridge.startRealTimeData();
+  },
+
+  async stopRealTimeData(): Promise<{ success: boolean }> {
+    if (!V8Bridge) return { success: false };
+    return await V8Bridge.stopRealTimeData();
+  },
+
   // ========== Manual Measurement ==========
 
   async startHeartRateMeasuring(): Promise<{ success: boolean }> {
@@ -415,14 +516,16 @@ const V8Service = {
   onDeviceDiscovered(callback: (device: DeviceInfo) => void): () => void {
     if (!eventEmitter) return () => {};
     const sub = eventEmitter.addListener('V8DeviceDiscovered', (event: any) => {
+      const rawName: string = event.name || event.localName || '';
+      const isRing = /x6/i.test(rawName);
       callback({
         id: event.id,
         mac: event.mac || event.id,
-        name: event.name || 'V8 Band',
+        name: rawName || 'V8 Band',
         localName: event.localName,
         rssi: event.rssi || -50,
         sdkType: 'v8',
-        deviceType: 'band',
+        deviceType: isRing ? 'ring' : 'band',
       });
     });
     return () => sub.remove();
