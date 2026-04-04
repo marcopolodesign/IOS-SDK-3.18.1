@@ -901,5 +901,14 @@
       "spanish": "Español",
       "cancel": "Cancelar"
     }
+  },
+  "training_insights": {
+    "title": "Entrenamiento Esta Semana",
+    "sessions": "Sesiones",
+    "time": "Tiempo",
+    "distance": "Distancia",
+    "sports": "Desglose por Deporte",
+    "zones_estimated": "Tiempos de zona estimados desde FC promedio",
+    "no_data": "Sin datos de entrenamiento esta semana"
   }
 }

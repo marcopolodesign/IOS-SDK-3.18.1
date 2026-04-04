@@ -17,6 +17,7 @@ import { ChatBar } from '../../components/focus/ChatFAB';
 import type { UnifiedActivity } from '../../types/activity.types';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatSleepDuration } from '../../utils/ringData/sleep';
+import { TrainingInsightsCard } from '../../components/home/TrainingInsightsCard';
 
 function formatUnifiedMeta(a: UnifiedActivity): string {
   const parts: string[] = [];
@@ -252,6 +253,15 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           isScrolled={isScrolled}
         />
       </TouchableOpacity>
+
+      {/* Training Insights */}
+      <View style={styles.trainingInsightsSection}>
+        <Text style={styles.sectionTitle}>{t('training_insights.title')}</Text>
+        <TrainingInsightsCard
+          unifiedActivities={homeData.unifiedActivities ?? []}
+          stravaActivities={homeData.stravaActivities ?? []}
+        />
+      </View>
 
       {/* Recent Workouts */}
       <Reanimated.View style={[styles.workoutsSection, firstCardStyle]}>
@@ -505,6 +515,10 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontFamily: fontFamily.demiBold,
     marginTop: 2,
+  },
+  trainingInsightsSection: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
   },
   workoutsSection: {
     paddingHorizontal: spacing.lg,

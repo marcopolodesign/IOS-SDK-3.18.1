@@ -901,5 +901,14 @@
       "spanish": "Español",
       "cancel": "Cancel"
     }
+  },
+  "training_insights": {
+    "title": "Training This Week",
+    "sessions": "Sessions",
+    "time": "Time",
+    "distance": "Distance",
+    "sports": "Sport Breakdown",
+    "zones_estimated": "Zone times estimated from avg HR",
+    "no_data": "No training data this week"
   }
 }

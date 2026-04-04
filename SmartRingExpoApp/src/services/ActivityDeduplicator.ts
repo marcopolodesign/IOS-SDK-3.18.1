@@ -46,7 +46,7 @@ const SPORT_CONFIG: Record<string, { color: string; icon: string }> = {
 
 const DEFAULT_CONFIG = { color: '#00D4AA', icon: 'fitness-outline' };
 
-function getSportConfig(sport: string): { color: string; icon: string } {
+export function getSportConfig(sport: string): { color: string; icon: string } {
   return SPORT_CONFIG[sport] || DEFAULT_CONFIG;
 }
 

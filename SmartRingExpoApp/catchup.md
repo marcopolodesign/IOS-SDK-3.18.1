@@ -4,6 +4,41 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-03-31: TestFlight build 1.0.18 (build 19)
+
+**Change:** Bumped version to 1.0.18 (build 19) and published to App Store Connect via TestFlight.
+
+**Files modified:**
+- `app.config.js` — version `1.0.17` → `1.0.18`, buildNumber `18` → `19`
+- `ios/SmartRing.xcodeproj/project.pbxproj` — MARKETING_VERSION and CURRENT_PROJECT_VERSION updated (both configs)
+
+**Result:** Archive succeeded, upload to App Store Connect succeeded (build 19 processing).
+
+---
+
+## 2026-03-30: Training Insights card on Activity tab
+
+**Change:** Added a "Training This Week" card above Recent Workouts on the Activity tab, showing weekly session count, total time, total distance, HR zone distribution (with a segmented bar), and a sport breakdown with color-coded chips. Strava activities contribute exact zone seconds; ring/Apple Health activities fall back to zone estimation from average HR.
+
+**Files created:**
+- `src/utils/activity/trainingInsights.ts` — Pure aggregation function `deriveTrainingInsights()` that filters to last 7 days, computes weekly stats, aggregates HR zones (Strava-exact + estimated fallback), and groups duration by sport type
+- `src/components/home/TrainingInsightsCard.tsx` — Card component rendering the 3-column stats row, segmented HR zone bar with legend, and sport chips with overflow count
+
+**Files modified:**
+- `src/screens/home/ActivityTab.tsx` — Inserted `<TrainingInsightsCard>` section above Recent Workouts; added `trainingInsightsSection` style
+- `src/services/ActivityDeduplicator.ts` — Exported `getSportConfig()` so sport color mapping is shared (no duplicate maps)
+- `src/i18n/locales/en.json` — Added `training_insights.*` keys
+- `src/i18n/locales/es.json` — Added `training_insights.*` keys (Spanish)
+
+**Key notes:**
+- Zone colors Z1–Z5: `#6B8EFF`, `#8AAAFF`, `#FFD700`, `#FC4C02`, `#FF2D2D` (avoids forbidden `#00D4AA` accents)
+- Zone labels reuse existing `strava_detail.zone_z1`–`zone_z5` i18n keys
+- If no Strava zones available, shows "Zone times estimated from avg HR" caption
+- `overflowCount` returned as a separate field (not mixed into the sport array) to keep the data shape clean
+- `stravaZoneMap` only built from week-window Strava activities to avoid unnecessary map entries
+
+---
+
 ## 2026-03-30: Coach chat bar as real input on all tabs + auto-send from query
 
 **Change:** The "Ask Coach" prompt on every tab is now a real `TextInput`. The typewriter-animated questions become the placeholder text; users can type a question directly and tap send (or press return) from Overview, Sleep, Activity, and Coach tabs. The query is passed to the AI chat screen via `?q=` route param and auto-sent on mount so the answer loads immediately without any extra tap.
