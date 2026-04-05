@@ -137,8 +137,15 @@ class DataSyncService {
         this.syncSportRecords(userId, smartRingService), // NEW
       ]);
 
-      // Update daily summary
-      await this.updateDailySummary(userId, new Date());
+      // Update daily summary for today and the past 6 days so the activity detail screen
+      // has real data for historical days (not just today).
+      const summaryDates: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        summaryDates.push(d);
+      }
+      await Promise.all(summaryDates.map(d => this.updateDailySummary(userId, d)));
 
       this._syncStatus = {
         lastSyncAt: new Date(),
@@ -205,6 +212,28 @@ class DataSyncService {
     service: typeof UnifiedSmartRingService
   ) {
     try {
+      // Fetch all historical daily step entries from the ring (SDK stores ~7 days)
+      const allDailySteps = await service.getAllDailyStepsHistory();
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // Write one reading per past day (noon timestamp to avoid overlap with today's hourly reads)
+      const historicalReadings = allDailySteps
+        .filter(entry => entry.dateKey !== todayStr && entry.steps > 0)
+        .map(entry => ({
+          user_id: userId,
+          steps: entry.steps,
+          distance_m: entry.distanceM,
+          calories: entry.calories,
+          recorded_at: `${entry.dateKey}T12:00:00.000Z`,
+          period_minutes: 1440, // full day
+        }));
+
+      if (historicalReadings.length > 0) {
+        await supabaseService.insertStepsReadings(historicalReadings);
+        console.log(`[Sync] Wrote ${historicalReadings.length} historical daily step records`);
+      }
+
+      // Today: write hourly readings for fine-grained aggregation
       const hourlySteps = await service.get24HourSteps();
       const stepsData = await service.getSteps();
 
@@ -511,6 +540,17 @@ class DataSyncService {
         ? diastolicValues.reduce((a, b) => a + b, 0) / diastolicValues.length
         : null;
 
+      // Illness score signal columns
+      const spo2Min = spo2Values.length > 0 ? Math.min(...spo2Values) : null;
+      const sleepAwakeMin = latestSleep?.awake_min ?? null;
+      const nocturnalReadings = (heartRates ?? []).filter(r => {
+        const hour = new Date(r.recorded_at).getHours();
+        return hour >= 0 && hour < 7 && r.heart_rate > 0;
+      });
+      const hrNocturnalAvg = nocturnalReadings.length > 0
+        ? Math.round(nocturnalReadings.reduce((s, r) => s + r.heart_rate, 0) / nocturnalReadings.length)
+        : null;
+
       await supabaseService.upsertDailySummary({
         user_id: userId,
         date: dateStr,
@@ -532,6 +572,9 @@ class DataSyncService {
         bp_diastolic_avg: bpDiastolicAvg,
         sport_records_count: sportRecords.length,
         strava_activities_count: stravaActivities.length,
+        spo2_min: spo2Min,
+        sleep_awake_min: sleepAwakeMin,
+        hr_nocturnal_avg: hrNocturnalAvg,
         updated_at: new Date().toISOString(),
       });
 

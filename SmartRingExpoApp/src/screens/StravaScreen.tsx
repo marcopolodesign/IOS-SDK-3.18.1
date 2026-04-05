@@ -306,6 +306,7 @@ export function StravaScreen() {
         const [athleteData, statsData] = await Promise.all([
           stravaService.getAthlete(),
           stravaService.getAthleteStats(),
+          stravaService.backgroundSync(7).catch(() => null),
         ]);
         setAthlete(athleteData);
         setStats(statsData);

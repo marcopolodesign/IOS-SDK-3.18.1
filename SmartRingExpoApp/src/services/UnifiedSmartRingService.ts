@@ -422,6 +422,11 @@ class UnifiedSmartRingService {
     return await JstyleService.getSteps();
   }
 
+  async getAllDailyStepsHistory(): Promise<Array<{ dateKey: string; steps: number; distanceM: number; calories: number }>> {
+    this.ensureConnected();
+    return await JstyleService.getAllDailyStepsHistory();
+  }
+
   async getSleepData(): Promise<SleepData> {
     this.ensureConnected();
     if (this.isV8()) return await V8Service.getSleepByDay(0);

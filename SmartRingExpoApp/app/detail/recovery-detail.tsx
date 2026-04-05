@@ -40,7 +40,8 @@ function computeReadiness(
   hrv: DayHRVData | undefined
 ): DayReadiness {
   const sleepScore = sleep?.score ?? 0;
-  const restingHR = hr?.restingHR ?? 0;
+  // Priority: ring overnight HR (overridden in getHR for today) → daily_summaries hr_min → hr overnight min → sleep detail
+  const restingHR = hr?.restingHR || (activity?.hrMin ?? 0) || sleep?.restingHR || 0;
 
   // Resting HR score: 90bpm = 0, 40bpm = 100
   const restingHRScore = restingHR > 0
@@ -210,28 +211,46 @@ export default function RecoveryDetailScreen() {
         segments: [], restingHR: homeData.lastNightSleep.restingHR ?? 0 }
     : undefined;
 
-  const todayHRFallback: DayHRData | undefined = !hrData.get(todayKey) && homeData.hrChartData.length > 0
+  const todayHRFallback: DayHRData | undefined = !hrData.get(todayKey)
     ? (() => {
+        // Tier 1: from hrChartData
         const pts = homeData.hrChartData.filter(p => p.heartRate > 0);
         const vals = pts.map(p => p.heartRate);
-        if (vals.length === 0) return undefined;
-        return {
-          date: todayKey,
-          hourlyPoints: pts.map(p => ({ hour: Math.floor(p.timeMinutes / 60) % 24, heartRate: p.heartRate })),
-          restingHR: Math.min(...vals), peakHR: Math.max(...vals),
-          avgHR: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
-        };
+        if (vals.length > 0) {
+          return {
+            date: todayKey,
+            hourlyPoints: pts.map(p => ({ hour: Math.floor(p.timeMinutes / 60) % 24, heartRate: p.heartRate })),
+            restingHR: Math.min(...vals), peakHR: Math.max(...vals),
+            avgHR: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+          };
+        }
+        // Tier 2: from ring's overnight restingHR in lastNightSleep
+        const sleepRHR = homeData.lastNightSleep?.restingHR;
+        if (sleepRHR && sleepRHR > 0) {
+          return { date: todayKey, hourlyPoints: [], restingHR: sleepRHR, peakHR: 0, avgHR: 0 };
+        }
+        return undefined;
       })()
     : undefined;
 
   const todayActivityFallback: DayActivityData | undefined = !activityData.get(todayKey) && homeData.activity.steps > 0
     ? { date: todayKey, steps: homeData.activity.steps, distanceM: homeData.activity.distance,
-        calories: homeData.activity.calories, sleepTotalMin: null, hrAvg: null }
+        calories: homeData.activity.calories, sleepTotalMin: null, hrAvg: null, hrMin: null }
     : undefined;
 
   // Helper to get data for a day, using context fallback for today
   const getSleep = (key: string) => sleepData.get(key) ?? (key === todayKey ? todaySleepFallback : undefined);
-  const getHR = (key: string) => hrData.get(key) ?? (key === todayKey ? todayHRFallback : undefined);
+  const getHR = (key: string) => {
+    const hr = hrData.get(key) ?? (key === todayKey ? todayHRFallback : undefined);
+    if (!hr) return undefined;
+    // For today, always prefer the ring's overnight restingHR over the
+    // daytime-minimum from heart_rate_readings (which can be 80-110bpm during activity).
+    if (key === todayKey) {
+      const overnightRHR = homeData.lastNightSleep?.restingHR;
+      if (overnightRHR && overnightRHR > 0) return { ...hr, restingHR: overnightRHR };
+    }
+    return hr;
+  };
   const getActivity = (key: string) => activityData.get(key) ?? (key === todayKey ? todayActivityFallback : undefined);
   const getHRV = (key: string) => hrvData.get(key);
 

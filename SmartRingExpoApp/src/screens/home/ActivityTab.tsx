@@ -13,7 +13,6 @@ import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getActivityMessage, Workout } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
-import { ChatBar } from '../../components/focus/ChatFAB';
 import type { UnifiedActivity } from '../../types/activity.types';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatSleepDuration } from '../../utils/ringData/sleep';
@@ -413,11 +412,6 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
         </View>
       )}
 
-      {/* Ask Coach */}
-      <View style={styles.chatBarSection}>
-        <ChatBar />
-      </View>
-
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
@@ -624,10 +618,6 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 50,
-  },
-  chatBarSection: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
   },
   vitalsSection: {
     paddingHorizontal: spacing.lg,

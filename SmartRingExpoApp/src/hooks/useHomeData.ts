@@ -853,7 +853,7 @@ function blockToRingNap(b: { start: number; end: number; records: any[] }): Ring
     else if (seg.stage === 'rem') remMin += durMin;
     else awakeMin += durMin;
   }
-  return { startMs: b.start, endMs: b.end, segments: segs, deepMin, lightMin, remMin, awakeMin, totalMin };
+  return { startMs: b.start, endMs: b.end, segments: segs, deepMin, lightMin, remMin, awakeMin, totalMin: deepMin + lightMin + remMin };
 }
 
 function buildBlockSegments(block: { start: number; end: number; records: Array<{ start: number | undefined; unit: number; arr: number[]; durationMin: number }> }): SleepSegment[] {
@@ -916,8 +916,9 @@ function buildBlockResult(
     else if (v === 1) lightMinutes++;
     else awakeMinutes++;
   }
+  const actualSleepMinutes = deepMinutes + lightMinutes + remMinutes;
   const { score } = calculateSleepScore({
-    totalSleepMinutes: totalMinutes,
+    totalSleepMinutes: actualSleepMinutes,
     deepMinutes,
     lightMinutes,
     remMinutes,
@@ -932,8 +933,8 @@ function buildBlockResult(
 
   return {
     score,
-    timeAsleep: formatSleepDuration(totalMinutes),
-    timeAsleepMinutes: totalMinutes,
+    timeAsleep: formatSleepDuration(actualSleepMinutes),
+    timeAsleepMinutes: actualSleepMinutes,
     restingHR: extractedVitals.restingHR,
     respiratoryRate: extractedVitals.respiratoryRate,
     segments,
@@ -1281,7 +1282,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       // Auto-sync Strava before reading from Supabase (rate-limited: once per 30 min).
       // Awaited so the Supabase query below always sees the freshest activities.
       // Runs in parallel with ring reconnect above — no added wall-clock time on most calls.
-      const STRAVA_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+      const STRAVA_SYNC_INTERVAL_MS = 10 * 60 * 1000;
       try {
         const lastSyncRaw = await AsyncStorage.getItem('strava_last_auto_sync_v1');
         if (!lastSyncRaw || Date.now() - Number(lastSyncRaw) > STRAVA_SYNC_INTERVAL_MS) {

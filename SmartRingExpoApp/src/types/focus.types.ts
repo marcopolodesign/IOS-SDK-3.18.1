@@ -21,23 +21,28 @@ export type IllnessStatus = 'CLEAR' | 'WATCH' | 'SICK';
 
 export interface IllnessSignals {
   tempDeviation: boolean;
-  restingHRElevated: boolean;
+  restingHRElevated: boolean;   // nocturnal HR elevated vs 14-day baseline
   hrvSuppressed: boolean;
-  respiratoryRateElevated: boolean;
+  spo2Low: boolean;             // replaces respiratoryRateElevated (never available from ring)
   sleepFragmented: boolean;
 }
 
 export interface IllnessWatchDetails {
-  hrvDelta: string | null;   // e.g. "−22%" (negative = suppressed)
-  hrDelta: string | null;    // e.g. "+7 bpm"
-  tempDelta: string | null;  // e.g. "+0.8°C"
+  hrvDelta: string | null;    // e.g. "−22%"
+  hrDelta: string | null;     // e.g. "+19 bpm"
+  tempDelta: string | null;   // e.g. "+0.8°C"
+  spo2Delta: string | null;   // e.g. "Min 89%"
+  sleepDelta: string | null;  // e.g. "59 min awake"
 }
 
 export interface IllnessWatch {
   status: IllnessStatus;
+  score: number;              // 0–100 continuous score (0 = healthy)
   signals: IllnessSignals;
   summary: string;
   details: IllnessWatchDetails;
+  stale?: boolean;            // true when last ring sync was >48h ago
+  computedAt?: string;        // ISO timestamp from server computation
 }
 
 export type EffortVerdict = 'as_expected' | 'harder_than_expected' | 'easier_than_expected';
@@ -65,6 +70,10 @@ export interface FocusBaselines {
   sleepScore: number[];
   sleepMinutes: number[];
   respiratoryRate: number[];
+  // Extended for server-side illness score (also kept client-side as fallback)
+  spo2Min: number[];
+  sleepAwakeMin: number[];
+  nocturnalHR: number[];
   updatedAt: string | null;  // ISO date string (YYYY-MM-DD)
   daysLogged: number;
 }

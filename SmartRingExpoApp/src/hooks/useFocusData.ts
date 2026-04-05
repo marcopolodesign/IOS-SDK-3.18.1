@@ -3,10 +3,11 @@
  * Reads from Supabase only (no BLE). Shows empty state when no data synced yet.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/SupabaseService';
+import { stravaService } from '../services/StravaService';
 import {
   loadBaselines,
   saveBaselines,
@@ -22,7 +23,9 @@ import type {
   IllnessWatch,
   LastRunContext,
   FocusBaselines,
+  IllnessStatus,
 } from '../types/focus.types';
+import type { IllnessScore } from '../types/supabase.types';
 
 const CACHE_KEY = 'focus_state_cache_v5';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -36,6 +39,45 @@ interface CachedFocusState {
 
 function isCacheValid(cache: CachedFocusState): boolean {
   return Date.now() - cache.cachedAt < CACHE_TTL_MS;
+}
+
+function mapServerScoreToIllnessWatch(row: IllnessScore): IllnessWatch {
+  const status = row.status as IllnessStatus;
+  return {
+    status,
+    score: row.score,
+    stale: row.stale,
+    computedAt: row.created_at,
+    signals: {
+      restingHRElevated: row.sub_nocturnal_hr > 0,
+      hrvSuppressed: row.sub_hrv > 0,
+      spo2Low: row.sub_spo2 > 0,
+      tempDeviation: row.sub_temperature > 0,
+      sleepFragmented: row.sub_sleep > 0,
+    },
+    details: {
+      hrDelta:
+        row.nocturnal_hr != null && row.baseline_nocturnal_hr != null
+          ? `${row.nocturnal_hr > row.baseline_nocturnal_hr ? '+' : ''}${Math.round(row.nocturnal_hr - row.baseline_nocturnal_hr)} bpm`
+          : null,
+      hrvDelta:
+        row.hrv_sdnn != null && row.baseline_hrv_sdnn != null && row.baseline_hrv_sdnn > 0
+          ? `${Math.round(((row.hrv_sdnn - row.baseline_hrv_sdnn) / row.baseline_hrv_sdnn) * 100)}%`
+          : null,
+      spo2Delta: row.spo2_min_val != null ? `Min ${row.spo2_min_val}%` : null,
+      tempDelta:
+        row.temperature_avg != null && row.baseline_temperature != null
+          ? `${(row.temperature_avg - row.baseline_temperature) >= 0 ? '+' : ''}${(row.temperature_avg - row.baseline_temperature).toFixed(1)}°C`
+          : null,
+      sleepDelta: row.sleep_awake_min != null ? `${row.sleep_awake_min} min awake` : null,
+    },
+    summary:
+      status === 'CLEAR'
+        ? 'All signals within your normal range.'
+        : status === 'WATCH'
+          ? 'Some signals are deviating from your baseline. Keep an eye on how you feel.'
+          : 'Multiple signals suggest your body is under strain. Consider resting today.',
+  };
 }
 
 /** Returns a date range [start, end] ISO strings for "today" */
@@ -53,10 +95,12 @@ export function useFocusData(): FocusState {
   const [illness, setIllness] = useState<IllnessWatch | null>(null);
   const [lastRun, setLastRun] = useState<LastRunContext | null>(null);
   const [baselines, setBaselines] = useState<FocusBaselines | null>(null);
+  const bgRefreshInFlight = useRef(false);
+  const hasDataRef = useRef(false);
 
   const load = useCallback(async (skipCache = false) => {
     console.log(`[FocusData] load() called, skipCache=${skipCache}`);
-    setIsLoading(true);
+    if (!hasDataRef.current) setIsLoading(true);
     setError(null);
 
     try {
@@ -71,10 +115,26 @@ export function useFocusData(): FocusState {
               setReadiness(cache.readiness);
               setIllness(cache.illness);
               setLastRun(cache.lastRun);
+              hasDataRef.current = true;
               // Baselines are not in the cache payload — load them separately so
               // ReadinessCard can show confidence dots without waiting for a full refresh.
               loadBaselines().then(setBaselines).catch(() => {});
               setIsLoading(false);
+              // If restingHR component is missing, check if home_data_cache now has it.
+              // Race condition: useFocusData may have run before useHomeData wrote the cache.
+              if (cache.readiness.components?.restingHR == null && !bgRefreshInFlight.current) {
+                bgRefreshInFlight.current = true;
+                AsyncStorage.getItem('home_data_cache').then(raw => {
+                  if (!raw) return;
+                  try {
+                    const home = JSON.parse(raw) as { lastNightSleep?: { restingHR?: number } };
+                    if ((home?.lastNightSleep?.restingHR ?? 0) > 0) {
+                      console.log('[FocusData] restingHR now available in home_data_cache, triggering background refresh');
+                      load(true);
+                    }
+                  } catch {}
+                }).catch(() => {}).finally(() => { bgRefreshInFlight.current = false; });
+              }
               return;
             } else {
               console.log(`[FocusData] Cache invalid/empty, fetching fresh (cachedAt=${new Date(cache.cachedAt).toISOString()}, readiness=${cache.readiness != null})`);
@@ -241,13 +301,30 @@ export function useFocusData(): FocusState {
         computeLastRunContext(userId, updatedBaselines),
       ]);
 
-      const computedIllness = computeIllnessWatch({
-        temperature,
-        restingHR,
-        hrv,
-        respiratoryRate: null, // not available from ring for MVP
-        baselines: updatedBaselines,
-      });
+      // Illness: prefer server-computed score from illness_scores table (pg_cron)
+      let computedIllness: IllnessWatch;
+      const { data: serverScore } = await supabase
+        .from('illness_scores')
+        .select('*')
+        .eq('user_id', userId)
+        .order('score_date', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (serverScore) {
+        computedIllness = mapServerScoreToIllnessWatch(serverScore);
+        console.log(`[FocusData] illness from server: score=${serverScore.score}, status=${serverScore.status}, date=${serverScore.score_date}`);
+      } else {
+        // Fallback: client-side computation before first cron run
+        computedIllness = computeIllnessWatch({
+          temperature,
+          restingHR,
+          hrv,
+          baselines: updatedBaselines,
+        });
+        computedIllness.score = 0;
+        console.log('[FocusData] illness from client fallback (no server score yet)');
+      }
 
       console.log(`[FocusData] computeReadiness score=${computedReadiness.score}, illness status=${computedIllness.status}, lastRun=${computedLastRun?.runDate ?? null}`);
       console.log(`[FocusData] Components → hrv=${computedReadiness.components.hrv} sleep=${computedReadiness.components.sleep} restingHR=${computedReadiness.components.restingHR} trainingLoad=${computedReadiness.components.trainingLoad}`);
@@ -255,6 +332,7 @@ export function useFocusData(): FocusState {
       setReadiness(computedReadiness);
       setIllness(computedIllness);
       setLastRun(computedLastRun);
+      hasDataRef.current = true;
 
       // 7. Save cache
       const cachePayload: CachedFocusState = {
@@ -277,6 +355,11 @@ export function useFocusData(): FocusState {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Background: sync latest Strava activities then reload silently.
+      // hasDataRef prevents the reload from showing a spinner when data is already visible.
+      stravaService.backgroundSync(3)
+        .catch(() => null)
+        .then(() => load(true));
     }, [load])
   );
 

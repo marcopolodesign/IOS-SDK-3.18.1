@@ -4,6 +4,7 @@ export default function CoachLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="illness-detail" />
     </Stack>
   );
 }

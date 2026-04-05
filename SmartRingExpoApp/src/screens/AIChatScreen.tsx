@@ -33,6 +33,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { supabase } from '../services/SupabaseService';
+import { stravaService } from '../services/StravaService';
 import { useHomeDataContext } from '../context/HomeDataContext';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { useSleepDebt } from '../hooks/useSleepDebt';
@@ -516,6 +517,8 @@ export function AIChatScreen() {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
 
       try {
+        await stravaService.backgroundSync(3).catch(() => null);
+
         const { text: aiText, artifact } = await callCoach(text, messages, {
           readiness: focusState.readiness,
           illness: focusState.illness,

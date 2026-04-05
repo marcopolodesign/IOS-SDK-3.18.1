@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,18 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DayNavigator } from '../../src/components/detail/DayNavigator';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { SleepHypnogram } from '../../src/components/home/SleepHypnogram';
+import { SleepTrendChart } from '../../src/components/detail/SleepTrendChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DaySleepData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
 
-const DAY_ENTRIES = buildDayNavigatorLabels(7);
+const DAY_ENTRIES = buildDayNavigatorLabels(30);
 
 function sleepScoreColor(score: number): string {
   if (score >= 80) return '#4ADE80';
@@ -76,7 +77,8 @@ export default function SleepDetailScreen() {
   const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const { data, isLoading } = useMetricHistory<DaySleepData>('sleep');
+  // Progressive: show last 7 days immediately, extend to 30 silently in background
+  const { data, isLoading } = useMetricHistory<DaySleepData>('sleep', { initialDays: 7, fullDays: 30 });
   const homeData = useHomeDataContext();
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
@@ -86,6 +88,16 @@ export default function SleepDetailScreen() {
     ? buildTodaySleepFromContext(homeData.lastNightSleep)
     : null;
   const dayData = todayLive ?? (selectedDateKey ? data.get(selectedDateKey) : undefined);
+
+  const allScores = useMemo(() =>
+    DAY_ENTRIES.map(d => ({
+      dateKey: d.dateKey,
+      score: (d.dateKey === DAY_ENTRIES[0]?.dateKey && todayLive)
+        ? todayLive.score
+        : (data.get(d.dateKey)?.score ?? 0),
+    })),
+    [data, todayLive]
+  );
 
   // Debug logging
   console.log('[SleepDetail] selectedIndex=', selectedIndex, 'selectedDateKey=', selectedDateKey);
@@ -102,22 +114,43 @@ export default function SleepDetailScreen() {
   const scoreColor = sleepScoreColor(dayData?.score ?? 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.backArrow}>{'‹'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Sleep</Text>
-        <View style={styles.headerRight} />
-      </View>
+    <View style={styles.container}>
+      {/* Gradient zone: header + trend chart — starts from the very top of the screen */}
+      <View style={styles.gradientZone}>
+        {/* Purple radial gradient backdrop */}
+        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <Defs>
+            <RadialGradient
+              id="sleepGrad"
+              cx="51%"
+              cy="-86%"
+              rx="80%"
+              ry="300%"
+            >
+              <Stop offset="0%" stopColor="#7100C2" stopOpacity={0.85} />
+              <Stop offset="55%" stopColor="#7100C2" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad)" />
+        </Svg>
 
-      {/* Day Navigator */}
-      <DayNavigator
-        days={DAY_ENTRIES.map(d => d.label)}
-        selectedIndex={selectedIndex}
-        onSelectDay={setSelectedIndex}
-      />
+        {/* Header — safe area padding here so gradient fills from screen top */}
+        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.backArrow}>{'‹'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Sleep</Text>
+          <View style={styles.headerRight} />
+        </View>
+
+        {/* Day trend chart */}
+        <SleepTrendChart
+          dayEntries={DAY_ENTRIES}
+          scores={allScores}
+          selectedIndex={selectedIndex}
+          onSelectDay={setSelectedIndex}
+        />
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -211,6 +244,10 @@ export default function SleepDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
+  gradientZone: {
+    overflow: 'hidden',
+    paddingBottom: spacing.md,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

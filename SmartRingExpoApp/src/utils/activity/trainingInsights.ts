@@ -6,23 +6,61 @@
 
 import { UnifiedActivity } from '../../types/activity.types';
 import { StravaActivitySummary } from '../../types/strava.types';
-import { getHeartRateZone } from '../ringData/heartRate';
 import { getSportConfig } from '../../services/ActivityDeduplicator';
 
-const ZONE_COLORS = ['#6B8EFF', '#8AAAFF', '#FFD700', '#FC4C02', '#FF2D2D'];
+export const ZONE_COLORS = ['#6B8EFF', '#8AAAFF', '#FFD700', '#FC4C02', '#FF2D2D'];
 
-function hrToZoneIndex(hr: number): number {
-  const zone = getHeartRateZone(hr);
-  const ZONE_MAP: Record<string, number> = {
-    'Rest': 0, 'Light': 0, 'Fat Burn': 1, 'Cardio': 2, 'Hard': 3, 'Maximum': 4,
-  };
-  return ZONE_MAP[zone] ?? 0;
+// 5-zone model: Z1 <60%, Z2 60-70%, Z3 70-80%, Z4 80-90%, Z5 ≥90%
+// Consistent thresholds used for both zone assignment and BPM range display.
+const ZONE_PCT_THRESHOLDS = [0, 0.60, 0.70, 0.80, 0.90] as const;
+
+function hrToZoneIndex(hr: number, maxHR: number): number {
+  const pct = hr / maxHR;
+  if (pct < 0.60) return 0;
+  if (pct < 0.70) return 1;
+  if (pct < 0.80) return 2;
+  if (pct < 0.90) return 3;
+  return 4;
+}
+
+/** Fallback BPM ranges computed from age when no Strava zone data is available. */
+function getFallbackBpmRanges(age: number = 30): Array<{ min: number; max: number }> {
+  const maxHR = 220 - age;
+  return ZONE_PCT_THRESHOLDS.map((low, i) => {
+    const highPct = i < 4 ? ZONE_PCT_THRESHOLDS[i + 1] : 1.0;
+    return {
+      min: Math.round(low * maxHR),
+      max: Math.round(highPct * maxHR) - 1,
+    };
+  });
+}
+
+/**
+ * Try to extract actual BPM zone boundaries from Strava's zones_json.
+ * Strava provides {min, max, time} per zone from /activities/{id}/zones endpoint.
+ * These are athlete-specific and far more accurate than age-formula defaults.
+ */
+function extractStravaBpmRanges(
+  stravaActivities: StravaActivitySummary[],
+  weekStravaIds: Set<number>,
+): Array<{ min: number; max: number }> | null {
+  for (const sa of stravaActivities) {
+    if (!weekStravaIds.has(sa.id)) continue;
+    const zones = (sa.zones_json as any)?.heart_rate?.zones;
+    if (Array.isArray(zones) && zones.length === 5) {
+      return zones.map((z: { min: number; max: number }) => ({ min: z.min, max: z.max }));
+    }
+  }
+  return null;
 }
 
 export interface ZoneEntry {
   zoneIndex: number;
   seconds: number;
   color: string;
+  bpmMin: number;
+  bpmMax: number;
+  percentage: number;
 }
 
 export interface TrainingInsightsData {
@@ -35,6 +73,7 @@ export interface TrainingInsightsData {
     zones: ZoneEntry[];
     totalSeconds: number;
     hasExactData: boolean;
+    dominantZoneIndex: number;
   };
   sportBreakdown: Array<{
     sportType: string;
@@ -54,9 +93,34 @@ export function deriveTrainingInsights(
     (a) => new Date(a.startDate).getTime() >= cutoff,
   );
 
+  const weekStravaIds = new Set(
+    weekActivities
+      .filter((a) => a.source === 'strava')
+      .map((a) => parseInt(a.id.replace('strava_', ''), 10)),
+  );
+
+  // Use actual Strava zone boundaries if available; otherwise fall back to age formula.
+  const bpmRanges = extractStravaBpmRanges(stravaActivities, weekStravaIds)
+    ?? getFallbackBpmRanges();
+
+  const makeEmptyZones = (): ZoneEntry[] =>
+    bpmRanges.map((r, i) => ({
+      zoneIndex: i,
+      seconds: 0,
+      color: ZONE_COLORS[i],
+      bpmMin: r.min,
+      bpmMax: r.max,
+      percentage: 0,
+    }));
+
   const empty: TrainingInsightsData = {
     weeklyStats: { sessionCount: 0, totalDurationSec: 0, totalDistanceM: 0 },
-    zoneSummary: { zones: [], totalSeconds: 0, hasExactData: false },
+    zoneSummary: {
+      zones: makeEmptyZones(),
+      totalSeconds: 0,
+      hasExactData: false,
+      dominantZoneIndex: 0,
+    },
     sportBreakdown: [],
     overflowCount: 0,
     hasData: false,
@@ -64,18 +128,11 @@ export function deriveTrainingInsights(
 
   if (weekActivities.length === 0) return empty;
 
-  // Weekly stats — single pass
   const [totalDurationSec, totalDistanceM] = weekActivities.reduce(
     ([dur, dist], a) => [dur + a.durationSec, dist + (a.distanceM ?? 0)],
     [0, 0],
   );
 
-  // Build zone map only from Strava activities that appear in the week window
-  const weekStravaIds = new Set(
-    weekActivities
-      .filter((a) => a.source === 'strava')
-      .map((a) => parseInt(a.id.replace('strava_', ''), 10)),
-  );
   const stravaZoneMap = new Map(
     stravaActivities
       .filter((sa) => weekStravaIds.has(sa.id))
@@ -85,26 +142,37 @@ export function deriveTrainingInsights(
   // Zone aggregation
   const zoneBuckets = [0, 0, 0, 0, 0];
   let hasExactData = false;
+  const defaultMaxHR = 190; // 220 - 30 (default age)
 
   for (const activity of weekActivities) {
     if (activity.source === 'strava') {
       const numericId = parseInt(activity.id.replace('strava_', ''), 10);
-      const hrZones = stravaZoneMap.get(numericId)?.zones_json?.heart_rate?.zones;
-      if (hrZones && hrZones.length > 0) {
-        hrZones.forEach((zone, i) => { if (i < 5) zoneBuckets[i] += zone.time; });
+      const hrZones = (stravaZoneMap.get(numericId)?.zones_json as any)?.heart_rate?.zones;
+      if (Array.isArray(hrZones) && hrZones.length > 0) {
+        hrZones.forEach((zone: { time: number }, i: number) => {
+          if (i < 5) zoneBuckets[i] += zone.time;
+        });
         hasExactData = true;
         continue;
       }
     }
     if (activity.avgHeartRate && activity.avgHeartRate > 0) {
-      zoneBuckets[hrToZoneIndex(activity.avgHeartRate)] += activity.durationSec;
+      zoneBuckets[hrToZoneIndex(activity.avgHeartRate, defaultMaxHR)] += activity.durationSec;
     }
   }
 
   const totalZoneSeconds = zoneBuckets.reduce((s, v) => s + v, 0);
-  const zones: ZoneEntry[] = zoneBuckets
-    .map((seconds, i) => ({ zoneIndex: i, seconds, color: ZONE_COLORS[i] }))
-    .filter((z) => z.seconds > 0);
+
+  const zones: ZoneEntry[] = bpmRanges.map((r, i) => ({
+    zoneIndex: i,
+    seconds: zoneBuckets[i],
+    color: ZONE_COLORS[i],
+    bpmMin: r.min,
+    bpmMax: r.max,
+    percentage: totalZoneSeconds > 0 ? (zoneBuckets[i] / totalZoneSeconds) * 100 : 0,
+  }));
+
+  const dominantZoneIndex = zoneBuckets.indexOf(Math.max(...zoneBuckets));
 
   // Sport breakdown
   const sportMap = new Map<string, number>();
@@ -122,7 +190,7 @@ export function deriveTrainingInsights(
 
   return {
     weeklyStats: { sessionCount: weekActivities.length, totalDurationSec, totalDistanceM },
-    zoneSummary: { zones, totalSeconds: totalZoneSeconds, hasExactData },
+    zoneSummary: { zones, totalSeconds: totalZoneSeconds, hasExactData, dominantZoneIndex },
     sportBreakdown,
     overflowCount,
     hasData: true,

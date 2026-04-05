@@ -168,6 +168,7 @@ function buildTodayActivityFromContext(activity: { steps: number; calories: numb
     calories: activity.calories,
     sleepTotalMin: null,
     hrAvg: null,
+    hrMin: null,
   };
 }
 
@@ -181,10 +182,21 @@ export default function ActivityDetailScreen() {
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
   const todayKey = DAY_ENTRIES[0]?.dateKey;
-  const todayFallback = selectedIndex === 0 && !data.get(todayKey)
+
+  // For today: always prefer live context data (ring/HealthKit) over daily_summaries,
+  // which may have a row with all-zero activity values if steps haven't synced yet.
+  const dbToday = selectedIndex === 0 ? data.get(todayKey) : undefined;
+  const contextToday = selectedIndex === 0
     ? buildTodayActivityFromContext(homeData.activity)
     : null;
-  const dayData = todayFallback ?? (selectedDateKey ? data.get(selectedDateKey) : undefined);
+  const todayFallback = contextToday ?? dbToday;
+
+  const dayData = selectedIndex === 0
+    ? todayFallback
+    : (selectedDateKey ? data.get(selectedDateKey) : undefined);
+
+  // Inject live today data into chart map so today's bar reflects current values
+  const chartData = contextToday ? new Map(data).set(todayKey, contextToday) : data;
 
   const pct = dayData ? Math.round((dayData.steps / STEP_GOAL) * 100) : 0;
   const activityLevel = pct >= 100 ? 'Active' : pct >= 70 ? 'Moderate' : pct >= 40 ? 'Light' : 'Sedentary';
@@ -232,7 +244,7 @@ export default function ActivityDetailScreen() {
             {/* 7-day bar chart */}
             <View style={styles.chartContainer}>
               <Text style={styles.chartTitle}>7-Day Steps History</Text>
-              <StepsBarChart data={data} dayEntries={DAY_ENTRIES} selectedIndex={selectedIndex} />
+              <StepsBarChart data={chartData} dayEntries={DAY_ENTRIES} selectedIndex={selectedIndex} />
             </View>
 
             {/* Stats */}

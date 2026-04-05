@@ -435,8 +435,8 @@ const styles = StyleSheet.create({
   },
   pctText: {
     fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.50)',
+    fontSize: fontSize.xl,
+    color: 'rgba(255,255,255,0.75)',
     letterSpacing: 0.5,
   },
   textBlock: {

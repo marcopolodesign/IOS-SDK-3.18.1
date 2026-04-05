@@ -87,6 +87,7 @@ export interface DayActivityData {
   calories: number;
   sleepTotalMin: number | null;
   hrAvg: number | null;
+  hrMin: number | null;
 }
 
 export type MetricDataMap = {
@@ -182,8 +183,8 @@ function parseSegmentsFromJson(
 
 // ─── Sleep history ────────────────────────────────────────────────────────────
 
-async function fetchSleepHistory(userId: string): Promise<Map<string, DaySleepData>> {
-  const since = nDaysAgo(7);
+async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string, DaySleepData>> {
+  const since = nDaysAgo(days);
   console.log('[useMetricHistory] fetchSleepHistory: querying since', since.toISOString(), 'userId', userId);
   const { data, error } = await supabase
     .from('sleep_sessions')
@@ -273,10 +274,14 @@ async function fetchHRHistory(userId: string): Promise<Map<string, DayHRData>> {
   const map = new Map<string, DayHRData>();
   for (const [dateKey, pts] of byDate.entries()) {
     const vals = pts.map(p => p.val).filter(v => v > 0);
+    // Prefer overnight readings (midnight–8am local) for restingHR — daytime minimums
+    // include active-movement data (80–110 bpm) and inflate the resting HR estimate.
+    const overnightVals = pts.filter(p => p.hour < 8).map(p => p.val).filter(v => v > 0);
+    const restingHR = overnightVals.length > 0 ? Math.min(...overnightVals) : (vals.length > 0 ? Math.min(...vals) : 0);
     map.set(dateKey, {
       date: dateKey,
       hourlyPoints: pts.map(p => ({ hour: p.hour, heartRate: p.heartRate })),
-      restingHR: vals.length > 0 ? Math.min(...vals) : 0,
+      restingHR,
       peakHR: vals.length > 0 ? Math.max(...vals) : 0,
       avgHR: vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
     });
@@ -387,7 +392,7 @@ async function fetchActivityHistory(userId: string): Promise<Map<string, DayActi
   const since = nDaysAgo(7);
   const { data, error } = await supabase
     .from('daily_summaries')
-    .select('date, total_steps, total_distance_m, total_calories, sleep_total_min, hr_avg')
+    .select('date, total_steps, total_distance_m, total_calories, sleep_total_min, hr_avg, hr_min')
     .eq('user_id', userId)
     .gte('date', toDateStr(since))
     .order('date', { ascending: false });
@@ -403,6 +408,7 @@ async function fetchActivityHistory(userId: string): Promise<Map<string, DayActi
       calories: row.total_calories || 0,
       sleepTotalMin: row.sleep_total_min,
       hrAvg: row.hr_avg,
+      hrMin: row.hr_min,
     });
   }
   return map;
@@ -491,10 +497,12 @@ async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
     }
     for (const [dateKey, pts] of byDate) {
       const vals = pts.map(p => p.heartRate).filter(v => v > 0);
+      const overnightVals = pts.filter(p => p.hour < 8).map(p => p.heartRate).filter(v => v > 0);
+      const restingHR = overnightVals.length ? Math.min(...overnightVals) : (vals.length ? Math.min(...vals) : 0);
       map.set(dateKey, {
         date: dateKey,
         hourlyPoints: pts,
-        restingHR: vals.length ? Math.min(...vals) : 0,
+        restingHR,
         peakHR: vals.length ? Math.max(...vals) : 0,
         avgHR: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
       });
@@ -586,16 +594,37 @@ async function fetchTemperatureFromRing(): Promise<Map<string, DayTemperatureDat
 async function fetchActivityFromRing(): Promise<Map<string, DayActivityData>> {
   const map = new Map<string, DayActivityData>();
   try {
-    const steps = await UnifiedSmartRingService.getSteps();
-    const dateKey = toDateStr(new Date());
-    map.set(dateKey, {
-      date: dateKey,
-      steps: (steps as any).steps || 0,
-      distanceM: (steps as any).distance || 0,
-      calories: (steps as any).calories || 0,
-      sleepTotalMin: null,
-      hrAvg: null,
-    });
+    // Use full history (SDK stores ~7 days of daily totals)
+    const history = await UnifiedSmartRingService.getAllDailyStepsHistory();
+    for (const entry of history) {
+      if (entry.steps > 0) {
+        map.set(entry.dateKey, {
+          date: entry.dateKey,
+          steps: entry.steps,
+          distanceM: entry.distanceM,
+          calories: entry.calories,
+          sleepTotalMin: null,
+          hrAvg: null,
+          hrMin: null,
+        });
+      }
+    }
+    // If history was empty, fall back to today-only via getSteps()
+    if (map.size === 0) {
+      const steps = await UnifiedSmartRingService.getSteps();
+      const dateKey = toDateStr(new Date());
+      if (steps.steps > 0) {
+        map.set(dateKey, {
+          date: dateKey,
+          steps: steps.steps,
+          distanceM: (steps as any).distance || 0,
+          calories: steps.calories || 0,
+          sleepTotalMin: null,
+          hrAvg: null,
+          hrMin: null,
+        });
+      }
+    }
   } catch (e) {
     console.log('[useMetricHistory] activity ring fallback error', e);
   }
@@ -605,9 +634,14 @@ async function fetchActivityFromRing(): Promise<Map<string, DayActivityData>> {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMetricHistory<T>(
-  type: MetricType
+  type: MetricType,
+  options?: { initialDays?: number; fullDays?: number }
 ): MetricHistoryState<T> {
+  const initialDays = options?.initialDays ?? 7;
+  const fullDays = options?.fullDays ?? initialDays;
   const cacheRef = useRef<Map<string, T> | null>(null);
+  // Tracks whether cacheRef already holds the full extended dataset
+  const cacheIsCompleteRef = useRef(false);
   const [data, setData] = useState<Map<string, T>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -616,9 +650,24 @@ export function useMetricHistory<T>(
     let cancelled = false;
 
     async function load() {
+      // Cache hit
       if (cacheRef.current) {
         setData(cacheRef.current);
         setIsLoading(false);
+        // If cache is partial (previous phase 1 only), extend silently in background
+        if (!cacheIsCompleteRef.current && type === 'sleep' && fullDays > initialDays) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && !cancelled) {
+            const full = await fetchSleepHistory(user.id, fullDays);
+            if (!cancelled && full.size > 0) {
+              cacheRef.current = full as Map<string, T>;
+              cacheIsCompleteRef.current = true;
+              setData(full as Map<string, T>);
+            } else {
+              cacheIsCompleteRef.current = true;
+            }
+          }
+        }
         return;
       }
 
@@ -629,10 +678,32 @@ export function useMetricHistory<T>(
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
 
+        // ── Sleep: two-phase progressive load ─────────────────────────────────
+        if (type === 'sleep' && fullDays > initialDays) {
+          // Phase 1: fast query (initialDays) → show UI immediately
+          let phase1 = await fetchSleepHistory(user.id, initialDays);
+          if (phase1.size === 0) phase1 = await fetchSleepFromRing();
+          if (!cancelled) {
+            cacheRef.current = phase1 as Map<string, T>;
+            setData(phase1 as Map<string, T>);
+            setIsLoading(false);
+          }
+          // Phase 2: extend silently — older bars fill in as user scrolls left
+          if (!cancelled) {
+            const phase2 = await fetchSleepHistory(user.id, fullDays);
+            if (!cancelled && phase2.size > 0) {
+              cacheRef.current = phase2 as Map<string, T>;
+              setData(phase2 as Map<string, T>);
+            }
+            cacheIsCompleteRef.current = true;
+          }
+          return;
+        }
+
         let result: Map<string, any>;
         switch (type) {
           case 'sleep':
-            result = await fetchSleepHistory(user.id);
+            result = await fetchSleepHistory(user.id, initialDays);
             if (result.size === 0) result = await fetchSleepFromRing();
             break;
           case 'heartRate':
@@ -651,10 +722,15 @@ export function useMetricHistory<T>(
             result = await fetchTemperatureHistory(user.id);
             if (result.size === 0) result = await fetchTemperatureFromRing();
             break;
-          case 'activity':
+          case 'activity': {
             result = await fetchActivityHistory(user.id);
-            if (result.size === 0) result = await fetchActivityFromRing();
+            // Fall back to ring if Supabase has no rows, or all rows have 0 steps
+            // (daily_summaries rows are created during sync but activity columns may be 0
+            // if step sync hadn't run yet for those days).
+            const hasRealData = Array.from((result as Map<string, DayActivityData>).values()).some(d => d.steps > 0);
+            if (!hasRealData) result = await fetchActivityFromRing();
             break;
+          }
           default:
             result = new Map();
         }
@@ -662,6 +738,7 @@ export function useMetricHistory<T>(
         if (!cancelled) {
           console.log(`[useMetricHistory] (${type}) loaded ${result.size} days:`, Array.from(result.keys()));
           cacheRef.current = result as Map<string, T>;
+          cacheIsCompleteRef.current = true;
           setData(result as Map<string, T>);
           setIsLoading(false);
         }

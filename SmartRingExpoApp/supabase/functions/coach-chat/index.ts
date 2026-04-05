@@ -6,6 +6,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface RingWorkout {
+  sport_type: string;
+  start_time: string;
+  duration_minutes: number | null;
+  distance_m: number | null;
+  calories: number | null;
+  avg_heart_rate: number | null;
+  max_heart_rate: number | null;
+}
+
 function fmt(date: string) {
   return new Date(date).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
 }
@@ -66,17 +76,20 @@ serve(async (req: Request) => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const sevenDaysAgoDate = sevenDaysAgo.split('T')[0];
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     // Fetch all available health data in parallel
     const [
       sleepResult,
       dailyResult,
       stravaResult,
+      sportResult,
       spo2Result,
       tempResult,
       hrvResult,
       stressResult,
       profileResult,
+      todayStepsResult,
     ] = await Promise.all([
       // Last 7 sleep sessions (full nightly breakdown)
       supabase
@@ -102,6 +115,15 @@ serve(async (req: Request) => {
         .eq('user_id', user.id)
         .gte('start_date', fourteenDaysAgo)
         .order('start_date', { ascending: false })
+        .limit(5),
+
+      // Last 5 ring-tracked workouts (14-day window)
+      supabase
+        .from('sport_records')
+        .select('sport_type, start_time, end_time, duration_minutes, distance_m, calories, avg_heart_rate, max_heart_rate')
+        .eq('user_id', user.id)
+        .gte('start_time', fourteenDaysAgo)
+        .order('start_time', { ascending: false })
         .limit(5),
 
       // Latest SpO2 reading
@@ -146,18 +168,30 @@ serve(async (req: Request) => {
         .select('sleep_target_min')
         .eq('id', user.id)
         .maybeSingle(),
+
+      // Steps in last 24h as fallback when daily_summaries hasn't rolled up yet.
+      // Rolling window avoids UTC-vs-local-date mismatches.
+      supabase
+        .from('steps_readings')
+        .select('steps')
+        .eq('user_id', user.id)
+        .gte('recorded_at', twentyFourHoursAgo),
     ]);
 
     const sleepSessions = sleepResult.data ?? [];
     const dailies = dailyResult.data ?? [];
     const runs = stravaResult.data ?? [];
+    const ringWorkouts = sportResult.data ?? [];
     const latestSpo2 = spo2Result.data;
     const temps = tempResult.data ?? [];
     const hrvReadings = hrvResult.data ?? [];
     const latestStress = stressResult.data;
     const profile = profileResult.data;
+    const todayStepRows = todayStepsResult.data ?? [];
     const latestDay = dailies[0] ?? null;
     const latestSleep = sleepSessions[0] ?? null;
+
+    const todayStepsFromReadings = todayStepRows.reduce((sum: number, r: { steps: number }) => sum + (r.steps ?? 0), 0);
 
     // ── Build context sections ────────────────────────────────────────────────
 
@@ -309,9 +343,9 @@ serve(async (req: Request) => {
       todayMetrics.push(`SpO2: ${latestSpo2.spo2}% (as of ${fmt(latestSpo2.recorded_at)})`);
     }
 
-    // Steps
-    if (latestDay?.total_steps) {
-      todayMetrics.push(`Steps today: ${latestDay.total_steps.toLocaleString()}`);
+    const stepsToday = latestDay?.total_steps ?? (todayStepsFromReadings > 0 ? todayStepsFromReadings : null);
+    if (stepsToday) {
+      todayMetrics.push(`Steps today: ${stepsToday.toLocaleString()}`);
     }
 
     // Stress
@@ -381,7 +415,21 @@ serve(async (req: Request) => {
         const parts = [km, min, pace, elev, hr, suffer].filter(Boolean).join(', ');
         return `  • ${r.name ?? r.sport_type} (${date}): ${parts}`;
       });
-      sections.push(`Training (last 14 days):\n${runLines.join('\n')}`);
+      sections.push(`Training / Strava (last 14 days):\n${runLines.join('\n')}`);
+    }
+
+    // ── 5. RING WORKOUTS ─────────────────────────────────────────────────────
+    if (ringWorkouts.length > 0) {
+      const workoutLines = ringWorkouts.map((w: RingWorkout) => {
+        const dur = w.duration_minutes ? `${w.duration_minutes}min` : '';
+        const km = w.distance_m ? `${(w.distance_m / 1000).toFixed(1)}km` : '';
+        const cal = w.calories ? `${Math.round(w.calories)}kcal` : '';
+        const hr = w.avg_heart_rate ? `${Math.round(w.avg_heart_rate)}bpm avg HR` : '';
+        const date = w.start_time ? fmt(w.start_time) : '';
+        const parts = [dur, km, cal, hr].filter(Boolean).join(', ');
+        return `  • ${w.sport_type} (${date}): ${parts}`;
+      });
+      sections.push(`Ring-tracked workouts (last 14 days):\n${workoutLines.join('\n')}`);
     }
 
     const healthContext = sections.length > 0

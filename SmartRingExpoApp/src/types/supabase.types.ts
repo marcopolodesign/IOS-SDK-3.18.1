@@ -538,6 +538,9 @@ export interface Database {
           bp_diastolic_avg: number | null;
           sport_records_count: number;
           strava_activities_count: number;
+          spo2_min: number | null;
+          sleep_awake_min: number | null;
+          hr_nocturnal_avg: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -563,6 +566,9 @@ export interface Database {
           bp_diastolic_avg?: number | null;
           sport_records_count?: number;
           strava_activities_count?: number;
+          spo2_min?: number | null;
+          sleep_awake_min?: number | null;
+          hr_nocturnal_avg?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -588,6 +594,9 @@ export interface Database {
           bp_diastolic_avg?: number | null;
           sport_records_count?: number;
           strava_activities_count?: number;
+          spo2_min?: number | null;
+          sleep_awake_min?: number | null;
+          hr_nocturnal_avg?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -674,6 +683,121 @@ export interface Database {
           created_at?: string;
         };
       };
+      illness_scores: {
+        Row: {
+          id: string;
+          user_id: string;
+          score_date: string;
+          score: number;
+          status: string;
+          nocturnal_hr: number | null;
+          spo2_min_val: number | null;
+          hrv_sdnn: number | null;
+          temperature_avg: number | null;
+          sleep_awake_min: number | null;
+          baseline_nocturnal_hr: number | null;
+          baseline_hrv_sdnn: number | null;
+          baseline_spo2_min: number | null;
+          baseline_temperature: number | null;
+          baseline_sleep_awake: number | null;
+          sub_nocturnal_hr: number;
+          sub_hrv: number;
+          sub_spo2: number;
+          sub_temperature: number;
+          sub_sleep: number;
+          baseline_days: number;
+          stale: boolean;
+          notified: boolean;
+          prev_status: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          score_date: string;
+          score?: number;
+          status?: string;
+          nocturnal_hr?: number | null;
+          spo2_min_val?: number | null;
+          hrv_sdnn?: number | null;
+          temperature_avg?: number | null;
+          sleep_awake_min?: number | null;
+          baseline_nocturnal_hr?: number | null;
+          baseline_hrv_sdnn?: number | null;
+          baseline_spo2_min?: number | null;
+          baseline_temperature?: number | null;
+          baseline_sleep_awake?: number | null;
+          sub_nocturnal_hr?: number;
+          sub_hrv?: number;
+          sub_spo2?: number;
+          sub_temperature?: number;
+          sub_sleep?: number;
+          baseline_days?: number;
+          stale?: boolean;
+          notified?: boolean;
+          prev_status?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          score_date?: string;
+          score?: number;
+          status?: string;
+          nocturnal_hr?: number | null;
+          spo2_min_val?: number | null;
+          hrv_sdnn?: number | null;
+          temperature_avg?: number | null;
+          sleep_awake_min?: number | null;
+          baseline_nocturnal_hr?: number | null;
+          baseline_hrv_sdnn?: number | null;
+          baseline_spo2_min?: number | null;
+          baseline_temperature?: number | null;
+          baseline_sleep_awake?: number | null;
+          sub_nocturnal_hr?: number;
+          sub_hrv?: number;
+          sub_spo2?: number;
+          sub_temperature?: number;
+          sub_sleep?: number;
+          baseline_days?: number;
+          stale?: boolean;
+          notified?: boolean;
+          prev_status?: string | null;
+          created_at?: string;
+        };
+      };
+      user_baselines: {
+        Row: {
+          user_id: string;
+          nocturnal_hr: number[];
+          hrv_sdnn: number[];
+          spo2_min: number[];
+          temperature: number[];
+          sleep_awake: number[];
+          days_logged: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          nocturnal_hr?: number[];
+          hrv_sdnn?: number[];
+          spo2_min?: number[];
+          temperature?: number[];
+          sleep_awake?: number[];
+          days_logged?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          nocturnal_hr?: number[];
+          hrv_sdnn?: number[];
+          spo2_min?: number[];
+          temperature?: number[];
+          sleep_awake?: number[];
+          days_logged?: number;
+          updated_at?: string;
+        };
+      };
     };
     Views: {};
     Functions: {};
@@ -698,6 +822,8 @@ export type StravaActivity = Database['public']['Tables']['strava_activities']['
 export type DailySummary = Database['public']['Tables']['daily_summaries']['Row'];
 export type WeeklySummary = Database['public']['Tables']['weekly_summaries']['Row'];
 export type MonthlySummary = Database['public']['Tables']['monthly_summaries']['Row'];
+export type IllnessScore = Database['public']['Tables']['illness_scores']['Row'];
+export type UserBaseline = Database['public']['Tables']['user_baselines']['Row'];
 
 
 

@@ -23,7 +23,6 @@ import { InfoButton } from '../../components/common/InfoButton';
 import { useSleepDebt } from '../../hooks/useSleepDebt';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { BaselineProgressCard } from '../../components/home/BaselineProgressCard';
-import { ChatBar } from '../../components/focus/ChatFAB';
 import type { SleepDebtCategory } from '../../types/sleepDebt.types';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
@@ -206,11 +205,6 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
         />
       </View>
 
-      {/* Ask Coach */}
-      <View style={styles.chatBarSection}>
-        <ChatBar />
-      </View>
-
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
@@ -298,10 +292,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   gradientCardSection: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  chatBarSection: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
   },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -90,7 +90,7 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
       Extrapolation.CLAMP,
     );
     return {
-      minWidth: interpolate(progress, [0, 1], [0, containerWidth * 0.9]),
+      width: interpolate(progress, [0, 1], [150, containerWidth * 0.9]),
       paddingHorizontal: interpolate(progress, [0, 1], [16, 20]),
       paddingVertical: interpolate(progress, [0, 1], [14, 22]),
       borderRadius: interpolate(progress, [0, 1], [50, 12]),
@@ -110,6 +110,11 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
       overflow: 'hidden',
     };
   });
+
+  const handleOpenChat = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/chat');
+  }, []);
 
   return (
     <View style={styles.card}>
@@ -142,17 +147,14 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
         <AnimatedTouchableOpacity
           style={[styles.askCoachBtn, animatedBtnStyle]}
           activeOpacity={0.8}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/chat');
-          }}
+          onPress={handleOpenChat}
         >
           <View style={styles.askCoachLeft}>
             <FocusIcon />
-            <Text style={styles.askCoachText} numberOfLines={1}>
-              {isScrolled ? t('overview.ask_coach') : typewriterText}
-            </Text>
           </View>
+          <Text style={styles.askCoachText} numberOfLines={1}>
+            {isScrolled ? t('overview.ask_coach') : typewriterText}
+          </Text>
           <Animated.View style={[styles.askCoachRight, rightGroupStyle]}>
             <SendIcon />
           </Animated.View>
@@ -223,20 +225,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   askCoachLeft: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    marginRight: 10,
   },
   askCoachRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-askCoachText: {
+  askCoachText: {
     color: '#000000',
     fontSize: fontSize.md,
     fontFamily: fontFamily.demiBold,
-    flexShrink: 1,
+    flex: 1,
+    textAlign: 'left',
   },
 });
 

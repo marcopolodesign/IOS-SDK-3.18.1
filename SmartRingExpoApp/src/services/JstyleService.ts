@@ -509,6 +509,35 @@ class JstyleService {
     return await this.getSteps();
   }
 
+  // Returns all historical daily step entries from the ring (SDK stores ~7 days).
+  // Each entry has a date key "YYYY-MM-DD" and the day's totals.
+  async getAllDailyStepsHistory(): Promise<Array<{ dateKey: string; steps: number; distanceM: number; calories: number }>> {
+    if (!JstyleBridge) return [];
+    try {
+      const result: any = await this.enqueueNativeCall<any>('getStepsData', async () =>
+        withNativeTimeout(JstyleBridge.getStepsData(), 5000, 'getStepsData')
+      );
+      const records: any[] = result.data || [];
+      const allEntries: any[] = [];
+      for (const rec of records) {
+        const arr: any[] = Array.isArray(rec.arrayTotalActivityData) ? rec.arrayTotalActivityData : [];
+        allEntries.push(...arr);
+      }
+      return allEntries
+        .filter(e => e.date)
+        .map(e => ({
+          // SDK date format is "YYYY.MM.DD" — convert to "YYYY-MM-DD"
+          dateKey: String(e.date).replace(/\./g, '-'),
+          steps: Number(e.step ?? e.steps ?? 0),
+          distanceM: Number(e.distance ?? 0) * 1000, // SDK returns km
+          calories: Number(e.calories ?? 0),
+        }));
+    } catch (e) {
+      console.log('[JstyleService] getAllDailyStepsHistory error:', e);
+      return [];
+    }
+  }
+
   // ========== Sleep ==========
 
   // Cache for all sleep records — populated once per app session to avoid re-hitting native SDK

@@ -31,6 +31,9 @@ function emptyBaselines(): FocusBaselines {
     sleepScore: [],
     sleepMinutes: [],
     respiratoryRate: [],
+    spo2Min: [],
+    sleepAwakeMin: [],
+    nocturnalHR: [],
     updatedAt: null,
     daysLogged: 0,
   };
@@ -115,6 +118,9 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
       sleepScore: r.sleepScore ? pushRolling(baselines.sleepScore, r.sleepScore) : baselines.sleepScore,
       sleepMinutes: r.sleepMinutes ? pushRolling(baselines.sleepMinutes, r.sleepMinutes) : baselines.sleepMinutes,
       respiratoryRate: baselines.respiratoryRate,
+      spo2Min: baselines.spo2Min,
+      sleepAwakeMin: baselines.sleepAwakeMin,
+      nocturnalHR: baselines.nocturnalHR,
       updatedAt: day,
       daysLogged: baselines.daysLogged + 1,
     };
@@ -175,6 +181,9 @@ export function updateBaselines(
     respiratoryRate: readings.respiratoryRate
       ? pushRolling(current.respiratoryRate, readings.respiratoryRate)
       : current.respiratoryRate,
+    spo2Min: current.spo2Min ?? [],
+    sleepAwakeMin: current.sleepAwakeMin ?? [],
+    nocturnalHR: current.nocturnalHR ?? [],
     updatedAt: today,
     daysLogged: current.daysLogged + 1,
   };
@@ -345,30 +354,29 @@ export interface IllnessParams {
   temperature: number | null;
   restingHR: number | null;
   hrv: number | null;
-  respiratoryRate: number | null;
   sleepFragmentCount?: number | null;
   baselines: FocusBaselines;
 }
 
 function buildIllnessSummary(status: IllnessStatus, signals: IllnessSignals): string {
-  if (status === 'CLEAR') return 'All signals normal. No signs of immune activation.';
+  if (status === 'CLEAR') return 'All signals within your normal range.';
   if (status === 'SICK') {
     const flagged: string[] = [];
     if (signals.tempDeviation) flagged.push('elevated temperature');
-    if (signals.restingHRElevated) flagged.push('elevated resting HR');
+    if (signals.restingHRElevated) flagged.push('elevated nocturnal HR');
     if (signals.hrvSuppressed) flagged.push('suppressed HRV');
-    if (signals.respiratoryRateElevated) flagged.push('elevated breathing rate');
+    if (signals.spo2Low) flagged.push('low blood oxygen');
     if (signals.sleepFragmented) flagged.push('fragmented sleep');
-    return `Multiple signals flagged: ${flagged.join(', ')}. Consider resting today.`;
+    return `Multiple signals suggest your body is under strain. Consider resting today.`;
   }
   // WATCH
   const active: string[] = [];
   if (signals.tempDeviation) active.push('temperature');
-  if (signals.restingHRElevated) active.push('resting HR');
+  if (signals.restingHRElevated) active.push('nocturnal HR');
   if (signals.hrvSuppressed) active.push('HRV');
-  if (signals.respiratoryRateElevated) active.push('breathing rate');
+  if (signals.spo2Low) active.push('blood oxygen');
   if (signals.sleepFragmented) active.push('sleep quality');
-  return `Watch: ${active.join(', ')} slightly off. Keep an eye on how you feel.`;
+  return `Some signals are deviating from your baseline. Keep an eye on how you feel.`;
 }
 
 export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
@@ -376,7 +384,6 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
     temperature,
     restingHR,
     hrv,
-    respiratoryRate,
     sleepFragmentCount,
     baselines,
   } = params;
@@ -384,7 +391,6 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
   const tempMed = median(baselines.temperature);
   const hrMed = median(baselines.restingHR);
   const hrvMed = median(baselines.hrv);
-  const rrMed = median(baselines.respiratoryRate);
 
   let signalCount = 0;
 
@@ -410,12 +416,6 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
     return false;
   })();
 
-  const respiratoryRateElevated = (() => {
-    if (respiratoryRate == null) return false;
-    if (respiratoryRate > 18) { signalCount += 1; return true; }
-    return false;
-  })();
-
   const sleepFragmented = (() => {
     if (sleepFragmentCount == null) return false;
     if (sleepFragmentCount > 4) { signalCount += 1; return true; }
@@ -426,7 +426,7 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
     tempDeviation,
     restingHRElevated,
     hrvSuppressed,
-    respiratoryRateElevated,
+    spo2Low: false, // not available client-side; server-computed scores use real SpO2
     sleepFragmented,
   };
 
@@ -451,10 +451,13 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
       const diff = temperature - tempMed;
       return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}°C`;
     })(),
+    spo2Delta: null,
+    sleepDelta: null,
   };
 
   return {
     status,
+    score: 0, // client fallback — server hasn't run yet
     signals,
     summary: buildIllnessSummary(status, signals),
     details,

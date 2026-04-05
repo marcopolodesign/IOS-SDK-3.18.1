@@ -4,6 +4,222 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-04: HR Zones — Fix Incorrect BPM Ranges and Zone Assignment
+
+**Problem:** HR zone BPM ranges were off for two reasons:
+1. `hrToZoneIndex` mapped both "Rest" (<50%) and "Light" (50-60%) → Z1, but the display said Z1 started at 50% — so Z1 showed "95-113 bpm" but actually caught everything below 114 bpm
+2. BPM range labels were always from the age formula even when Strava's `zones_json` already stores actual athlete-specific `{ min, max }` per zone from the `/activities/{id}/zones` API
+
+**Fix:**
+- Replaced `getHeartRateZone()` string mapping with direct percentage thresholds: Z1 <60%, Z2 60-70%, Z3 70-80%, Z4 80-90%, Z5 ≥90% — now internally consistent
+- Added `extractStravaBpmRanges()`: reads actual zone `min`/`max` from `zones_json` of week activities — athlete-specific Strava boundaries, used when available
+- Falls back to age-based calculation (220 - 30 = 190 maxHR) when no Strava data
+- Fixed Z5 label from `>170 bpm` to `>171 bpm` (was subtracting 1 incorrectly)
+
+**Files modified:** `src/utils/activity/trainingInsights.ts`, `src/components/home/TrainingInsightsCard.tsx`
+
+---
+
+## 2026-04-04: SleepTrendChart — two-line date labels (day + month)
+
+Label cells now show day number (13px, bold when selected) on top and month abbreviation (9px, dimmer) below, stacked vertically. Replaced single `shortDate()` string with `parseDateParts()` returning `{ day, month }` separately.
+
+**Files modified:** `src/components/detail/SleepTrendChart.tsx`
+
+## 2026-04-04: SleepTrendChart — scroll-driven day selection + haptics
+
+Scrolling the timeline now drives day selection. `onScroll` calculates the centered column (`Math.round((offsetX + halfScreen - halfCol) / COL_W)`), clamps to valid range, maps back to `origIndex`, calls `onSelectDay`. A `lastHapticColRef` tracks the previous column — one `Haptics.impactAsync(Light)` fires per column crossed. `scrollEventThrottle` set to 32ms. No tap-to-select removed (still works for direct taps).
+
+**Files modified:** `src/components/detail/SleepTrendChart.tsx`
+
+## 2026-04-04: Sleep history — progressive two-phase loading
+
+`useMetricHistory` now accepts `{ initialDays?, fullDays? }`. For sleep with `fullDays > initialDays`: phase 1 fetches `initialDays` (7) → renders immediately, `isLoading` clears. Phase 2 fetches `fullDays` (30) silently in background → older bars fill in as user scrolls left. A `cacheIsCompleteRef` flag prevents redundant extended fetches on repeat visits. All other metric types unchanged.
+
+**Files modified:** `src/hooks/useMetricHistory.ts`, `app/detail/sleep-detail.tsx`
+
+## 2026-04-04: HR Zones — Oura-Style Redesign (Donut + Horizontal Bars)
+
+**What changed (user-visible):** The Training Insights card's HR zone section now displays like Oura — a bold headline showing the dominant zone percentage (e.g. "81% in Z2 Endurance"), a small inline donut chart showing all zones proportionally, and 5 horizontal bar rows (Z5→Z1) each with its percentage and BPM range. All 5 zones are always shown even when they have 0%.
+
+**Files modified:**
+- `src/utils/activity/trainingInsights.ts` — Exported `ZONE_COLORS`, extended `ZoneEntry` with `bpmMin`/`bpmMax`/`percentage`, added `dominantZoneIndex` to `zoneSummary`, added `getZoneBpmRanges()` helper, removed filter so all 5 zones always returned
+- `src/components/home/TrainingInsightsCard.tsx` — Full redesign of HR zones section: inline SVG donut chart (`DonutChart` component), header text with dominant zone, Z5→Z1 horizontal bar rows with percentages and BPM ranges; dominant zone highlighted at full opacity
+- `src/i18n/locales/en.json` — Added `training_insights.dominant_zone`, `training_insights.past_7_days`
+- `src/i18n/locales/es.json` — Spanish translations for same keys
+
+---
+
+## 2026-04-04: Fix Activity Detail — Historical Days Show Real Data
+
+**Problem:** Activity detail page showed 0 steps/calories/distance for all past days (today was fixed in a previous session).
+
+**Root cause (3 layers):**
+1. `JstyleService.getSteps()` only extracted today's entry from the SDK, discarding 6 days of history the SDK returns
+2. `DataSyncService.syncStepsData()` only wrote today's hourly steps to Supabase; `updateDailySummary()` was only called for today
+3. `useMetricHistory` fell back to the ring only when Supabase had 0 rows — but past days HAD rows (from sleep/HR syncs) with `total_steps=0`, so the fallback never triggered
+
+**Fix:**
+- `JstyleService.ts`: Added `getAllDailyStepsHistory()` — parses all entries from the SDK's `arrayTotalActivityData`, returns `{dateKey, steps, distanceM, calories}[]` for all days
+- `UnifiedSmartRingService.ts`: Exposed `getAllDailyStepsHistory()`
+- `DataSyncService.ts`: `syncStepsData()` now writes one daily-total reading per historical day to `steps_readings`; `syncAllData()` now calls `updateDailySummary()` for all 7 days instead of just today
+- `useMetricHistory.ts`: `fetchActivityFromRing()` now iterates all historical entries; fallback now triggers when all Supabase rows have `steps=0` (not only when there are no rows)
+
+**Files modified:**
+- `src/services/JstyleService.ts`
+- `src/services/UnifiedSmartRingService.ts`
+- `src/services/DataSyncService.ts`
+- `src/hooks/useMetricHistory.ts`
+
+---
+
+## 2026-04-04: Sleep Detail Chart — taller header, thicker bars, tighter spacing
+
+`COL_W` 44→32, `BAR_W` 14→22, `CHART_H` 68→100. Gap between bars reduced from 30px to 10px. Gradient zone `paddingBottom` bumped sm→md.
+
+**Files modified:** `src/components/detail/SleepTrendChart.tsx`, `app/detail/sleep-detail.tsx`
+
+## 2026-04-04: Fix Activity Detail Page Showing Zero Data
+
+**Problem:** Activity detail page showed 0 steps/calories/distance even though the home screen displayed real values.
+
+**Root cause:** The page queries `daily_summaries` for activity data, but that table often has rows with `total_steps=0` (sync wrote sleep/HR data before ring step sync ran). The existing context fallback only triggered when no row existed — not when a row had all zeros.
+
+**Fix:** Changed fallback logic in `app/detail/activity-detail.tsx` to always prefer live ring/HealthKit data from context for today's view, regardless of whether `daily_summaries` has a (possibly zero-value) row. Also injected live today data into the bar chart map so the today bar also reflects current values. Fixed missing `hrMin: null` field in `buildTodayActivityFromContext`.
+
+**Files modified:**
+- `app/detail/activity-detail.tsx`
+
+---
+
+## 2026-04-04: Illness Watch Detail Screen + Rename
+
+**Change:** Renamed "Body Stress" card back to "Illness Watch". Added a full detail screen reachable by tapping "View full analysis →" inside the expanded card. Shows: hero (large score + status badge + date), 5 signal cards each with an **SVG line chart** (14-day history with data points + dashed baseline reference line + gradient area fill, color-coded per signal) plus your value vs baseline numbers + severity pill + medical context from Stanford/Mount Sinai research, overall score trend bar chart, and status-dependent recommendations.
+
+**Files created:**
+- `app/(tabs)/settings/illness-detail.tsx` — thin route re-export
+- `src/screens/IllnessDetailScreen.tsx` — full detail screen
+
+**Files modified:**
+- `src/components/focus/IllnessWatchCard.tsx` — exports shared utilities, adds "View full analysis →" link
+- `app/(tabs)/settings/_layout.tsx` — registered `illness-detail` Stack.Screen
+- `src/i18n/locales/en.json` + `es.json` — renamed card_title, ~25 new detail keys
+
+---
+
+## 2026-04-04: Move Coach Text Input to Top — Remove Bottom ChatBar
+
+**Change:** Removed the `ChatBar` dark input bar from the bottom of Overview, Sleep, and Activity tabs and upgraded the `MetricInsightCard`'s "Ask Coach" pill (below the 3 metrics) to a full text input. Users can now type directly into the white pill and send a message to the coach from the top of each screen.
+
+**Files deleted:**
+- `src/components/focus/ChatFAB.tsx` — `ChatBar` and deprecated `ChatFAB` were dead code with no remaining consumers; deleted
+
+**Files modified:**
+- `src/components/home/MetricInsightCard.tsx` — Added `TextInput` with typewriter placeholder, `text` state, `handleSend` (navigates to `/chat` with query param), `handleOpenChat` (direct nav, `useCallback`). When not scrolled: shows text input + send button. When scrolled/collapsed: shows "Ask Coach" label via `display: 'none'` toggle (avoids TextInput mount/unmount thrash). FocusIcon no longer has a separate tap handler.
+- `src/screens/home/OverviewTab.tsx` — Removed `ChatBar` import, JSX block, and `chatBarSection` style
+- `src/screens/home/SleepTab.tsx` — Same removals
+- `src/screens/home/ActivityTab.tsx` — Same removals
+
+**Key notes:**
+- `display: 'none'` used instead of conditional rendering to keep TextInput mounted across scroll transitions — avoids native text field teardown/recreate
+- `handleOpenChat` uses `useCallback` (no deps); `handleSend` is a plain function (depends on `text` state, `useCallback` would re-create on every keystroke anyway)
+
+---
+
+## 2026-04-04: Sleep Detail Chart — 30 days, avg trendline, X axis, thicker bars
+
+**Change:**
+- **30 days history**: `fetchSleepHistory` now queries `nDaysAgo(30)`. `buildDayNavigatorLabels(30)` in sleep-detail.tsx. Scroll left to see up to a month of data.
+- **X axis line**: `<Line>` at the baseline of the chart (`rgba(255,255,255,0.12)`).
+- **Rolling average trendline**: The connecting line now plots a 5-day centered rolling average score per column (window ±2 days, zero-score days excluded). Shows trend direction, not per-night volatility.
+- **Thicker bars**: `BAR_W` increased 8→14px.
+- **No rounded corners**: `rx` removed from all bars (sharp edges).
+
+**Files modified:** `src/hooks/useMetricHistory.ts`, `app/detail/sleep-detail.tsx`, `src/components/detail/SleepTrendChart.tsx`
+
+## 2026-04-04: Sleep Detail Page — Polish (gradient edge, thin bars, today centered)
+
+**Change:** Three UI fixes to the sleep detail redesign:
+- **Gradient from screen edge**: Moved `paddingTop: insets.top` off the container and onto the header view only, so the purple gradient now starts from the very top of the screen.
+- **Thinner bars**: Fixed bar width to 8px centered in each 44px column.
+- **Today centered via scrollable timeline**: Converted to a horizontal `ScrollView` with fixed 44px columns. 3 ghost columns appended to the right of today. On mount, scroll position is set so today is centered in the viewport. Scrolling left reveals older days.
+
+**Files modified:** `src/components/detail/SleepTrendChart.tsx`, `app/detail/sleep-detail.tsx`
+
+## 2026-04-04: Sleep Detail Page — Timeline + Bar Chart + Gradient Header
+
+**Change:** Redesigned the sleep detail page with three visual improvements:
+
+1. **Purple gradient header**: A `RadialGradient` SVG (matching GradientInfoCard's technique) is placed absolutely behind the header + chart zone, creating a purple glow (`#7100C2`) that fades downward — consistent with the sleep theme used in the insight block.
+
+2. **Day timeline replaces pill chips**: The `DayNavigator` pill chips are gone. Instead, a date text row shows short dates (e.g. "Apr 2") with today on the **right** and older days extending to the left — natural past-to-present reading direction. Selected day is white/bold; others are dimmed. Tapping any label selects that day.
+
+3. **Sleep score bar chart + trendline**: A 7-bar SVG chart sits below the date labels, one bar per day, color-coded green/gold/red by score. The selected day's bar is full opacity; others are at 33%. A monotone cubic bezier trendline connects the tops of all non-zero bars with a subtle white stroke. Tapping any column also selects that day.
+
+**Files created:** `src/components/detail/SleepTrendChart.tsx`
+**Files modified:** `app/detail/sleep-detail.tsx`
+
+## 2026-04-04: Server-Side Illness Score — Client Integration
+
+**Change:** Completed the client-side integration for the server-computed illness score feature. The `useFocusData` hook now reads from the `illness_scores` Supabase table (populated daily by `compute_illness_scores()` pg_cron job) instead of calling `computeIllnessWatch()` client-side. A mapper converts the DB row to `IllnessWatch`. The old client-side function is kept as fallback before the first cron run. The `IllnessWatchCard` now shows a continuous 0–100 score in the header, severity pills (Normal/Mild/Moderate/Severe) per signal instead of ✓/✕, a stale indicator when data is >48h old, SpO2 row replacing the old breathing rate row, and signal labels updated to match the server model (Nocturnal HR, Blood Oxygen, etc.).
+
+**Files modified:**
+- `src/types/supabase.types.ts` — Added `illness_scores` and `user_baselines` table types; convenience exports `IllnessScore`, `UserBaseline`
+- `src/types/focus.types.ts` — Added `score`, `stale`, `computedAt` to `IllnessWatch`; replaced `respiratoryRateElevated` with `spo2Low` in `IllnessSignals`; added `spo2Delta`, `sleepDelta` to `IllnessWatchDetails`; added `spo2Min[]`, `sleepAwakeMin[]`, `nocturnalHR[]` to `FocusBaselines`
+- `src/services/DataSyncService.ts` — Added `spo2_min`, `sleep_awake_min`, `hr_nocturnal_avg` computation and upsert in `updateDailySummary()`
+- `src/services/ReadinessService.ts` — Replaced `respiratoryRateElevated` with `spo2Low: false` in client fallback; removed `respiratoryRate` param from `IllnessParams`; added `score: 0` to fallback return; added `spo2Min`, `sleepAwakeMin`, `nocturnalHR` to `emptyBaselines()` and `updateBaselines()`; updated summary strings
+- `src/hooks/useFocusData.ts` — Queries `illness_scores` table, maps server row via `mapServerScoreToIllnessWatch()`, falls back to client-side computation; imports `IllnessScore` type
+- `src/components/focus/IllnessWatchCard.tsx` — Full rewrite: score number in header, severity pills with 4 tiers, stale warning banner, SpO2 row replacing breathing rate, `getSeverityFromDelta()` helper for client fallback tier estimation
+- `src/i18n/locales/en.json` — Updated `illness_watch` namespace: card title → "Body Stress", new signal/severity/stale keys
+- `src/i18n/locales/es.json` — Same keys in Latin American Spanish
+
+**Key notes:**
+- Card title changed from "Illness Watch" → "Body Stress"
+- Server score takes priority; client fallback only fires before pg_cron has run once
+- Severity pills: green=Normal, amber=Mild, orange=Moderate, red=Severe
+- `spo2Low` severity is always 'moderate' from client fallback (no absolute threshold available without raw SpO2 readings)
+
+---
+
+## 2026-04-04: Fix Coach Page Showing Stale Last Run
+
+**Change:** The coach/focus tab was serving a 6-hour cached readiness state even after a newer run was in Supabase. The Realtime subscription only fires on new DB inserts — if the run was already synced before the user opened the tab, no event fired and the stale cache was never busted. Fixed by firing a background Strava sync + silent reload on every tab focus. A `hasDataRef` prevents the reload from showing a spinner when data is already rendered.
+
+**Files modified:**
+- `src/hooks/useFocusData.ts` — Imported `stravaService`; added `hasDataRef` to gate `setIsLoading(true)` so background reloads don't flash a spinner; set `hasDataRef.current = true` in both cache-hit and fresh-fetch paths; `useFocusEffect` now fires `stravaService.backgroundSync(3).then(() => load(true))` after the initial `load()` call
+
+---
+
+## 2026-04-04: Strava Sync Reliability + Coach Activity Context
+
+**Change:** Fixed two related issues: (1) Strava activities weren't syncing when opening the Training page or sending a coach message — only the home tab had an auto-sync, rate-limited to 30 minutes. (2) The AI coach was missing ring-tracked workouts (`sport_records`) entirely and showed stale/zero steps when `daily_summaries` hadn't rolled up yet. All five root causes addressed.
+
+**Files modified:**
+- `src/screens/StravaScreen.tsx` — Added `backgroundSync(7)` inside `loadData()`, run in parallel with `getAthlete()` + `getAthleteStats()` via `Promise.all`, so the activity list is always fresh on page open without extra delay
+- `src/screens/AIChatScreen.tsx` — Imported `stravaService`; added fire-and-forget `backgroundSync(3)` before each coach call so the edge function reads fresh Strava data
+- `src/hooks/useHomeData.ts` — Reduced home-tab auto-sync cooldown from 30 min → 10 min (`STRAVA_SYNC_INTERVAL_MS`)
+- `supabase/functions/coach-chat/index.ts` — Added `sport_records` query (last 5 ring workouts, 14-day window) and a `steps_readings` fallback query (last 24h rolling window) to the parallel fetch; coach prompt now includes a "Ring-tracked workouts" section; steps use `??` nullish coalesce so 0 is a valid value; `RingWorkout` interface extracted; deployed
+
+**Key notes:**
+- `backgroundSync` in `AIChatScreen` is fire-and-forget (not awaited) — avoids blocking the coach response on Strava API latency; the edge function reads from the DB which is already populated from prior syncs
+- Steps fallback uses a 24-hour rolling window (`gte('recorded_at', now - 24h)`) rather than a calendar date string — avoids UTC vs. local-date mismatch for users in early-morning timezones
+- `||` → `??` fix: `latestDay.total_steps === 0` is a valid value and should not fall through to the readings fallback
+- `sport_records` are ring-tracked workouts (walks, runs, gym sessions not on Strava); coach now sees both sources
+
+---
+
+## 2026-04-04: Recovery Detail + useFocusData Resting HR Fallback
+
+**Change:** Fixed resting HR showing wrong value (0 score, 103 bpm daytime min) on the Recovery Detail screen. Root cause: `fetchHRHistory` computes restingHR as `Math.min(all heart_rate_readings)`, which includes daytime activity (80–110 bpm) — not the true overnight resting HR. Also fixed a race condition in `useFocusData` where readiness had null restingHR on first coach tab open.
+
+**Files modified:**
+- `app/detail/recovery-detail.tsx` — `getHR()` now overrides today's `restingHR` with `homeData.lastNightSleep.restingHR` (ring's accurate overnight value) regardless of what Supabase returns; `todayHRFallback` gained a Tier 2 using `lastNightSleep.restingHR` when `hrChartData` is empty; `computeReadiness()` also falls back to `sleep?.restingHR` for historical days
+- `src/hooks/useMetricHistory.ts` — `fetchHRHistory`/`fetchHRFromRing` compute `restingHR` from overnight window (hours 0–7) only; `DayActivityData` gains `hrMin: number | null` from `daily_summaries.hr_min` — the authoritative per-day min HR; `fetchActivityHistory` selects `hr_min`; ring fallback sets `hrMin: null`
+- `app/detail/recovery-detail.tsx` — `computeReadiness` fallback chain: ring overnight HR → `activity.hrMin` (daily_summaries) → overnight min → 0; `todayActivityFallback` includes `hrMin: null`
+- `src/hooks/useFocusData.ts` — After serving a valid cache, checks if `readiness.components.restingHR` is null; if so, reads `home_data_cache` and triggers a background `load(true)` if a valid `restingHR` is now available there; `bgRefreshInFlight` ref guard prevents concurrent background refreshes
+
+---
+
 ## 2026-03-31: TestFlight build 1.0.18 (build 19)
 
 **Change:** Bumped version to 1.0.18 (build 19) and published to App Store Connect via TestFlight.

@@ -19,7 +19,6 @@ import { getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useBaselineMode } from '../../context/BaselineModeContext';
-import { ChatBar } from '../../components/focus/ChatFAB';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -364,11 +363,6 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         />
       </View>
 
-      {/* Ask Coach */}
-      <View style={styles.chatBarSection}>
-        <ChatBar />
-      </View>
-
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
@@ -378,10 +372,6 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  chatBarSection: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
   },
   metricsInsightSection: {
     marginHorizontal: spacing.md,
