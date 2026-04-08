@@ -4,6 +4,16 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-08: SpO2 Min — Use 5th Percentile Instead of Absolute Minimum
+
+**Problem:** Activity tab "Min SpO2" showed 86% while Sleep tab showed 98%. Root cause: Activity tab uses `Math.min()` (the single worst reading), while Sleep tab uses `lastSpo2` (most recent reading). A single motion artifact or sensor glitch during the day could drive the Activity card to alarming values.
+
+**Fix:** Replaced `Math.min(...values)` with 5th percentile when ≥5 readings are available, falling back to absolute min for fewer readings. This filters out bottom outliers (motion artifacts, poor sensor contact) while still detecting genuine oxygen dips.
+
+**Files modified:** `src/services/TodayCardVitalsService.ts` (Activity tab card), `src/services/DataSyncService.ts` (daily summary / illness score)
+
+---
+
 ## 2026-04-04: HR Zones — Fix Incorrect BPM Ranges and Zone Assignment
 
 **Problem:** HR zone BPM ranges were off for two reasons:
