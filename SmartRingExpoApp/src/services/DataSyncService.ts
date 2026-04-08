@@ -540,8 +540,10 @@ class DataSyncService {
         ? diastolicValues.reduce((a, b) => a + b, 0) / diastolicValues.length
         : null;
 
-      // Illness score signal columns
-      const spo2Min = spo2Values.length > 0 ? Math.min(...spo2Values) : null;
+      // Illness score signal columns — use 5th percentile to reduce outlier sensitivity
+      const spo2Min = spo2Values.length >= 5
+        ? (() => { const s = [...spo2Values].sort((a, b) => a - b); return s[Math.max(0, Math.ceil(s.length * 0.05) - 1)]; })()
+        : spo2Values.length > 0 ? Math.min(...spo2Values) : null;
       const sleepAwakeMin = latestSleep?.awake_min ?? null;
       const nocturnalReadings = (heartRates ?? []).filter(r => {
         const hour = new Date(r.recorded_at).getHours();

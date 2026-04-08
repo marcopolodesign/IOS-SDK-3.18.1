@@ -67,6 +67,13 @@ function isValidSpo2(value: number): boolean {
   return Number.isFinite(value) && value >= 70 && value <= 100;
 }
 
+/** Return the value at the given percentile (0-1) from a sorted-ascending copy of `arr`. */
+function percentile(arr: number[], p: number): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.max(0, Math.ceil(sorted.length * p) - 1);
+  return sorted[idx];
+}
+
 function toNullableNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -138,7 +145,7 @@ class TodayCardVitalsService {
           }
         }
         if (values.length > 0) {
-          partial.minSpo2 = Math.min(...values);
+          partial.minSpo2 = values.length >= 5 ? percentile(values, 0.05) : Math.min(...values);
           partial.lastSpo2 = values[values.length - 1];
         }
       } catch (error) {
