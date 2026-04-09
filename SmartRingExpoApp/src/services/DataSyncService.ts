@@ -268,83 +268,196 @@ class DataSyncService {
     userId: string,
     service: typeof UnifiedSmartRingService
   ) {
-    // Fetch existing night sessions for the past 7 days once, to detect overlaps
+    // Fetch existing sessions for overlap detection
     const since = new Date();
     since.setDate(since.getDate() - 8);
     const existingNights = await supabaseService.getSleepSessions(userId, since, new Date());
     const nightSessions = existingNights.filter(s => s.session_type === 'night');
 
-    // Sync up to 7 days of sleep history so detail screen can show past days
+    // Fetch ALL raw records at once (same call useHomeData uses for the hypnogram)
+    let rawRecords: any[] = [];
+    try {
+      const rawResult = await service.getSleepDataRaw();
+      rawRecords = rawResult.records || [];
+    } catch (e) {
+      console.error('[Sync] getSleepDataRaw failed:', e);
+      return;
+    }
+    if (rawRecords.length === 0) {
+      console.log('[Sync] No raw sleep records from ring');
+      return;
+    }
+
+    // Remote debug log — captures raw SDK values before any fallback processing
+    supabaseService.debugLog(userId, 'sleep_raw_records', {
+      count: rawRecords.length,
+      records: rawRecords.map((r: any) => ({
+        startTime_SleepData: r.startTime_SleepData ?? null,
+        startTimestamp: r.startTimestamp ?? null,
+        totalSleepTime: r.totalSleepTime ?? null,
+        sleepUnitLength: r.sleepUnitLength ?? null,
+        arraySleepQualityLength: (r.arraySleepQuality ?? []).length,
+      })),
+    });
+
+    // Parse "YYYY.MM.DD HH:mm:ss" string timestamps
+    const parseStartStr = (str?: string): number | undefined => {
+      if (!str) return undefined;
+      const [d, t] = str.split(' ');
+      if (!d || !t) return undefined;
+      const [y, m, day] = d.split('.').map(Number);
+      const [hh, mm, ss] = t.split(':').map(Number);
+      if ([y, m, day, hh, mm, ss].some(n => Number.isNaN(n))) return undefined;
+      return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
+    };
+
+    // Normalize records
+    const normalized = rawRecords.map(r => {
+      const start = r.startTimestamp || parseStartStr(r.startTime_SleepData);
+      const unit = Number(r.sleepUnitLength) || 1;
+      const arr: number[] = r.arraySleepQuality || [];
+      const durationMin = Number(r.totalSleepTime) || arr.length * unit;
+      return { start, unit, arr, durationMin };
+    }).filter(r => typeof r.start === 'number' && r.start > 0);
+
+    if (normalized.length === 0) return;
+
+    // Merge consecutive records with ≤60 min gap into blocks (mirrors deriveFromRaw)
+    const sorted = [...normalized].sort((a, b) => a.start! - b.start!);
+    const MAX_GAP_MS = 60 * 60 * 1000;
+    const blocks: { start: number; end: number; records: typeof normalized }[] = [];
+    let curBlock: typeof blocks[0] | null = null;
+
+    for (const rec of sorted) {
+      const recStart = rec.start!;
+      const recEnd = rec.start! + rec.durationMin * 60000;
+      if (!curBlock) {
+        curBlock = { start: recStart, end: recEnd, records: [rec] };
+      } else if (recStart - curBlock.end <= MAX_GAP_MS) {
+        curBlock.end = Math.max(curBlock.end, recEnd);
+        curBlock.records.push(rec);
+      } else {
+        blocks.push(curBlock);
+        curBlock = { start: recStart, end: recEnd, records: [rec] };
+      }
+    }
+    if (curBlock) blocks.push(curBlock);
+
+    // Build per-minute timeline and compute stage minutes for a merged block.
+    // SDK encoding: 1=Deep, 2=Light, 3=REM, other=Awake (matches useHomeData mapSleepType).
+    const computeStageMins = (block: typeof blocks[0]) => {
+      const totalMin = Math.max(0, Math.round((block.end - block.start) / 60000));
+      const timeline = new Array(totalMin).fill(0);
+      for (const rec of block.records) {
+        const offset = Math.round((rec.start! - block.start) / 60000);
+        const unit = Math.max(1, rec.unit);
+        rec.arr.forEach((val: number, idx: number) => {
+          // Map SDK val → timeline value: deep=3, rem=2, light=1, awake=0
+          const tv = val === 1 ? 3 : val === 3 ? 2 : val === 2 ? 1 : 0;
+          for (let k = 0; k < unit; k++) {
+            const pos = offset + idx * unit + k;
+            if (pos >= 0 && pos < timeline.length) timeline[pos] = tv;
+          }
+        });
+      }
+      let deep = 0, rem = 0, light = 0, awake = 0;
+      for (const v of timeline) {
+        if (v === 3) deep++;
+        else if (v === 2) rem++;
+        else if (v === 1) light++;
+        else awake++;
+      }
+      return { deep, light, rem, awake };
+    };
+
+    // Sync up to 7 days — match each block to the day it ENDS on (wake-up date)
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
       try {
-        const sleepData = await service.getSleepByDay(dayIndex);
-        console.log(`[DataSync] sleep day ${dayIndex}: deep=${sleepData?.deep} light=${sleepData?.light} rem=${sleepData?.rem} startTime=${sleepData?.startTime}`);
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - dayIndex);
+        const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
 
-        if (sleepData && (sleepData.deep > 0 || sleepData.light > 0)) {
-          // Compute the target calendar date for this dayIndex
-          const targetDate = new Date();
-          targetDate.setDate(targetDate.getDate() - dayIndex);
+        // Find all blocks that end (wake-up) on this date
+        const matching = blocks.filter(b => {
+          const endD = new Date(b.end);
+          const endStr = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`;
+          return endStr === targetDateStr;
+        });
 
-          // Use SDK timestamps if available, otherwise derive from target date
-          const endTime = sleepData.endTime
-            ? new Date(sleepData.endTime)
-            : new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 7, 0, 0); // default 7am
-
-          const totalMinutes = sleepData.deep + sleepData.light + (sleepData.rem || 0) + (sleepData.awake || 0);
-          const startTime = sleepData.startTime
-            ? new Date(sleepData.startTime)
-            : new Date(endTime.getTime() - totalMinutes * 60 * 1000);
-
-          // Use rawQualityRecords for hypnogram rendering (detail is a plain string, not JSON)
-          const detailJson = sleepData.rawQualityRecords
-            ? { rawQualityRecords: sleepData.rawQualityRecords }
-            : null;
-
-          // Classify as night or nap
-          const totalSleepMin = sleepData.deep + sleepData.light + (sleepData.rem || 0);
-          const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
-          const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
-
-          // Skip naps that fall entirely within or overlap an existing night session
-          // (e.g. the ring reports the last hour of a night as a separate block)
-          if (classification.sessionType === 'nap') {
-            const overlapsNight = nightSessions.some(night => {
-              const nightStart = new Date(night.start_time).getTime();
-              const nightEnd = new Date(night.end_time).getTime();
-              return startTime.getTime() < nightEnd && endTime.getTime() > nightStart;
-            });
-            if (overlapsNight) {
-              console.log(`[Sync] Sleep day ${dayIndex}: skipping nap ${startTime.toISOString()} — overlaps existing night session`);
-              continue;
-            }
-          }
-
-          // Compute nap score if it's a nap
-          const napScore = classification.sessionType === 'nap'
-            ? calculateNapScore(
-                totalSleepMin,
-                sleepData.deep,
-                sleepData.light,
-                sleepData.rem || 0,
-                sleepData.awake || 0,
-              )
-            : null;
-
-          await supabaseService.insertSleepSession({
-            user_id: userId,
-            start_time: startTime.toISOString(),
-            end_time: endTime.toISOString(),
-            deep_min: sleepData.deep,
-            light_min: sleepData.light,
-            rem_min: sleepData.rem || null,
-            awake_min: sleepData.awake || null,
-            sleep_score: null,
-            detail_json: detailJson,
-            session_type: classification.sessionType,
-            nap_score: napScore,
-          });
-          console.log(`[Sync] Sleep day ${dayIndex} synced (${startTime.toISOString().split('T')[0]})`);
+        if (matching.length === 0) {
+          console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}): no blocks ending on this date`);
+          continue;
         }
+
+        // Use the longest block for this date (handles edge-case duplicates)
+        const block = matching.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a), matching[0]);
+
+        const startTime = new Date(block.start);
+        const endTime = new Date(block.end);
+
+        // Duration gate — ring sometimes reports 20-25h cumulative sessions
+        const durationHours = (block.end - block.start) / (1000 * 60 * 60);
+        if (durationHours > 14) {
+          console.log(`[Sync] Sleep day ${dayIndex}: skipping — implausible duration ${durationHours.toFixed(1)}h`);
+          continue;
+        }
+
+        const { deep, light, rem, awake } = computeStageMins(block);
+
+        if (deep === 0 && light === 0 && rem === 0) {
+          console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}): skipping — no sleep stages`);
+          continue;
+        }
+
+        console.log(`[DataSync] sleep day ${dayIndex} (${targetDateStr}): deep=${deep} light=${light} rem=${rem} awake=${awake} start=${startTime.toISOString()}`);
+
+        // Classify as night or nap
+        const totalSleepMin = deep + light + rem;
+        const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
+        const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
+
+        // Overlap guard — skip if a session of the same type already covers this time window
+        const overlapsExisting = nightSessions.some(night => {
+          if (night.session_type !== classification.sessionType) return false;
+          const nightStart = new Date(night.start_time).getTime();
+          const nightEnd = new Date(night.end_time).getTime();
+          const overlapMs = Math.min(endTime.getTime(), nightEnd) - Math.max(startTime.getTime(), nightStart);
+          return overlapMs > 30 * 60 * 1000;
+        });
+        if (overlapsExisting) {
+          console.log(`[Sync] Sleep day ${dayIndex}: skipping ${classification.sessionType} ${startTime.toISOString()} — overlaps existing`);
+          continue;
+        }
+
+        // Build rawQualityRecords for hypnogram rendering
+        const rawQualityRecords = block.records.map(rec => ({
+          startTimestamp: rec.start,
+          sleepUnitLength: rec.unit,
+          arraySleepQuality: rec.arr,
+        }));
+        const detailJson = rawQualityRecords.length > 0 ? { rawQualityRecords } : null;
+
+        const napScore = classification.sessionType === 'nap'
+          ? calculateNapScore(totalSleepMin, deep, light, rem, awake)
+          : null;
+
+        const sessionPayload = {
+          user_id: userId,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          deep_min: deep,
+          light_min: light,
+          rem_min: rem || null,
+          awake_min: awake || null,
+          sleep_score: null,
+          detail_json: detailJson,
+          session_type: classification.sessionType,
+          nap_score: napScore,
+        };
+        await supabaseService.insertSleepSession(sessionPayload);
+        // Track in-memory so subsequent loop iterations can detect overlap with this session
+        nightSessions.push(sessionPayload as any);
+        console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}) synced: ${deep}d + ${light}l + ${rem}r = ${totalSleepMin}min`);
       } catch (e) {
         console.error(`Error syncing sleep data for day ${dayIndex}:`, e);
       }

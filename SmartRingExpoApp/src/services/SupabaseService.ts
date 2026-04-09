@@ -644,6 +644,11 @@ class SupabaseService {
     }
     return data || [];
   }
+
+  // Fire-and-forget remote debug log — never throws, never blocks sync
+  debugLog(userId: string, event: string, payload: Record<string, any>): void {
+    supabase.from('debug_logs' as any).insert({ user_id: userId, event, payload }).then();
+  }
 }
 
 export const supabaseService = new SupabaseService();
