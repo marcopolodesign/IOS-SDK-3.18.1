@@ -47,7 +47,14 @@ export function classifySleepSession(
     }
   }
 
-  // Step 4: time-of-day
+  // Step 4: early-morning wake phase (V8 band only records the last fragment before waking)
+  // If the session starts and ends in early morning (3–9 AM) → morning sleep tail, not a daytime nap
+  const endHour = endTime.getHours();
+  if (startTime.getHours() >= 3 && startTime.getHours() < 10 && endHour < 9) {
+    return { sessionType: 'night', reason: 'early_morning_wake_phase' };
+  }
+
+  // Step 5: time-of-day
   const startHour = startTime.getHours();
   if (startHour >= 20 || startHour < 4) {
     return { sessionType: 'night', reason: 'nighttime_hours' };

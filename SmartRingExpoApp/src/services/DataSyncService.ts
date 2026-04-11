@@ -12,6 +12,7 @@ import {
   BatteryData,
 } from '../types/sdk.types';
 import { classifySleepSession, calculateNapScore } from './NapClassifierService';
+import { calculateSleepScoreFromStages } from '../utils/ringData/sleep';
 
 interface SyncStatus {
   lastSyncAt: Date | null;
@@ -300,6 +301,41 @@ class DataSyncService {
       })),
     });
 
+    // V8-only: try alternative data sources to diagnose missing sleep data
+    const v8Svc = service.getV8Service();
+    if (v8Svc) {
+      try {
+        const sleepActivity = await v8Svc.getSleepWithActivityRaw();
+        supabaseService.debugLog(userId, 'sleep_with_activity', {
+          count: sleepActivity.length,
+          records: sleepActivity.map((r: any) => ({
+            startTime_SleepData: r.startTime_SleepData ?? null,
+            totalSleepTime: r.totalSleepTime ?? null,
+            sleepUnitLength: r.sleepUnitLength ?? null,
+            arraySleepQualityLength: (r.arraySleepQuality ?? []).length,
+            arrayActivityDataLength: (r.arrayActivityData ?? []).length,
+          })),
+        });
+      } catch (e: any) {
+        supabaseService.debugLog(userId, 'sleep_with_activity_error', { message: String(e?.message ?? e) });
+      }
+
+      try {
+        const ppi = await v8Svc.getPPIDataRaw();
+        supabaseService.debugLog(userId, 'ppi_data', {
+          count: ppi.length,
+          sample: ppi.slice(0, 5).map((r: any) => ({
+            date: r.date ?? null,
+            groupCount: r.groupCount ?? null,
+            currentIndex: r.currentIndex ?? null,
+            arrayPPIDataLength: (r.arrayPPIData ?? []).length,
+          })),
+        });
+      } catch (e: any) {
+        supabaseService.debugLog(userId, 'ppi_data_error', { message: String(e?.message ?? e) });
+      }
+    }
+
     // Parse "YYYY.MM.DD HH:mm:ss" string timestamps
     const parseStartStr = (str?: string): number | undefined => {
       if (!str) return undefined;
@@ -441,6 +477,10 @@ class DataSyncService {
           ? calculateNapScore(totalSleepMin, deep, light, rem, awake)
           : null;
 
+        const sleepScore = classification.sessionType === 'night'
+          ? calculateSleepScoreFromStages({ deep, light, rem: rem ?? 0, awake: awake ?? 0 })
+          : null;
+
         const sessionPayload = {
           user_id: userId,
           start_time: startTime.toISOString(),
@@ -449,7 +489,7 @@ class DataSyncService {
           light_min: light,
           rem_min: rem || null,
           awake_min: awake || null,
-          sleep_score: null,
+          sleep_score: sleepScore,
           detail_json: detailJson,
           session_type: classification.sessionType,
           nap_score: napScore,

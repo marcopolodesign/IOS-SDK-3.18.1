@@ -4,6 +4,331 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-11: V8 Band — Fix full-night sleep stitching (overlapping 4-hour windows)
+
+**Root cause discovered:** `getSleepDetailsAndActivityWithMode` (type 81) streams the full night as multiple overlapping 4-hour window packets — one packet per BLE response. The band sends:
+- Packet 1: 05:36 → 07:48 (144 min, most recent fragment)
+- Packet 2: 03:36 → 07:36 (240 min)
+- Packet 3: 01:36 → 05:36 (240 min)
+- Packet 4: 23:36 → 03:36 (240 min, true bedtime)
+- …then `dataEnd=1` signals end of stream
+
+The bridge was resolving after the FIRST packet because `items.count=1 < 50` triggered early exit, discarding all subsequent packets with the full night data.
+
+**Fixes:**
+
+1. **`V8Bridge.m` — correct pagination for `DetailSleepAndActivityData_V8`:** Changed `if (dataEnd || items.count < 50)` to `if (dataEnd)`. Removed the `else` branch that sent mode=2 (not needed — SDK streams all records automatically). Now the bridge accumulates all packets and resolves only when `dataEnd=1`.
+
+2. **`V8Service.ts` — `mergeV8SleepWindows()`:** New pure function that merges overlapping windows into a single night record per calendar night. Sort by `startTimestamp` → group by <8h gap → for each window after the first, compute actual timestamp overlap and skip already-covered entries → return stitched `arraySleepQuality` spanning the full night (e.g. 23:36 → 07:48 ≈ 8h12m).
+
+3. **`V8Service.ts` — timeouts increased to 30s:** All `getSleepWithActivity` calls increased from 10000ms to 30000ms. The band now streams 4–5 packets before signalling `dataEnd` — 10s was too short to receive all of them.
+
+**Expected result for gcovos@gmail.com:** Sleep will now show ~8h12m with true bedtime at 23:36, not a 72-min nap starting at 5:36.
+
+**Files modified:**
+- `ios/V8Bridge/V8Bridge.m` — `DetailSleepAndActivityData_V8` delegate case
+- `src/services/V8Service.ts` — `mergeV8SleepWindows()` + wired into `getSleepDataRaw()` + `getSleepByDay()` + timeouts
+
+**Native rebuild required:** Yes — `pod install` done, Xcode opened. Build to device manually.
+
+---
+
+## 2026-04-11: V8 Band — Fix sleep classification (morning wake phase + better SDK method)
+
+**Problem:** V8 band records only the last fragment before waking (~5:36 AM → 7:48 AM). All SDK methods (`GetDetailSleepDataWithMode` and `getSleepDetailsAndActivityWithMode`) return this morning tail. The existing classifier saw `startHour=5` → daytime → nap. Father (`gcovos@gmail.com`) saw all nights recorded as naps.
+
+**Fixes (3 changes):**
+1. **Switch V8 primary sleep to `getSleepDetailsAndActivityWithMode` (type 81)** in `V8Service.ts` — returns 144 min vs the legacy 72 min (confirmed via Supabase debug_logs). Both `getSleepByDay()` and `getSleepDataRaw()` updated.
+2. **`NapClassifierService.classifySleepSession()`** — new step 4: if session starts AND ends in early morning (3–9 AM, ends before 9 AM) → `early_morning_wake_phase` → `night`. This catches V8 band tail captures without affecting true daytime naps.
+3. **`useHomeData.deriveFromRaw()`** — same early-morning check added to the `isNapLike` heuristic. Sessions ending before 9 AM that start in early morning are now treated as disrupted nights, not naps.
+
+**Files modified:**
+- `src/services/V8Service.ts`
+- `src/services/NapClassifierService.ts`
+- `src/hooks/useHomeData.ts`
+
+---
+
+## 2026-04-09: V8 Band — Add getSleepWithActivity + GetPPIData debug fetches
+
+**Change:** The V8 band records only ~72 min per night for `gcovos@gmail.com`. Confirmed via Supabase `debug_logs` and Metro console that `GetDetailSleepDataWithMode` genuinely returns only the last fragment. Added two new V8-only data fetches to diagnose whether alternative SDK methods carry the full night.
+
+**What was added (V8 only — no X3/Jstyle code touched):**
+- `getSleepDetailsAndActivityWithMode` (type 81) — combined sleep+activity dataset. May be populated differently from the legacy method.
+- `GetPPIDataWithMode` (type 82) — raw beat-to-beat PPI data, chunked. PPI is recorded continuously so it likely covers the whole night.
+
+Both methods are fire-and-forget debug-only: they log to the `debug_logs` Supabase table with events `sleep_with_activity` and `ppi_data`. No changes to sleep classification logic.
+
+**Files modified:**
+- `ios/V8Bridge/V8Bridge.m` — Added `accumulatedSleepActivityData` + `accumulatedPPIData` properties and init; two new `RCT_EXPORT_METHOD`s (`getSleepWithActivity`, `getPPIData`) with watchdog timeout and pagination; two new delegate cases (`DetailSleepAndActivityData_V8`, `ppiData_V8`).
+- `src/services/V8Service.ts` — Added `getSleepWithActivityRaw()` and `getPPIDataRaw()` methods.
+- `src/services/DataSyncService.ts` — After existing `sleep_raw_records` debug log, gate on `service.getV8Service()` and call both new methods, logging results to `debug_logs`.
+
+**Verification:**
+```sql
+SELECT event, payload, created_at
+FROM debug_logs
+WHERE user_id = '4128d5f7-51e1-43ac-993f-e475934cd3ca'
+  AND event IN ('sleep_with_activity', 'sleep_with_activity_error', 'ppi_data', 'ppi_data_error')
+ORDER BY created_at DESC LIMIT 20;
+```
+
+---
+
+## 2026-04-10: Sleep Baseline Tier — fix always-empty state, backfill existing rows
+
+**Change:** The Sleep Baseline Tier card showed `low / 0 / 0 days` for all users forever. Root cause: `DataSyncService` hardcoded `sleep_score: null` on every sleep session insert, so the 14-day rolling `sleepScore[]` baseline array was perpetually empty. Verified for mateoaldao@gmail.com: 47 `sleep_sessions` rows, 0 with non-null `sleep_score`. Fix: compute and persist a real 0-100 score at insert time (night sessions only), backfill all existing rows via Supabase SQL, and bump three cache keys so all clients re-bootstrap on next open.
+
+**Files created:**
+- `scripts/backfill-sleep-scores.ts` — One-shot TS backfill script. Reads `.env.local` via dotenv, paginates `sleep_sessions WHERE sleep_score IS NULL AND session_type='night' AND total_min>=60` in batches of 500, applies `calculateSleepScoreFromStages`, updates each row. Idempotent.
+
+**Files modified:**
+- `src/utils/ringData/sleep.ts` — Extracted internal `computeSleepBreakdown(deep, light, rem, awake)` function (single CASE logic pass). Exported new `calculateSleepScoreFromStages({deep, light, rem, awake}): number` — pure, takes raw minutes. Refactored `calculateSleepScore(SleepInfo)` to delegate to both — no CASE duplication.
+- `src/services/DataSyncService.ts` — Imported `calculateSleepScoreFromStages`; compute `sleepScore` at insert time for `session_type='night'` sessions (null for naps, which keep `nap_score`). Replaced `sleep_score: null` with real value.
+- `src/services/ReadinessService.ts` — Bumped `BASELINES_KEY` `v1→v2` (forces re-bootstrap on all clients). Added `.eq('session_type', 'night')` to `bootstrapBaselinesFromSupabase` sleep query to exclude naps from the rolling array. Removed stale "sleep_score is not persisted" comment.
+- `src/hooks/useFocusData.ts` — Bumped `focus_state_cache_v5→v6`. Added `.eq('session_type', 'night')` to the daily sleep query so a daytime nap can't override last night's session.
+- `src/hooks/useSleepBaseline.ts` — Bumped `CACHE_KEY` `v1→v2` (invalidates 6h tier cache).
+
+**Key notes:**
+- Backfill ran directly via Supabase MCP SQL (no script execution needed): updated 48 night rows across all users. 2 rows remain null — both have `total_min < 60` (30 and 50 min, likely sensor artifacts), correctly excluded.
+- mateoaldao@gmail.com result: 42 night sessions now have scores 38–97. Profile `sleep_baseline_tier` will auto-populate on next app open via `useSleepBaseline` after cache key forces re-bootstrap.
+- Cache key bumps (`v2`) are one-shot: every user re-bootstraps once on next open, fetching 14-day night history from Supabase. Cost: ~1 small query per user.
+- `calculateSleepScore` return type (`SleepScore`) is unchanged — callers unaffected. No callers use the `breakdown` field but it remains in the type for forward compatibility.
+- Deployment: EAS Update only (no native changes).
+
+---
+
+## 2026-04-10: Strain — EWMA multi-day accumulation (7-day window)
+
+**Change:** Strain is no longer today-only. It now uses an Exponentially Weighted Moving Average (α = 0.35) over the last 7 days: today ~35%, yesterday ~23%, 2 days ago ~15%, and so on, decaying over ~5 days. A hard workout echoes forward; a rest day no longer resets strain to zero instantly.
+
+**Model:**
+- Per-day load = same formula as before (calories + Strava suffer_score blend, 0–100 scale)
+- Today's load: from `activity.adjustedActiveCalories`, `activity.steps`, today's Strava entries (already in scope)
+- Prior 6 days: small Supabase query on `daily_summaries` (date, total_calories, total_steps) + Strava suffer_score grouped by date
+- `ewmaStrain([todayLoad, ...priorLoads], 0.35)` produces the final 0–100 value
+- Falls back to today-only when no history exists (new users, query errors) — no regression
+
+**Files modified:**
+- `src/hooks/useHomeData.ts` — added `computeDailyLoad` + `ewmaStrain` pure helpers; replaced 10-line today-only strain block with EWMA block + prior-days Supabase query
+- `src/data/metricExplanations.ts` — corrected chart zones to 0–24/25–49/50–74/75–100 (was 0–9/10–13/14–17/18–21 which matched Whoop's scale, not the app's 0–100 output)
+- `src/i18n/locales/en.json` — subtitle updated to "Cumulative cardiovascular load over the last 7 days"; range labels updated to match 0–100 scale
+- `src/i18n/locales/es.json` — same updates in Spanish
+
+---
+
+## 2026-04-10: Activity tab — workout cards use radial gradient, no border
+
+**Change:** Replaced the diagonal `LinearGradient` (expo) and white border on horizontal workout cards with an SVG `RadialGradient` bleeding from the top-center off-canvas (`cx=51%, cy=-86%`, same parameters as the temperature/SpO2 GradientInfoCard). Background changed from `#1A1A2E` to `#000`. Each card gets a unique gradient ID (`wg-${activity.id}`) to prevent SVG ID conflicts in the scroll list.
+
+**Files modified:**
+- `src/screens/home/ActivityTab.tsx` — swapped `expo-linear-gradient` import for SVG `Defs/RadialGradient/Rect/Stop`; removed `borderWidth`/`borderColor` from `hCardStyles.card`; updated background to `#000`
+
+---
+
+## 2026-04-10: Activity tab — remove Recent Sessions section
+
+**Change:** Removed the "Recent Sessions" section (X3 ring-native activity sessions) from the bottom of the Activity tab. The section was conditionally rendered behind `homeData.featureAvailability.activitySessions`. Also removed the now-unused `GlassCard` import.
+
+**Files modified:**
+- `src/screens/home/ActivityTab.tsx` — deleted sessions section JSX and `GlassCard` import
+
+---
+
+## 2026-04-10: Hypnogram — gradient palette shifted up one stop
+
+**Change:** Shifted the figure-wide gradient one level lighter so Awake is pure white, and the bottom (deep) no longer uses the darkest burgundy. Also restored rounded corners on summary chips and updated their border colors to match the new palette.
+
+**Gradient (updated):**
+- Awake (0%): `#FFFFFF`
+- REM (33%): `#F5DEDE`
+- Core (66%): `#CC3535`
+- Deep (100%): `#8C0B0B`
+
+**Files modified:**
+- `src/components/home/SleepHypnogram.tsx` — updated `<LinearGradient>` stops; added `stageChipColors` map matching the new palette; restored `borderRadius: 12` on summary chips; chips now use `stageChipColors` for border color
+
+---
+
+## 2026-04-10: Sleep subtab — dashed avg line + amber pill label
+
+**Change:** Replaced the broken `borderStyle: 'dashed'` avg line with repeating `View` dashes (RN-compatible). The avg duration is now an amber pill (`#f2a500` background, dark text, `borderRadius: 10`) at the right edge of the line. Chart has `marginTop` for breathing room.
+
+**Files modified:** `src/components/home/DailySleepTrendCard.tsx`
+
+---
+
+## 2026-04-10: Hypnogram — single gradient + seamless connectors
+
+**Change:** Replaced per-stage block colors with a single vertical `LinearGradient` (`gradientUnits="userSpaceOnUse"`) spanning the full chart height — near-white at awake lane top → dark burgundy at deep lane bottom. All blocks and connector bars share `fill="url(#sleepGradient)"` so the color ramp is continuous. Connectors are 0.75px `<Rect>` elements spanning from the top edge of the higher lane to the bottom edge of the lower lane. Blocks have `rx=2`.
+
+**Files modified:**
+- `src/components/home/SleepHypnogram.tsx` — removed `stageBlockColors`; added `<Defs><LinearGradient>` with 4 stops (`#F5DEDE` → `#CC3535` → `#8C0B0B` → `#4A0606`); connectors switched from `Path` to `Rect` with gradient fill; connector span covers full zone-to-zone extent; width 0.75px
+
+---
+
+## 2026-04-10: Sleep subtab — fix average display + add per-day sleep amounts
+
+**Changes:**
+1. **"Avg. Sleep" now correctly gates behind ≥2 days of data.** When only today's night is available the card title switches to "Last Night" and the subtitle reads "Last recorded night", avoiding the misleading "average = today" label. Once a second day of data fills in, it reverts automatically to "Avg. Sleep" with the true mean.
+2. **Orange average line** is now only rendered when there are ≥2 days of data, positioned via `bottom` percentage inside `barsRow` (fixes the previous padding-mismatch that pinned it to the chart top).
+3. **Per-day sleep duration** (e.g. `7h32`) now appears under each day letter in the bar chart. Days with no data show `—` to keep the layout balanced.
+
+**Files modified:**
+- `src/components/home/DailySleepTrendCard.tsx` — `hasEnoughForAverage` flag, dynamic title/subtitle/headerValue, avgLine moved inside barsRow with `bottom` positioning, `dayValue` text + style added
+- `src/i18n/locales/en.json` — added `sleep_trend.card_title_last`, `sleep_trend.subtitle_last_night`
+- `src/i18n/locales/es.json` — added same keys in Spanish
+
+---
+
+## 2026-04-10: Hypnogram — continuous maroon step line
+
+**Change:** Replaced the per-segment colored `<Rect>` blocks and vertical `<Line>` transition connectors in the sleep hypnogram with a single continuous maroon step polyline. The figure now walks across the four lane center-lines as a connected step curve instead of separate colored bars per stage.
+
+**Files modified:**
+- `src/components/home/SleepHypnogram.tsx` — swapped `Rect` import for `Path`; deleted `connectors` computation and render block; added `stepPaths` memo that builds one SVG step-path string per session (two points per segment at lane center y); renders as `<Path stroke="#AC0D0D" strokeWidth={2.25} strokeLinejoin="miter" strokeLinecap="square" fill="none" />`; removed dead `BLOCK_RADIUS` constant
+
+**Key notes:**
+- All other chart elements unchanged: lane layout, y-axis labels + durations, top summary chips, grid lines, x-axis time labels, `PanResponder` tooltip, and multi-session gap separators
+- One path per session — the step line never crosses the dashed night/nap gap separator
+- Maroon `#AC0D0D` matches the Coach screen's existing hero gradient color (no new token added)
+- `stageColors` kept for chip border colors and tooltip; `stageLabels` and `stageTooltipLabel` untouched
+
+---
+
+## 2026-04-09: V8 band sleep debug — remote logging to Supabase
+
+Diagnosed why gcovos@gmail.com's V8 band classifies all sleep as naps. Found only 3 sessions in DB (all naps, 26-97 min), too short to exceed the 180-min night threshold. Root cause unclear — suspect `sleepUnitLength` defaulting to 1 when the band may use 5-min intervals.
+
+Added fire-and-forget remote debug logging to capture raw SDK values before any `|| 1` fallback processing:
+- New `debug_logs` Supabase table (with RLS)
+- `supabaseService.debugLog()` helper in SupabaseService
+- Logs `sleepUnitLength`, `totalSleepTime`, `arraySleepQuality.length`, and timestamps per record in `DataSyncService.syncSleepData()`
+
+**Files modified:** `src/services/SupabaseService.ts`, `src/services/DataSyncService.ts`
+**Files created:** `supabase/migrations/20260409_debug_logs.sql`
+**Build:** 1.0.21 (build 22) — uploaded to TestFlight
+
+**Next step:** Once father syncs the band, query `debug_logs` for user `4128d5f7-51e1-43ac-993f-e475934cd3ca` to see actual SDK values.
+
+---
+
+## 2026-04-06: HRV detail page — redesigned to match sleep detail structure
+
+Applied the same layout structure from sleep-detail to hrv-detail:
+
+- **Violet radial gradient** (`#8B5CF6`) behind header + chart, bleeding from the top of the screen (same pattern as sleep's purple `#7100C2` gradient).
+- **HRVTrendChart**: new scrollable 30-day bar chart component (mirroring `SleepTrendChart`). Bars colored by SDNN thresholds (green >=50, yellow >=30, red <30), 5-day rolling average trendline, haptic feedback on scroll, snap-to-column day selection. Replaces the old `DayNavigator` pill buttons + inline `HRV7DayChart`.
+- **30-day history**: extended from 7 to 30 days with progressive loading (7 days instant, then 30 silently in background — same two-phase pattern as sleep).
+- **Gradient zone wrapping**: header + chart wrapped in gradient zone; safe area applied only to header so gradient bleeds to screen top.
+- Removed: `DayNavigator` import, `HRV7DayChart` inline component, `Dimensions` import, old chart/band constants.
+
+**Files created:** `src/components/detail/HRVTrendChart.tsx`
+**Files modified:** `app/detail/hrv-detail.tsx`, `src/hooks/useMetricHistory.ts`
+
+## 2026-04-05: Activity tab — horizontal gradient training cards
+
+Replaced the vertical GlassCard workouts list with a horizontal snap FlatList of gradient cards.
+
+- **Layout**: Each card is 60vw wide, snaps to origin (`snapToInterval`, `decelerationRate="fast"`), next card peeks to hint scrollability.
+- **Gradient**: `LinearGradient` fills the card diagonally using the sport's color (`color+'50'` → `color+'18'` → transparent). Each sport type gets a visually distinct color wash.
+- **Source badge**: 22px circle overlapping the main sport icon at bottom-right (offset: bottom -2, right -8). Contains the source logo — Strava chevron SVG (orange bg), heart SVG for Apple Health (pink bg), RingIcon for ring (dark surface bg). 2px border matching card bg creates a cutout separation effect.
+- **Content**: sport Ionicons icon, activity name (demiBold), date (Today / Yesterday / short date), meta line (distance · duration · kcal).
+- **Navigation**: Strava cards navigate to `/(tabs)/settings/strava-detail` with the numeric activity ID. Ring/Apple Health cards are no-op (no detail screen).
+- **Dead code removed**: `UnifiedWorkoutCard`, `WorkoutCard`, `WorkoutIcon`, `SOURCE_COLORS`, `SOURCE_LABEL_KEYS`, old workout styles.
+
+**Files modified:** `src/screens/home/ActivityTab.tsx`
+
+## 2026-04-05: OTA update — sleep sync fix + OTA version in profile
+
+Pushed EAS OTA update to production channel.
+
+- **Update group:** `5b84fd9d-1d8e-47aa-8cfd-6f5a50aa781f`
+- **iOS update ID:** `019d6080-8ca7-7ce8-b4c5-bb2a1af7c1f6`
+- **Platforms:** iOS + Android
+- **Channel:** production / runtime 1.0.0
+
+Includes: sleep sync raw pipeline fix + OTA version row in profile.
+
+**Profile OTA row:** Added `expo-updates` import to `SettingsScreen.tsx`. New row between App Version and SDK Version shows the first 8 chars of `Updates.updateId` (or "Built-in" when running the embedded bundle). Added `profile.about.ota_version` and `profile.about.ota_embedded` to `en.json` / `es.json`.
+
+**Files modified:** `src/screens/SettingsScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+## 2026-04-05: Fix sleep sync — use raw + block-merge pipeline (same as hypnogram)
+
+Root cause of coach showing wrong sleep values: `DataSyncService.syncSleepData()` was calling `getSleepByDay(dayIndex)` which filters raw records by `start_time` date and sums minutes independently — it doesn't merge fragmented ring records. The home screen hypnogram was using `getSleepDataRaw()` + `deriveFromRaw()` which merges all records with ≤60 min gaps into continuous blocks.
+
+**Fix:** Rewrote `syncSleepData()` to:
+1. Call `getSleepDataRaw()` once to get all raw records
+2. Parse and sort records by `start` timestamp
+3. Merge consecutive records with ≤60 min gap into blocks (same algorithm as `deriveFromRaw()`)
+4. For each of the 7 target dates, find the block whose `end` time falls on that date (wake-up day)
+5. Pick the longest block for that date (same as choosing the main sleep session)
+6. Compute stage minutes (deep/light/rem/awake) by building a per-minute timeline from `arraySleepQuality`
+7. Insert with the same duration gate + overlap guard as before
+
+Result: Supabase now stores the exact same complete merged session that the hypnogram renders. Coach will see `~7h` instead of `4h55m` for nights where the ring reported multiple fragments.
+
+**Files modified:** `src/services/DataSyncService.ts`
+
+## 2026-04-05: DB cleanup — remove bad sleep sessions + recompute sleep debt
+
+Ran two-pass cleanup on Supabase `sleep_sessions` for all users:
+1. Deleted sessions with same `(user_id, end_time)` keeping the one with most sleep minutes — removed 39 duplicates
+2. Deleted all night sessions where `end_time - start_time > 15 hours` (ring cumulative re-sync artifacts) — removed 28 bad records across two passes
+
+Then recomputed `daily_summaries.sleep_total_min` for all users from the cleaned sessions using `end_time::date` grouping. Dates with no clean session now correctly show NULL instead of inflated values from bad 20-25h records. Sleep debt card will reflect accurate data after 2-hour AsyncStorage cache expiry or pull-to-refresh.
+
+## 2026-04-05: Fix sleep sync — duration gate + night overlap guard
+
+Two guards added to `syncSleepData()` in `DataSyncService.ts` to prevent duplicate sleep sessions from accumulating:
+
+1. **Duration gate**: sessions where `end_time - start_time > 14 hours` are skipped before insert. The ring reports 20-25h cumulative sessions with bad timestamps — these are now rejected at sync time.
+2. **Overlap guard**: before inserting any session, check if an already-stored session of the same type overlaps by >30 min. Prevents duplicates when the ring re-reports the same night with a slightly different `start_time` (which bypasses the upsert's `user_id+start_time` conflict key).
+3. **In-memory tracking**: newly inserted sessions are pushed into `nightSessions[]` during the loop so subsequent iterations can overlap-check against them.
+
+Also ran a one-time DB cleanup: deleted 39 duplicate records (same end_time) + 22 implausible-duration records (20-25h), removing 61 bad rows total.
+
+**Files modified:** `src/services/DataSyncService.ts`
+
+## 2026-04-05: TestFlight Build 1.0.20 (build 21)
+
+Bumped version → 1.0.20, buildNumber → 21. Key fix in this build: `Expo.plist` channel changed from `'development'` to `'production'` so OTA updates via `eas update --channel production` now actually reach the app. Archive succeeded, uploaded to App Store Connect — build is processing in TestFlight.
+
+**Files modified:** `app.config.js`, `ios/SmartRing.xcodeproj/project.pbxproj`, `ios/SmartRing/Supporting/Expo.plist`
+
+## 2026-04-05: Fix sleep date grouping — key by wake-up time not start time
+
+Sleep sessions were being keyed by `start_time` date, so a night that starts at 11 PM Apr 3 and ends at 7 AM Apr 4 appeared under Apr 3. Changed `fetchSleepHistory` to key by `end_time` (wake-up date) instead. Extended the query window by +1 day (`nDaysAgo(days + 1)`) so sessions that started the night before still get fetched.
+
+**Files modified:** `src/hooks/useMetricHistory.ts`
+
+## 2026-04-05: Fix "Ask Coach" typewriter — i18n translations
+
+The rotating placeholder questions in the coach input ("How did I sleep?", "Should I train today?", etc.) were hardcoded in English. Rewrote `useTypewriter.ts` to pull all strings from i18n via `t()`. Uses refs (`askCoachRef`, `questionsRef`) so timer callbacks always read the current language. Added 4 new translation keys (`overview.coach_q_sleep/train/hrv/run`) to both `en.json` and `es.json`.
+
+**Files modified:** `src/hooks/useTypewriter.ts`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+## 2026-04-05: Sleep stages — horizontal bars with recommended range overlay
+
+Replaced the four stage `DetailStatRow` entries (Deep/REM/Light/Awake) with `SleepStageBar` — a custom component showing: colored dot + label + minutes + percentage in a header row, and below it a horizontal bar with the actual % fill and a recommended range overlay (min–max markers from `customSleepAnalysis.ts` THRESHOLDS: Deep 13–23%, REM 20–25%, Light 50–65%, Awake 0–5%). The range is a subtle `rgba(255,255,255,0.1)` zone with thin edge markers. Other stats (efficiency, bed/wake time, HR) moved to a separate card below.
+
+**Files modified:** `app/detail/sleep-detail.tsx`
+
+## 2026-04-04: SleepTrendChart — snap-to-column + fix today centering
+
+`snapToOffsets` per column (`i * COL_W + COL_W/2 - SCREEN_WIDTH/2`, clamped). `decelerationRate="fast"` + `disableIntervalMomentum`. `GHOST_COLS` fixed to `Math.ceil(SCREEN_WIDTH/COL_W/2)+1` — was 3 (too few), now ~8, so today can actually reach its centered scroll position.
+
+**Files modified:** `src/components/detail/SleepTrendChart.tsx`
+
+## 2026-04-04: TestFlight Build 1.0.19 (build 20)
+
+Bumped `version` → `1.0.19`, `buildNumber` → `20` in `app.config.js` and `project.pbxproj`. Archived and uploaded to App Store Connect. Upload succeeded (dSYM symbol warnings for React/Hermes are non-blocking). Build is processing in TestFlight.
+
+**Files modified:** `app.config.js`, `ios/SmartRing.xcodeproj/project.pbxproj`
+
+---
+
 ## 2026-04-04: HR Zones — Fix Incorrect BPM Ranges and Zone Assignment
 
 **Problem:** HR zone BPM ranges were off for two reasons:

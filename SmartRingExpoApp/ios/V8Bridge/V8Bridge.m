@@ -38,6 +38,8 @@ static NSString *const kV8PairedDeviceNameKey = @"V8PairedDeviceName";
 @property (nonatomic, strong) NSMutableArray *accumulatedTempData;
 @property (nonatomic, strong) NSMutableArray *accumulatedHRVData;
 @property (nonatomic, strong) NSMutableArray *accumulatedActivityModeData;
+@property (nonatomic, strong) NSMutableArray *accumulatedSleepActivityData;
+@property (nonatomic, strong) NSMutableArray *accumulatedPPIData;
 @property (nonatomic, copy) RCTPromiseResolveBlock pendingDataResolver;
 @property (nonatomic, copy) RCTPromiseRejectBlock pendingDataRejecter;
 @property (nonatomic, assign) DATATYPE_V8 pendingDataType;
@@ -66,6 +68,8 @@ RCT_EXPORT_MODULE();
         _accumulatedTempData = [NSMutableArray array];
         _accumulatedHRVData = [NSMutableArray array];
         _accumulatedActivityModeData = [NSMutableArray array];
+        _accumulatedSleepActivityData = [NSMutableArray array];
+        _accumulatedPPIData = [NSMutableArray array];
         _pendingDataType = DataError_V8;
         _pendingDataTimeoutInterval = 20.0;
         _isDisconnecting = NO;
@@ -190,6 +194,8 @@ RCT_EXPORT_MODULE();
     [self.accumulatedTempData removeAllObjects];
     [self.accumulatedHRVData removeAllObjects];
     [self.accumulatedActivityModeData removeAllObjects];
+    [self.accumulatedSleepActivityData removeAllObjects];
+    [self.accumulatedPPIData removeAllObjects];
 }
 
 - (void)claimDelegate {
@@ -473,6 +479,30 @@ RCT_EXPORT_METHOD(getSleepData:(RCTPromiseResolveBlock)resolve
     [self.accumulatedSleepData removeAllObjects];
     [self setPendingDataRequestWithResolver:resolve rejecter:reject type:DetailSleepData_V8];
     NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetDetailSleepDataWithMode:0 withStartDate:nil];
+    [self writeCommand:cmd];
+}
+
+RCT_EXPORT_METHOD(getSleepWithActivity:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) { reject(@"NOT_CONNECTED", @"V8 not connected", nil); return; }
+    if ([self rejectIfBusyForOperation:@"getSleepWithActivity" rejecter:reject]) return;
+
+    [self claimDelegate];
+    [self.accumulatedSleepActivityData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:DetailSleepAndActivityData_V8];
+    NSMutableData *cmd = [[BleSDK_V8 sharedManager] getSleepDetailsAndActivityWithMode:0 withStartDate:nil];
+    [self writeCommand:cmd];
+}
+
+RCT_EXPORT_METHOD(getPPIData:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    if (!self.connectedPeripheral) { reject(@"NOT_CONNECTED", @"V8 not connected", nil); return; }
+    if ([self rejectIfBusyForOperation:@"getPPIData" rejecter:reject]) return;
+
+    [self claimDelegate];
+    [self.accumulatedPPIData removeAllObjects];
+    [self setPendingDataRequestWithResolver:resolve rejecter:reject type:ppiData_V8];
+    NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetPPIDataWithMode:0 withStartDate:nil];
     [self writeCommand:cmd];
 }
 
@@ -839,15 +869,28 @@ RCT_EXPORT_METHOD(stopManualMeasurement:(int)dataType
 
         case DetailSleepData_V8: {
             NSArray *items = dicData[@"arrayDetailSleepData"];
+            NSLog(@"[V8Sleep] packet received — dataEnd=%d itemsInPacket=%lu accumulatedSoFar=%lu", dataEnd, (unsigned long)items.count, (unsigned long)self.accumulatedSleepData.count);
+            for (NSDictionary *item in items) {
+                NSLog(@"[V8Sleep] RAW item keys: %@", [item allKeys]);
+                NSLog(@"[V8Sleep] startTime_SleepData=%@ totalSleepTime=%@ sleepUnitLength=%@ arraySleepQuality.count=%lu",
+                      item[@"startTime_SleepData"],
+                      item[@"totalSleepTime"],
+                      item[@"sleepUnitLength"],
+                      (unsigned long)[item[@"arraySleepQuality"] count]);
+                NSLog(@"[V8Sleep] arraySleepQuality (first 20): %@", [[item[@"arraySleepQuality"] subarrayWithRange:NSMakeRange(0, MIN(20, [item[@"arraySleepQuality"] count]))] componentsJoinedByString:@","]);
+                NSLog(@"[V8Sleep] FULL dicData keys: %@", [dicData allKeys]);
+            }
             if (items) [self.accumulatedSleepData addObjectsFromArray:items];
 
             if (dataEnd || items.count < 50) {
+                NSLog(@"[V8Sleep] fetch complete — total records=%lu", (unsigned long)self.accumulatedSleepData.count);
                 if (self.pendingDataResolver && self.pendingDataType == DetailSleepData_V8) {
                     self.pendingDataResolver(@{@"data": [self.accumulatedSleepData copy]});
                     [self clearPendingDataRequest];
                     [self.accumulatedSleepData removeAllObjects];
                 }
             } else {
+                NSLog(@"[V8Sleep] fetching next page (mode=2)...");
                 NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetDetailSleepDataWithMode:2 withStartDate:nil];
                 [self writeCommand:cmd];
             }
@@ -983,6 +1026,50 @@ RCT_EXPORT_METHOD(stopManualMeasurement:(int)dataType
                     @"calories": dicData[@"calories"] ?: @0,
                     @"distance": dicData[@"distance"] ?: @0
                 }];
+            }
+            break;
+        }
+
+        case DetailSleepAndActivityData_V8: {
+            NSArray *items = dicData[@"arrayDetailSleepAndActivityData"];
+            NSLog(@"[V8SleepActivity] packet received — dataEnd=%d itemsInPacket=%lu accumulated=%lu",
+                  dataEnd, (unsigned long)items.count, (unsigned long)self.accumulatedSleepActivityData.count);
+            for (NSDictionary *item in items) {
+                NSLog(@"[V8SleepActivity] startTime_SleepData=%@ totalSleepTime=%@ sleepUnitLength=%@",
+                      item[@"startTime_SleepData"], item[@"totalSleepTime"], item[@"sleepUnitLength"]);
+            }
+            if (items) [self.accumulatedSleepActivityData addObjectsFromArray:items];
+
+            // Resolve ONLY when SDK signals end of stream (dataEnd=1).
+            // The band sends one window per packet (~1 packet/window, 4-hour windows).
+            // items.count is always 1 per packet — do NOT use it as a pagination signal.
+            if (dataEnd) {
+                NSLog(@"[V8SleepActivity] fetch complete — total records=%lu", (unsigned long)self.accumulatedSleepActivityData.count);
+                if (self.pendingDataResolver && self.pendingDataType == DetailSleepAndActivityData_V8) {
+                    self.pendingDataResolver(@{@"data": [self.accumulatedSleepActivityData copy]});
+                    [self clearPendingDataRequest];
+                    [self.accumulatedSleepActivityData removeAllObjects];
+                }
+            }
+            // If !dataEnd: more packets are coming — just accumulate and wait.
+            break;
+        }
+
+        case ppiData_V8: {
+            NSArray *items = dicData[@"arrayPPIData"];
+            NSLog(@"[V8PPI] packet received — dataEnd=%d itemsInPacket=%lu", dataEnd, (unsigned long)items.count);
+            if (items) [self.accumulatedPPIData addObjectsFromArray:items];
+
+            if (dataEnd || items.count < 50) {
+                NSLog(@"[V8PPI] fetch complete — total records=%lu", (unsigned long)self.accumulatedPPIData.count);
+                if (self.pendingDataResolver && self.pendingDataType == ppiData_V8) {
+                    self.pendingDataResolver(@{@"data": [self.accumulatedPPIData copy]});
+                    [self clearPendingDataRequest];
+                    [self.accumulatedPPIData removeAllObjects];
+                }
+            } else {
+                NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetPPIDataWithMode:2 withStartDate:nil];
+                [self writeCommand:cmd];
             }
             break;
         }

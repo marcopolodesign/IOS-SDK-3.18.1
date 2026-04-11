@@ -109,9 +109,21 @@ export interface Workout {
   date: Date;
 }
 
+export interface StrainDayBreakdown {
+  dateKey: string;                // 'YYYY-MM-DD'
+  label: string;                  // 'Today' | 'Yesterday' | '2d ago' | ...
+  load: number;                   // 0-100 per-day load
+  weight: number;                 // normalized EWMA weight (0-1), sums to 1 across array
+  activeCalories: number;
+  steps: number;
+  stravaSufferSum: number;
+  stravaWorkouts: Array<{ name: string; sport: string; sufferScore: number }>;
+}
+
 export interface HomeData {
   overallScore: number;
   strain: number;
+  strainBreakdown: StrainDayBreakdown[];  // newest-first, today at index 0
   readiness: number;
   sleepScore: number;
   lastNightSleep: SleepData;
@@ -261,6 +273,38 @@ const pushRolling = (values: number[], value: number, max: number = 14): number[
   const next = [...values, value];
   if (next.length <= max) return next;
   return next.slice(next.length - max);
+};
+
+// Compute a single day's activity load on a 0–100 scale.
+// Uses the same formula as the old today-only strain, applied to any day's inputs.
+const computeDailyLoad = (
+  activeCalories: number,
+  steps: number,
+  stravaSufferSum: number | null,
+): number => {
+  const calStrain = Math.max(0, Math.min(100, ((activeCalories - 300) / 900) * 100));
+  const stepsScore = Math.max(0, Math.min(100, (steps / 10000) * 100));
+  if (stravaSufferSum != null && stravaSufferSum > 0) {
+    const stravaStrain = Math.min(100, stravaSufferSum / 2);
+    return 0.65 * stravaStrain + 0.35 * calStrain;
+  }
+  return 0.60 * calStrain + 0.40 * stepsScore;
+};
+
+// Aggregate daily loads with EWMA (newest-first order).
+// α = 0.35 → today ~35%, yesterday ~23%, 2 days ago ~15%, decaying over ~5 days.
+// Falls back to todayLoad when no prior days are available (no regression for new users).
+const ewmaStrain = (loads: number[], alpha: number = 0.35): number => {
+  if (loads.length === 0) return 0;
+  let weight = 1;
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const load of loads) {
+    weightedSum += load * weight;
+    totalWeight += weight;
+    weight *= (1 - alpha);
+  }
+  return Math.max(0, Math.min(100, Math.round(weightedSum / totalWeight)));
 };
 
 const trendFromBaseline = (
@@ -784,8 +828,12 @@ function deriveFromRaw(rawRecords: any[]): { night: SleepData | null; ringNaps: 
   } else {
     const mostRecent = blocks.reduce((acc, b) => (b.end > acc.end ? b : acc), blocks[0]);
     const startHour = new Date(mostRecent.start).getHours();
-    const isNapLike = startHour >= 4 && startHour < 20; // daytime start → nap
-    if (!isNapLike) nightBlock = mostRecent; // nighttime short sleep → treat as disrupted night
+    const endHour = new Date(mostRecent.end).getHours();
+    // Early morning session (3–9 AM start, ends before 9 AM) = morning wake phase, not a daytime nap.
+    // Catches V8 band behavior where only the last sleep fragment before waking is recorded.
+    const isEarlyMorning = startHour >= 3 && startHour < 10 && endHour < 9;
+    const isNapLike = startHour >= 4 && startHour < 20 && !isEarlyMorning;
+    if (!isNapLike) nightBlock = mostRecent; // nighttime or early-morning wake phase → disrupted night
   }
 
   if (nightBlock) {
@@ -989,6 +1037,7 @@ function calculateOverallScore(sleep: number, activity: number, hrv?: number): n
 const getEmptyData = (): HomeData => ({
   overallScore: 0,
   strain: 0,
+  strainBreakdown: [],
   readiness: 0,
   sleepScore: 0,
   lastNightSleep: {
@@ -1781,17 +1830,108 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
 
       const restingHRScore = restingHR > 0 ? Math.max(0, Math.min(100, Math.round(((90 - restingHR) / 50) * 100))) : 50;
       const readiness = Math.max(0, Math.min(100, Math.round(sleep.score * 0.50 + restingHRScore * 0.30 + Math.max(0, 100 - activity.score) * 0.20)));
-      const calStrain = Math.max(0, Math.min(100, Math.round(((activity.adjustedActiveCalories - 300) / 900) * 100)));
+      // ── Multi-day accumulated strain (EWMA, newest-first window of up to 7 days) ──
+      // Build a map of Strava suffer_score totals by date (already fetched as 7-day window).
+      const stravaSufferByDate = new Map<string, number>();
+      for (const a of stravaActivities) {
+        if (!a.start_date) continue;
+        const dayKey = a.start_date.slice(0, 10);
+        stravaSufferByDate.set(dayKey, (stravaSufferByDate.get(dayKey) ?? 0) + (a.suffer_score ?? 0));
+      }
 
-      // Blend Strava suffer_score into strain if present today
       const todayIso = new Date().toISOString().slice(0, 10);
-      const todayStrava = stravaActivities.filter(a => a.start_date?.startsWith(todayIso));
-      const stravaStrain = todayStrava.length > 0
-        ? Math.min(100, todayStrava.reduce((sum, a) => sum + (a.suffer_score ?? 0), 0) / 2)
-        : null;
-      const strain = Math.max(0, Math.min(100, stravaStrain != null
-        ? Math.round(stravaStrain * 0.65 + calStrain * 0.35)
-        : Math.round(calStrain * 0.60 + activity.score * 0.40)));
+      const todayStravaSuffer = stravaSufferByDate.get(todayIso) ?? null;
+      const todayLoad = computeDailyLoad(
+        activity.adjustedActiveCalories,
+        activity.steps,
+        todayStravaSuffer,
+      );
+
+      // Fetch prior days from daily_summaries (userId already in scope from auth call above).
+      let priorDaysSummaries: Array<{ date: string; total_calories: number; total_steps: number }> = [];
+      try {
+        if (userId) {
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const { data: priorData } = await supabase
+            .from('daily_summaries')
+            .select('date, total_calories, total_steps')
+            .eq('user_id', userId)
+            .gte('date', sevenDaysAgo.toISOString().slice(0, 10))
+            .lte('date', yesterday.toISOString().slice(0, 10))
+            .order('date', { ascending: false });
+          if (priorData) priorDaysSummaries = priorData as any;
+        }
+      } catch (e) {
+        console.log('⚠️ [useHomeData] prior days fetch failed, using today-only strain:', e);
+      }
+
+      const priorLoads = priorDaysSummaries.map(row =>
+        computeDailyLoad(
+          row.total_calories || 0,
+          row.total_steps || 0,
+          stravaSufferByDate.get(row.date) ?? null,
+        )
+      );
+
+      const strain = ewmaStrain([todayLoad, ...priorLoads], 0.35);
+
+      if (__DEV__) {
+        console.log(`💪 [strain] today=${Math.round(todayLoad)} priors=${priorLoads.map(l => Math.round(l)).join(',')} ewma=${strain}`);
+      }
+
+      // Build per-day breakdown for the Recovery detail explainer.
+      // Same α as ewmaStrain; weights are normalized so they sum to 1.
+      const STRAIN_ALPHA = 0.35;
+      const stravaWorkoutsByDate = new Map<string, Array<{ name: string; sport: string; sufferScore: number }>>();
+      for (const a of stravaActivities) {
+        if (!a.start_date) continue;
+        const key = a.start_date.slice(0, 10);
+        const arr = stravaWorkoutsByDate.get(key) ?? [];
+        arr.push({
+          name: a.name ?? 'Activity',
+          sport: a.sport_type ?? 'Workout',
+          sufferScore: a.suffer_score ?? 0,
+        });
+        stravaWorkoutsByDate.set(key, arr);
+      }
+
+      const breakdownRaw: Array<{
+        dateKey: string;
+        load: number;
+        activeCalories: number;
+        steps: number;
+      }> = [
+        { dateKey: todayIso, load: todayLoad, activeCalories: activity.adjustedActiveCalories, steps: activity.steps },
+        ...priorDaysSummaries.map((row, i) => ({
+          dateKey: row.date,
+          load: priorLoads[i],
+          activeCalories: row.total_calories || 0,
+          steps: row.total_steps || 0,
+        })),
+      ];
+
+      // Compute normalized weights for display (same decay as ewmaStrain).
+      const rawWeights: number[] = [];
+      let w = 1;
+      for (let i = 0; i < breakdownRaw.length; i++) {
+        rawWeights.push(w);
+        w *= (1 - STRAIN_ALPHA);
+      }
+      const weightTotal = rawWeights.reduce((a, b) => a + b, 0) || 1;
+
+      const strainBreakdown: StrainDayBreakdown[] = breakdownRaw.map((b, i) => ({
+        dateKey: b.dateKey,
+        label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i}d ago`,
+        load: Math.round(b.load),
+        weight: rawWeights[i] / weightTotal,
+        activeCalories: Math.round(b.activeCalories),
+        steps: b.steps,
+        stravaSufferSum: Math.round(stravaSufferByDate.get(b.dateKey) ?? 0),
+        stravaWorkouts: stravaWorkoutsByDate.get(b.dateKey) ?? [],
+      }));
 
       // Merge ring-detected naps with Supabase naps (dedup by time overlap)
       console.log(`🛏️ [useHomeData] pre-merge: supabaseNaps=${todayNaps.length}, ringNaps=${ringNaps.length}`);
@@ -1905,7 +2045,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         }
 
         const newData: HomeData = {
-          overallScore, strain, readiness,
+          overallScore, strain, strainBreakdown, readiness,
           sleepScore: sleep.score,
           lastNightSleep: sleep,
           activity,

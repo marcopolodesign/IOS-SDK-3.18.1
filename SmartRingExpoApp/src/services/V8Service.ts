@@ -109,6 +109,80 @@ function enqueueNativeCall<T>(
 }
 
 /**
+ * Merge overlapping 4-hour sleep windows returned by getSleepDetailsAndActivityWithMode.
+ *
+ * The V8 band stores sleep in 240-min windows, each starting ~120 min after the previous.
+ * Crucially: each window has REAL sleep data in the FIRST ~120 entries and ZERO-PADDING
+ * in the second ~120 entries. Taking the overlap-skipped tail (old approach) discarded
+ * all the real data and kept only zeros.
+ *
+ * Correct approach: take entries 0..stride from each non-last window (stride = time to
+ * next window's start), then append the last window in full.
+ */
+function mergeV8SleepWindows(records: Array<{
+  arraySleepQuality: number[];
+  sleepUnitLength: number;
+  startTimestamp: number;
+  totalSleepTime: number;
+}>): Array<{
+  arraySleepQuality: number[];
+  sleepUnitLength: number;
+  startTimestamp: number;
+  totalSleepTime: number;
+}> {
+  if (records.length <= 1) return records;
+
+  const sorted = [...records].sort((a, b) => a.startTimestamp - b.startTimestamp);
+
+  // Group into sessions: within-night windows start ~2h apart (< 3h gap).
+  // Gap >= 3h = separate session (e.g. afternoon nap vs. night).
+  const sessions: typeof sorted[] = [];
+  let current: typeof sorted = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const gapHours = (sorted[i].startTimestamp - sorted[i - 1].startTimestamp) / 3600000;
+    if (gapHours < 3) {
+      current.push(sorted[i]);
+    } else {
+      sessions.push(current);
+      current = [sorted[i]];
+    }
+  }
+  sessions.push(current);
+
+  return sessions.map(windows => {
+    if (windows.length === 1) return windows[0];
+
+    let mergedQuality: number[] = [];
+
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i];
+      const unitMs = (w.sleepUnitLength || 1) * 60000;
+
+      if (i < windows.length - 1) {
+        // Take entries from this window's start up to the next window's start.
+        // This is exactly the unique (non-zero-padded) portion of this window.
+        const strideMs = windows[i + 1].startTimestamp - w.startTimestamp;
+        const entriesToTake = Math.min(
+          Math.round(strideMs / unitMs),
+          w.arraySleepQuality.length
+        );
+        mergedQuality = mergedQuality.concat(w.arraySleepQuality.slice(0, entriesToTake));
+      } else {
+        // Last window: take all entries (trailing zeros = awake/still in bed).
+        mergedQuality = mergedQuality.concat(w.arraySleepQuality);
+      }
+    }
+
+    return {
+      arraySleepQuality: mergedQuality,
+      sleepUnitLength: windows[0].sleepUnitLength || 1,
+      startTimestamp: windows[0].startTimestamp,
+      totalSleepTime: mergedQuality.length * (windows[0].sleepUnitLength || 1),
+    };
+  });
+}
+
+/**
  * Parse V8 date string "YYYY.MM.dd HH:mm:ss" to timestamp
  */
 function parseV8Date(dateStr: string): number {
@@ -255,15 +329,17 @@ const V8Service = {
 
   async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
     return enqueueNativeCall(async () => {
-      // Fetch once and cache — same pattern as JstyleService
+      // Fetch once and cache — use getSleepWithActivity (type 81), merge overlapping windows
       if (!_sleepRecordsCache) {
-        const result = await V8Bridge.getSleepData();
-        _sleepRecordsCache = (result.data || []).map((session: any) => ({
+        const result = await V8Bridge.getSleepWithActivity();
+        const raw = (result.data || []).map((session: any) => ({
           arraySleepQuality: session.arraySleepQuality || [],
           sleepUnitLength: Number(session.sleepUnitLength) || 1,
           totalSleepTime: Number(session.totalSleepTime) || 0,
           startTimestamp: parseV8Date(session.startTime_SleepData),
         }));
+        _sleepRecordsCache = mergeV8SleepWindows(raw);
+        console.log(`[V8Sleep] windows raw=${raw.length} merged=${_sleepRecordsCache.length}`);
       }
 
       if (_sleepRecordsCache.length === 0) {
@@ -328,7 +404,7 @@ const V8Service = {
         endTime: latestEnd || undefined,
         rawQualityRecords,
       };
-    }, 10000, 'getSleepData');
+    }, 30000, 'getSleepData');
   },
 
   /**
@@ -338,20 +414,54 @@ const V8Service = {
   async getSleepDataRaw(): Promise<{ records: any[]; timestamp?: number }> {
     return enqueueNativeCall(async () => {
       if (!_sleepRecordsCache) {
-        const result = await V8Bridge.getSleepData();
-        _sleepRecordsCache = (result.data || []).map((session: any) => ({
+        // Use getSleepWithActivity (type 81) — returns all 4-hour overlapping windows
+        const result = await V8Bridge.getSleepWithActivity();
+        console.log('[V8Sleep] raw bridge result count:', (result.data || []).length);
+        const rawRecords = (result.data || []).map((session: any) => ({
           arraySleepQuality: session.arraySleepQuality || [],
           sleepUnitLength: Number(session.sleepUnitLength) || 1,
           startTimestamp: parseV8Date(session.startTime_SleepData),
           totalSleepTime: Number(session.totalSleepTime) || 0,
         }));
+        _sleepRecordsCache = mergeV8SleepWindows(rawRecords);
+        console.log(`[V8Sleep] windows raw=${rawRecords.length} merged=${_sleepRecordsCache.length}`);
+        _sleepRecordsCache.forEach((r, i) => {
+          const q: number[] = r.arraySleepQuality;
+          const counts = { deep: 0, light: 0, rem: 0, awake: 0, other: 0 };
+          q.forEach((v: number) => {
+            if (v === 1) counts.deep++;
+            else if (v === 2) counts.light++;
+            else if (v === 3) counts.rem++;
+            else if (v === 0) counts.awake++;
+            else counts.other++;
+          });
+          const start = new Date(r.startTimestamp).toISOString();
+          console.log(`[V8Sleep] merged[${i}] start=${start} totalSleepTime=${r.totalSleepTime} quality.length=${q.length}`);
+          console.log(`[V8Sleep] merged[${i}] deep=${counts.deep} light=${counts.light} rem=${counts.rem} awake(0)=${counts.awake} other=${counts.other}`);
+        });
       }
       return { records: _sleepRecordsCache, timestamp: Date.now() };
-    }, 10000, 'getSleepDataRaw');
+    }, 30000, 'getSleepDataRaw');
   },
 
   clearSleepCache(): void {
     _sleepRecordsCache = null;
+  },
+
+  async getSleepWithActivityRaw(): Promise<any[]> {
+    return enqueueNativeCall(async () => {
+      const result = await V8Bridge.getSleepWithActivity();
+      console.log('[V8SleepActivity] raw bridge result count:', (result?.data || []).length);
+      return result?.data ?? [];
+    }, 30000, 'getSleepWithActivityRaw');
+  },
+
+  async getPPIDataRaw(): Promise<any[]> {
+    return enqueueNativeCall(async () => {
+      const result = await V8Bridge.getPPIData();
+      console.log('[V8PPI] raw bridge result count:', (result?.data || []).length);
+      return result?.data ?? [];
+    }, 20000, 'getPPIDataRaw');
   },
 
   async getContinuousHeartRate(): Promise<HeartRateData[]> {
