@@ -1,11 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-
-const QUESTIONS = [
-  'Hey Coach, how did I sleep last night?',
-  'Hey Coach, should I train hard today?',
-  'Hey Coach, why is my HRV low this week?',
-  'Hey Coach, am I ready for a long run?',
-];
+import { useTranslation } from 'react-i18next';
 
 const TYPING_MS = 55;
 const DELETE_MS = 28;
@@ -15,30 +9,44 @@ const DOT_PAUSE_MS = 900;
 
 type Phase = 'dots' | 'typing' | 'deleting';
 
-const ASK_COACH = 'Ask Coach';
-
 export function useTypewriter(): string {
-  const [display, setDisplay] = useState(ASK_COACH);
+  const { t } = useTranslation();
+
+  const askCoach = t('overview.ask_coach');
+  const questions = [
+    t('overview.coach_q_sleep'),
+    t('overview.coach_q_train'),
+    t('overview.coach_q_hrv'),
+    t('overview.coach_q_run'),
+  ];
+
+  const [display, setDisplay] = useState(askCoach);
   const state = useRef<{ phase: Phase; qIdx: number; cIdx: number; dotN: number }>({
     phase: 'dots',
     qIdx: 0,
     cIdx: 0,
     dotN: 0,
   });
+  // Keep refs to latest translated strings so the timer callback uses current language
+  const askCoachRef = useRef(askCoach);
+  const questionsRef = useRef(questions);
+  askCoachRef.current = askCoach;
+  questionsRef.current = questions;
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
     function tick() {
       const s = state.current;
+      const label = askCoachRef.current;
+      const qs = questionsRef.current;
 
       if (s.phase === 'dots') {
         if (s.dotN < 3) {
           s.dotN++;
-          setDisplay(ASK_COACH + '.'.repeat(s.dotN));
+          setDisplay(label + '.'.repeat(s.dotN));
           timer = setTimeout(tick, DOT_MS);
         } else {
-          // Pause with "Ask Coach..." fully shown, then clear and start typing
           timer = setTimeout(() => {
             setDisplay('');
             s.phase = 'typing';
@@ -50,13 +58,12 @@ export function useTypewriter(): string {
       }
 
       if (s.phase === 'typing') {
-        const q = QUESTIONS[s.qIdx];
+        const q = qs[s.qIdx];
         setDisplay(q.slice(0, s.cIdx));
         if (s.cIdx < q.length) {
           s.cIdx++;
           timer = setTimeout(tick, TYPING_MS);
         } else {
-          // Fully typed — pause then delete
           timer = setTimeout(() => {
             s.phase = 'deleting';
             tick();
@@ -66,14 +73,13 @@ export function useTypewriter(): string {
       }
 
       if (s.phase === 'deleting') {
-        const q = QUESTIONS[s.qIdx];
+        const q = qs[s.qIdx];
         if (s.cIdx > 0) {
           s.cIdx--;
           setDisplay(q.slice(0, s.cIdx));
           timer = setTimeout(tick, DELETE_MS);
         } else {
-          // Move to next question
-          s.qIdx = (s.qIdx + 1) % QUESTIONS.length;
+          s.qIdx = (s.qIdx + 1) % qs.length;
           s.phase = 'typing';
           timer = setTimeout(tick, 400);
         }

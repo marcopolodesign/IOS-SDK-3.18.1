@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import JstyleService from './JstyleService';
 import V8Service from './V8Service';
+import { reportError, addBreadcrumb, setRingContext } from '../utils/sentry';
 import type {
   DeviceInfo,
   DeviceType,
@@ -42,7 +43,7 @@ class UnifiedSmartRingService {
     try {
       const stored = await AsyncStorage.getItem('connectedSDKType');
       if (stored === 'jstyle' || stored === 'v8') return stored;
-    } catch (_) {}
+    } catch (e) { reportError(e, { op: 'getPersistedSDKType' }, 'warning'); }
     return 'none';
   }
 
@@ -114,9 +115,9 @@ class UnifiedSmartRingService {
     this.connectedSDKType = type;
     this.connectedDeviceType = deviceType ?? (type === 'v8' ? 'band' : type === 'jstyle' ? 'ring' : null);
     if (type === 'jstyle' || type === 'v8') {
-      AsyncStorage.setItem('connectedSDKType', type).catch(() => {});
+      AsyncStorage.setItem('connectedSDKType', type).catch(e => reportError(e, { op: 'persistSDKType.setItem' }, 'warning'));
     } else {
-      AsyncStorage.removeItem('connectedSDKType').catch(() => {});
+      AsyncStorage.removeItem('connectedSDKType').catch(e => reportError(e, { op: 'persistSDKType.removeItem' }, 'warning'));
     }
   }
 
@@ -203,6 +204,7 @@ class UnifiedSmartRingService {
   }
 
   disconnect(): void {
+    addBreadcrumb('ble', 'disconnect called', { sdkType: this.connectedSDKType });
     if (this.connectedSDKType === 'v8') {
       V8Service.disconnect();
     } else if (this.connectedSDKType === 'jstyle') {
@@ -320,6 +322,7 @@ class UnifiedSmartRingService {
 
     this.autoReconnectInFlight = (async () => {
       const persistedSDKType = await this.getPersistedSDKType();
+      addBreadcrumb('ble', 'autoReconnect started', { sdkType: persistedSDKType });
 
       // Check Jstyle already connected
       if (JstyleService.isAvailable()) {
@@ -327,6 +330,7 @@ class UnifiedSmartRingService {
           const jStatus = await JstyleService.isConnected();
           if (jStatus.connected) {
             this.setConnectedSDKType('jstyle');
+            if (jStatus.deviceId) setRingContext(jStatus.deviceId, 'jstyle');
             V8Service.forgetPairedDevice().catch(() => {});
             return {
               success: true,
@@ -368,14 +372,18 @@ class UnifiedSmartRingService {
             this.setConnectedSDKType('jstyle');
             const result = await JstyleService.autoReconnect();
             if (result.success) {
+              addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'jstyle' });
+              if (result.deviceId) setRingContext(result.deviceId, 'jstyle');
               setTimeout(() => this.emitConnectionState('connected'), 50);
               V8Service.forgetPairedDevice().catch(() => {});
               return result;
             }
+            reportError(new Error('autoReconnect.jstyle returned failure'), { op: 'autoReconnect.jstyle', reason: result?.message ?? 'unknown' });
             this.connectedSDKType = 'none';
           }
         } catch (e) {
           console.log('⚠️ Jstyle autoReconnect failed:', e);
+          reportError(e, { op: 'autoReconnect.jstyle' });
         }
       }
 
@@ -389,14 +397,18 @@ class UnifiedSmartRingService {
             this.setConnectedSDKType('v8', vDevType);
             const result = await V8Service.autoReconnect();
             if (result.success) {
+              addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'v8' });
+              if (result.deviceId) setRingContext(result.deviceId, 'v8');
               setTimeout(() => this.emitConnectionState('connected'), 50);
               JstyleService.forgetPairedDevice().catch(() => {});
               return result;
             }
+            reportError(new Error('autoReconnect.v8 returned failure'), { op: 'autoReconnect.v8', reason: result?.message ?? 'unknown' });
             this.connectedSDKType = 'none';
           }
         } catch (e) {
           console.log('⚠️ V8 autoReconnect failed:', e);
+          reportError(e, { op: 'autoReconnect.v8' });
         }
       }
 

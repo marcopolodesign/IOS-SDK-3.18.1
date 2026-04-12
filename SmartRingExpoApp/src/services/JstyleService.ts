@@ -13,6 +13,7 @@
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { SportType } from '../types/sdk.types';
+import { reportError, addBreadcrumb } from '../utils/sentry';
 import type {
   DeviceInfo,
   StepsData,
@@ -41,6 +42,7 @@ try {
   }
 } catch (error) {
   console.log('JstyleBridge native module not available');
+  reportError(new Error('JstyleBridge native module unavailable'), { op: 'moduleLoad' }, 'warning');
 }
 
 /**
@@ -158,6 +160,7 @@ class JstyleService {
       await this.sleep(150);
     } catch (error) {
       console.log(`[JstyleService] cancelPendingDataRequest failed after ${operationName} ${reason}:`, error);
+      reportError(error, { op: 'cancelPendingDataRequest' }, 'warning');
     }
   }
 
@@ -178,6 +181,10 @@ class JstyleService {
           const isTimeout = this.isTimeoutError(normalized);
           const canCancelPending = this.pendingResolverOperations.has(operationName);
 
+          if (isTimeout) {
+            addBreadcrumb('ble.native', 'native call timed out', { command: operationName }, 'warning');
+          }
+
           if (canCancelPending && (isBusy || isTimeout)) {
             await this.cancelPendingNativeRequest(
               operationName,
@@ -191,6 +198,7 @@ class JstyleService {
             continue;
           }
 
+          reportError(normalized, { op: 'enqueueNativeCall', command: operationName }, 'warning');
           throw normalized;
         }
       }
@@ -534,6 +542,7 @@ class JstyleService {
         }));
     } catch (e) {
       console.log('[JstyleService] getAllDailyStepsHistory error:', e);
+      reportError(e, { op: 'getAllDailyStepsHistory' }, 'warning');
       return [];
     }
   }
@@ -794,6 +803,7 @@ class JstyleService {
       await withNativeTimeout(JstyleBridge.enableAutoHRMonitoring(), 5000, 'enableAutoHRMonitoring');
     } catch (e) {
       console.log('⚠️ [JstyleService] enableAutoHRMonitoring failed:', e);
+      reportError(e, { op: 'enableAutoHRMonitoring' }, 'warning');
     }
   }
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { useAuth } from '../hooks/useAuth';
 import { OnboardingStorage } from '../utils/storage';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
+import { reportError } from '../utils/sentry';
 
 interface OnboardingState {
   isLoading: boolean;
@@ -48,7 +49,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       setIsDeviceCurrentlyConnected(status.connected);
       // Fire-and-forget early reconnect so ring is ready before fetchData starts
       if (!status.connected) {
-        void UnifiedSmartRingService.autoReconnect().catch(() => {});
+        void UnifiedSmartRingService.autoReconnect().catch(e => reportError(e, { op: 'onboarding.autoReconnect' }));
       }
     });
 
@@ -84,6 +85,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
         }
       } catch (sdkError) {
         console.log('📱 OnboardingContext: SDK check failed (expected on non-iOS):', sdkError);
+        reportError(sdkError, { op: 'onboarding.deviceCheck' }, 'warning');
       }
       
       // Use AsyncStorage values (or SDK-synced values if available)
@@ -91,6 +93,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       setPairedDeviceMac(mac);
     } catch (error) {
       console.error('Failed to load device state:', error);
+      reportError(error, { op: 'onboarding.loadDeviceState' });
     } finally {
       console.log('📱 OnboardingContext: Device loading complete');
       setDeviceLoading(false);
@@ -119,6 +122,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       await UnifiedSmartRingService.forgetPairedDevice();
     } catch (error) {
       console.log('📱 OnboardingContext: Failed to forget SDK device:', error);
+      reportError(error, { op: 'onboarding.forgetDevice' }, 'warning');
     }
     setHasConnectedDevice(false);
     setPairedDeviceMac(null);
@@ -129,7 +133,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     // Also clear native SDK pairings so stale NSUserDefaults don't affect the next pairing
     try {
       await UnifiedSmartRingService.forgetPairedDevice();
-    } catch (_) {}
+    } catch (e) { reportError(e, { op: 'onboarding.reset.forgetDevice' }, 'warning'); }
     setHasConnectedDevice(false);
     setPairedDeviceMac(null);
   }, []);

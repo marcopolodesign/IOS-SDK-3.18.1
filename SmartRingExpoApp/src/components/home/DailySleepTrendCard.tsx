@@ -5,6 +5,7 @@ import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { spacing, fontFamily, fontSize } from '../../theme/colors';
 import { useHomeDataContext } from '../../context/HomeDataContext';
+import { reportError } from '../../utils/sentry';
 
 // dayOfWeek index (0=Sun..6=Sat) → bar position in S M T W T F S layout
 type SleepDay = { barIndex: number; minutes: number };
@@ -97,6 +98,7 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
           }
         } catch (e) {
           console.log(`[DailySleepTrendCard] sleep fetch day ${i} error`, e);
+          reportError(e, { op: 'sleepTrend.fetch' }, 'warning');
         }
       }
 
@@ -134,7 +136,8 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
       }
     };
 
-    fetchSleep().catch(() => {
+    fetchSleep().catch(e => {
+      reportError(e, { op: 'sleepTrend.fetch' }, 'warning');
       if (!cancelled) setSleepDays([]);
     });
 
@@ -156,6 +159,8 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
     retryNonce,
   ]);
 
+  const hasEnoughForAverage = sleepDays.length >= 2;
+
   const avgMinutes = useMemo(() => {
     if (!sleepDays.length) return 0;
     return Math.round(sleepDays.reduce((sum, d) => sum + d.minutes, 0) / sleepDays.length);
@@ -175,9 +180,23 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
   return (
     <GradientInfoCard
       icon={<Text style={styles.icon}>♥</Text>}
-      title={t('sleep_trend.card_title')}
-      headerValue={sleepDays.length ? formatMinutes(avgMinutes) : t('sleep_trend.value_none')}
-      headerSubtitle={sleepDays.length ? t('sleep_trend.subtitle_great') : t('sleep_trend.status_no_data')}
+      title={
+        hasEnoughForAverage || sleepDays.length === 0
+          ? t('sleep_trend.card_title')
+          : t('sleep_trend.card_title_last')
+      }
+      headerValue={
+        sleepDays.length === 0
+          ? t('sleep_trend.value_none')
+          : formatMinutes(hasEnoughForAverage ? avgMinutes : sleepDays[0].minutes)
+      }
+      headerSubtitle={
+        sleepDays.length === 0
+          ? t('sleep_trend.status_no_data')
+          : hasEnoughForAverage
+          ? t('sleep_trend.subtitle_great')
+          : t('sleep_trend.subtitle_last_night')
+      }
       gradientStops={[
         { offset: 0, color: 'rgba(35, 101, 203, 0.95)' },
         { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -187,7 +206,6 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
       headerRight={headerRight}
     >
       <View style={styles.chart}>
-        <View style={[styles.avgLine, { top: `${100 - (avgMinutes / maxMinutes) * 100}%` }]} />
         <View style={styles.barsRow}>
           {DAY_LABELS.map((label, idx) => {
             const dayData = sleepDays.find(d => d.barIndex === idx);
@@ -197,9 +215,24 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
               <View key={label + idx} style={styles.barWrapper}>
                 <View style={[styles.bar, { height: `${heightPct}%` }]} />
                 <Text style={styles.dayLabel}>{label}</Text>
+                <Text style={styles.dayValue}>
+                  {value > 0 ? formatMinutes(value) : '—'}
+                </Text>
               </View>
             );
           })}
+          {hasEnoughForAverage && (
+            <View style={[styles.avgLineRow, { bottom: `${(avgMinutes / maxMinutes) * 100}%` }]}>
+              <View style={styles.avgLineDashes}>
+                {Array.from({ length: 40 }).map((_, i) => (
+                  <View key={i} style={styles.avgLineDash} />
+                ))}
+              </View>
+              <View style={styles.avgPill}>
+                <Text style={styles.avgPillText}>{formatMinutes(avgMinutes)}</Text>
+              </View>
+            </View>
+          )}
         </View>
       </View>
     </GradientInfoCard>
@@ -219,6 +252,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
+    marginTop: spacing.md,
   },
   barsRow: {
     flex: 1,
@@ -241,13 +275,46 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
   },
-  avgLine: {
+  avgLineRow: {
     position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  avgLineDashes: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    gap: 4,
+    opacity: 0.75,
+  },
+  avgLineDash: {
+    width: 6,
     height: 2,
     backgroundColor: '#f2a500',
-    opacity: 0.8,
+    borderRadius: 1,
+  },
+  avgPill: {
+    backgroundColor: '#f2a500',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    marginLeft: 4,
+  },
+  avgPillText: {
+    color: '#1a1a1a',
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+  },
+  dayValue: {
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'center',
   },
 });
 

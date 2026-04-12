@@ -12,6 +12,7 @@
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { SportType } from '../types/sdk.types';
+import { reportError } from '../utils/sentry';
 import type {
   DeviceInfo,
   StepsData,
@@ -231,11 +232,11 @@ const V8Service = {
   async scan(duration: number = 10): Promise<void> {
     if (!V8Bridge) throw new Error('V8Bridge not available');
     await V8Bridge.startScan();
-    setTimeout(() => V8Bridge.stopScan().catch(() => {}), duration * 1000);
+    setTimeout(() => V8Bridge.stopScan().catch((e: any) => reportError(e, { op: 'v8.stopScan' }, 'warning')), duration * 1000);
   },
 
   stopScan(): void {
-    V8Bridge?.stopScan().catch(() => {});
+    V8Bridge?.stopScan().catch((e: any) => reportError(e, { op: 'v8.stopScan' }, 'warning'));
   },
 
   async connect(deviceId: string): Promise<{ success: boolean; message: string }> {
@@ -249,7 +250,7 @@ const V8Service = {
 
   disconnect(): void {
     _sleepRecordsCache = null;
-    V8Bridge?.disconnect().catch(() => {});
+    V8Bridge?.disconnect().catch((e: any) => reportError(e, { op: 'v8.disconnect' }, 'warning'));
   },
 
   async isConnected(): Promise<{
@@ -571,7 +572,7 @@ const V8Service = {
   },
 
   async cancelPendingDataRequest(): Promise<void> {
-    if (V8Bridge) await V8Bridge.cancelPendingDataRequest().catch(() => {});
+    if (V8Bridge) await V8Bridge.cancelPendingDataRequest().catch((e: any) => reportError(e, { op: 'v8.cancelPendingDataRequest' }, 'warning'));
   },
 
   // ========== Real-Time Data Stream ==========

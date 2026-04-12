@@ -117,10 +117,10 @@ export function getMetricExplanations(t: TFunc): Record<MetricKey, MetricExplana
       chart: {
         type: 'score_arc',
         zones: [
-          { label: t('explainer.lbl_light'), min: 0, max: 9, color: '#4ADE80' },
-          { label: t('explainer.lbl_moderate'), min: 10, max: 13, color: '#FFD700' },
-          { label: t('explainer.lbl_strenuous'), min: 14, max: 17, color: '#FF6B35' },
-          { label: t('explainer.lbl_all_out'), min: 18, max: 21, color: '#FF4444' },
+          { label: t('explainer.lbl_light'), min: 0, max: 24, color: '#4ADE80' },
+          { label: t('explainer.lbl_moderate'), min: 25, max: 49, color: '#FFD700' },
+          { label: t('explainer.lbl_strenuous'), min: 50, max: 74, color: '#FF6B35' },
+          { label: t('explainer.lbl_all_out'), min: 75, max: 100, color: '#FF4444' },
         ],
       },
       accentColor: '#FF6B35',

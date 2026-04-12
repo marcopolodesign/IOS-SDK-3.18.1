@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
+import { reportError } from '../utils/sentry';
 import type {
   DeviceInfo,
   DeviceType,
@@ -139,6 +140,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
         console.log('✅ Battery:', batteryData.battery + '%');
       } catch (err: any) {
         console.log('⚠️ Could not fetch battery:', err.message);
+        reportError(err, { op: 'smartRing.fetch', metric: 'battery' }, 'warning');
       }
 
       // Fetch steps data
@@ -153,6 +155,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
         console.log('✅ Steps:', stepsData.steps);
       } catch (err: any) {
         console.log('⚠️ Could not fetch steps:', err.message);
+        reportError(err, { op: 'smartRing.fetch', metric: 'steps' }, 'warning');
       }
 
       // Fetch heart rate from 24-hour data first
@@ -162,6 +165,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
         console.log('✅ Heart Rate (24hr):', hrData.heartRate);
       } catch (err: any) {
         console.log('⚠️ Could not fetch heart rate:', err.message);
+        reportError(err, { op: 'smartRing.fetch', metric: 'hr' }, 'warning');
       }
 
       // Fetch SpO2
@@ -171,6 +175,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
         console.log('✅ SpO2:', spo2Data.spo2);
       } catch (err: any) {
         console.log('⚠️ Could not fetch SpO2:', err.message);
+        reportError(err, { op: 'smartRing.fetch', metric: 'spo2' }, 'warning');
       }
 
       // DISABLED: Real-time HR measurement on connection
@@ -185,6 +190,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
     } catch (error) {
       console.log('❌ Error fetching metrics:', error);
+      reportError(error, { op: 'smartRing.fetchMetrics' });
     } finally {
       setIsLoadingMetrics(false);
     }
@@ -395,6 +401,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       return false;
     } catch (error) {
       console.log('❌ [useSmartRing] Connection failed:', error);
+      reportError(error, { op: 'smartRing.connect' });
       return false;
     }
   }, [devices]);
@@ -423,6 +430,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       return result;
     } catch (error) {
       console.log('⚠️ Error checking for paired device:', error);
+      reportError(error, { op: 'smartRing.checkPairedDevice' }, 'warning');
       return { hasPairedDevice: false, device: null };
     }
   }, []);
@@ -490,6 +498,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       }
     } catch (error) {
       console.log('❌ Auto-connect error:', error);
+      reportError(error, { op: 'smartRing.autoConnect' });
       return { success: false, device: null };
     } finally {
       console.log('📱 [DEBUG] autoConnect finally block - setting isAutoConnecting to false');
@@ -505,6 +514,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       await UnifiedSmartRingService.measureHeartRate();
     } catch (error) {
       console.log('❌ Failed to start heart rate measurement:', error);
+      reportError(error, { op: 'smartRing.measureHR' }, 'warning');
     }
   }, []);
 
@@ -516,6 +526,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       UnifiedSmartRingService.startSpO2Monitoring();
     } catch (error) {
       console.log('❌ Failed to start SpO2 measurement:', error);
+      reportError(error, { op: 'smartRing.measureSpO2' }, 'warning');
     }
   }, []);
 

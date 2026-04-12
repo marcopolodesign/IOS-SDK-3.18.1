@@ -6,11 +6,11 @@ import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/SupabaseService';
 import { supabaseService } from '../services/SupabaseService';
-import { loadBaselines } from '../services/ReadinessService';
-import { computeSleepBaselineTier } from '../services/ReadinessService';
+import { reportError } from '../utils/sentry';
+import { loadBaselines, bootstrapBaselinesFromSupabase, computeSleepBaselineTier } from '../services/ReadinessService';
 import type { SleepBaselineState } from '../types/sleepBaseline.types';
 
-const CACHE_KEY = 'sleep_baseline_tier_v1';
+const CACHE_KEY = 'sleep_baseline_tier_v2';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 interface CachedBaseline {
@@ -62,21 +62,31 @@ export function useSleepBaseline() {
         }
       }
 
-      const baselines = await loadBaselines();
+      let baselines = await loadBaselines();
+
+      // Bootstrap from Supabase if no sleep data on device yet
+      if (baselines.sleepScore.length === 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          baselines = await bootstrapBaselinesFromSupabase(user.id);
+        }
+      }
+
       const state = computeSleepBaselineTier(baselines);
       setBaseline(state);
       await setCache(state);
 
-      // Persist to Supabase (fire-and-forget)
+      // Persist tier to Supabase (fire-and-forget)
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (user && state.daysInBaseline >= 1) {
           supabaseService
             .updateSleepBaselineTier(user.id, state.tier, state.averageScore)
-            .catch((e) => console.warn('[useSleepBaseline] supabase sync error:', e));
+            .catch((e) => { console.warn('[useSleepBaseline] supabase sync error:', e); reportError(e, { op: 'sleepBaseline.supabaseSync' }, 'warning'); });
         }
       });
     } catch (e) {
       console.warn('[useSleepBaseline] load error:', e);
+      reportError(e, { op: 'sleepBaseline.compute' });
     } finally {
       setLoading(false);
     }

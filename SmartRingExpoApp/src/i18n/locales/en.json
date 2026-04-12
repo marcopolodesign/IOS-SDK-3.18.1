@@ -62,7 +62,11 @@
     "insight_activity_low": "You've been less active lately. Even a short 10-minute walk can boost your energy and mood.",
     "insight_activity_great": "You're crushing it! Your activity levels are excellent. Remember to stay hydrated and fuel properly.",
     "insight_general": "Your vitals look good today. Keep up the consistent routine for optimal health.",
-    "ask_coach": "Ask Coach"
+    "ask_coach": "Ask Coach",
+    "coach_q_sleep": "Hey Coach, how did I sleep last night?",
+    "coach_q_train": "Hey Coach, should I train hard today?",
+    "coach_q_hrv": "Hey Coach, why is my HRV low this week?",
+    "coach_q_run": "Hey Coach, am I ready for a long run?"
   },
   "sleep": {
     "title": "Sleep",
@@ -528,7 +532,9 @@
   },
   "sleep_trend": {
     "card_title": "Avg. Sleep",
+    "card_title_last": "Last Night",
     "subtitle_great": "Great",
+    "subtitle_last_night": "Last recorded night",
     "value_none": "None",
     "status_no_data": "No data",
     "day_sun": "S",
@@ -601,12 +607,12 @@
     "sleep_score_range_3": "0–39 → Poor",
 
     "strain_title": "Strain",
-    "strain_subtitle": "Cardiovascular load from today's activity",
-    "strain_body": "Strain measures how much cardiovascular stress your body accumulated during the day based on heart rate data. Higher strain means more exertion. Balancing strain against your recovery score helps avoid overtraining.",
-    "strain_range_0": "0–9 → Rest / Light",
-    "strain_range_1": "10–13 → Moderate",
-    "strain_range_2": "14–17 → Strenuous",
-    "strain_range_3": "18–21 → All Out",
+    "strain_subtitle": "Cumulative cardiovascular load over the last 7 days",
+    "strain_body": "Strain reflects your accumulated training load over the past 7 days, not just today. Recent days carry more weight (EWMA), so a hard workout echoes forward while rest lets it fade gradually. Balancing strain against your recovery score helps avoid overtraining.",
+    "strain_range_0": "0–24 → Rest / Light",
+    "strain_range_1": "25–49 → Moderate",
+    "strain_range_2": "50–74 → Strenuous",
+    "strain_range_3": "75–100 → All Out",
 
     "readiness_title": "Readiness",
     "readiness_subtitle": "Balance of recent strain vs. recovery",
@@ -895,6 +901,8 @@
     },
     "about": {
       "app_version": "App Version",
+      "ota_version": "OTA Update",
+      "ota_embedded": "Built-in",
       "sdk_version": "SDK Version"
     },
     "developer": {

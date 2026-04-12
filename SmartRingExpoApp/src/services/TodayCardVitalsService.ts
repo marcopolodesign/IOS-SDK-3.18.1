@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UnifiedSmartRingService from './UnifiedSmartRingService';
+import { reportError } from '../utils/sentry';
 
 export type TodayCardHydrationReason =
   | 'initial'
@@ -123,6 +124,7 @@ class TodayCardVitalsService {
         }
       } catch (error) {
         console.log('[TodayCardVitalsService] temperature fetch failed:', error);
+        reportError(error, { op: 'todayCard.fetchTemperature' }, 'warning');
       }
     }
 
@@ -143,6 +145,7 @@ class TodayCardVitalsService {
         }
       } catch (error) {
         console.log('[TodayCardVitalsService] spo2 fetch failed:', error);
+        reportError(error, { op: 'todayCard.fetchSpO2' }, 'warning');
       }
     }
 
@@ -164,6 +167,7 @@ class TodayCardVitalsService {
       }
     } catch (error) {
       console.log('[TodayCardVitalsService] connection status check failed:', error);
+      reportError(error, { op: 'todayCard.connectionCheck' }, 'warning');
     }
 
     return {};
@@ -200,6 +204,7 @@ class TodayCardVitalsService {
       return parsedVitals;
     } catch (error) {
       console.log('[TodayCardVitalsService] Failed to load cached vitals:', error);
+      reportError(error, { op: 'todayCard.loadCache' }, 'warning');
       return null;
     }
   }
@@ -211,6 +216,7 @@ class TodayCardVitalsService {
       console.log('[TodayCardVitalsService] Saved cached vitals');
     } catch (error) {
       console.log('[TodayCardVitalsService] Failed to save cached vitals:', error);
+      reportError(error, { op: 'todayCard.saveCache' }, 'warning');
     }
   }
 
@@ -232,6 +238,7 @@ class TodayCardVitalsService {
         isConnected = !!connection.connected;
       } catch (error) {
         console.log('[TodayCardVitalsService] connection check failed:', error);
+        reportError(error, { op: 'todayCard.hydrationCheck' }, 'warning');
       }
 
       if (!isConnected) {

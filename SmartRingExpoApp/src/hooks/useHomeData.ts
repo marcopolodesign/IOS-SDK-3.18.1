@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { reportError } from '../utils/sentry';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18next from 'i18next';
@@ -2097,7 +2098,8 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           .then(() => {
             setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'cloud', 'done') }));
           })
-          .catch(() => {
+          .catch(e => {
+            reportError(e, { op: 'homeData.syncAllData' });
             setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'cloud', 'error') }));
           });
         return newData;
@@ -2106,6 +2108,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
     } catch (error: any) {
       const message = error?.message || 'Failed to sync ring data.';
       console.log('⚠️ [useHomeData] fetchData fatal error:', message);
+      reportError(error, { op: 'homeData.fetchData' });
       setData(prev => ({
         ...prev,
         isLoading: false,

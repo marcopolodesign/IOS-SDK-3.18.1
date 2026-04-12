@@ -130,100 +130,79 @@ export async function getSleepHistory(days: number = 7): Promise<SleepInfo[]> {
   return results;
 }
 
-/**
- * Calculate a sleep quality score (0-100)
- * 
- * Scoring based on sleep science research:
- * - Ideal total sleep: 7-9 hours
- * - Ideal deep sleep: 15-25% of total
- * - Ideal REM: 20-25% of total
- * - Less awake time = better
- */
+interface SleepBreakdown {
+  duration: number;
+  deepSleep: number;
+  efficiency: number;
+  consistency: number;
+}
+
+function computeSleepBreakdown(deep: number, light: number, rem: number, awake: number): SleepBreakdown {
+  const total = deep + light + rem;
+
+  let duration = 0;
+  if (total >= 420 && total <= 540) duration = 35;
+  else if ((total >= 360 && total < 420) || (total > 540 && total <= 600)) duration = 25;
+  else if ((total >= 300 && total < 360) || total > 600) duration = 15;
+  else duration = 5;
+
+  const deepPct = total > 0 ? (deep / total) * 100 : 0;
+  let deepSleep = 0;
+  if (deepPct >= 15 && deepPct <= 25) deepSleep = 25;
+  else if ((deepPct >= 10 && deepPct < 15) || (deepPct > 25 && deepPct <= 30)) deepSleep = 18;
+  else if (deepPct >= 5 && deepPct < 10) deepSleep = 10;
+  else deepSleep = 5;
+
+  const awakePct = total > 0 ? (awake / total) * 100 : 0;
+  let efficiency = 0;
+  if (awakePct <= 5) efficiency = 25;
+  else if (awakePct <= 10) efficiency = 20;
+  else if (awakePct <= 15) efficiency = 15;
+  else if (awakePct <= 20) efficiency = 10;
+  else efficiency = 5;
+
+  const remPct = total > 0 ? (rem / total) * 100 : 0;
+  let consistency = 0;
+  if (remPct >= 20 && remPct <= 25) consistency = 15;
+  else if ((remPct >= 15 && remPct < 20) || (remPct > 25 && remPct <= 30)) consistency = 12;
+  else if (remPct >= 10) consistency = 8;
+  else consistency = 5;
+
+  return { duration, deepSleep, efficiency, consistency };
+}
+
+/** Returns a 0-100 sleep score from raw stage minutes. Single source of truth for the formula. */
+export function calculateSleepScoreFromStages({
+  deep,
+  light,
+  rem,
+  awake,
+}: {
+  deep: number;
+  light: number;
+  rem: number;
+  awake: number;
+}): number {
+  const b = computeSleepBreakdown(deep, light, rem, awake);
+  return b.duration + b.deepSleep + b.efficiency + b.consistency;
+}
+
+/** Calculate a sleep quality score (0-100) with quality label and component breakdown. */
 export function calculateSleepScore(sleep: SleepInfo): SleepScore {
-  const totalMinutes = sleep.totalSleepMinutes;
-  
-  // Duration score (0-35 points)
-  // Optimal: 7-9 hours (420-540 minutes)
-  let durationScore = 0;
-  if (totalMinutes >= 420 && totalMinutes <= 540) {
-    durationScore = 35; // Optimal
-  } else if (totalMinutes >= 360 && totalMinutes < 420) {
-    durationScore = 25; // Slightly under
-  } else if (totalMinutes > 540 && totalMinutes <= 600) {
-    durationScore = 25; // Slightly over
-  } else if (totalMinutes >= 300 && totalMinutes < 360) {
-    durationScore = 15; // Under
-  } else if (totalMinutes > 600) {
-    durationScore = 15; // Over
-  } else {
-    durationScore = 5; // Very under
-  }
-  
-  // Deep sleep score (0-25 points)
-  // Optimal: 15-25% of total sleep
-  const deepPercent = totalMinutes > 0 ? (sleep.deepMinutes / totalMinutes) * 100 : 0;
-  let deepScore = 0;
-  if (deepPercent >= 15 && deepPercent <= 25) {
-    deepScore = 25;
-  } else if (deepPercent >= 10 && deepPercent < 15) {
-    deepScore = 18;
-  } else if (deepPercent > 25 && deepPercent <= 30) {
-    deepScore = 18;
-  } else if (deepPercent >= 5 && deepPercent < 10) {
-    deepScore = 10;
-  } else {
-    deepScore = 5;
-  }
-  
-  // Efficiency score (0-25 points)
-  // Based on how little time spent awake
-  const awakePercent = totalMinutes > 0 ? (sleep.awakeMinutes / totalMinutes) * 100 : 0;
-  let efficiencyScore = 0;
-  if (awakePercent <= 5) {
-    efficiencyScore = 25;
-  } else if (awakePercent <= 10) {
-    efficiencyScore = 20;
-  } else if (awakePercent <= 15) {
-    efficiencyScore = 15;
-  } else if (awakePercent <= 20) {
-    efficiencyScore = 10;
-  } else {
-    efficiencyScore = 5;
-  }
-  
-  // REM/Consistency score (0-15 points)
-  // Optimal REM: 20-25%
-  const remPercent = totalMinutes > 0 ? (sleep.remMinutes / totalMinutes) * 100 : 0;
-  let consistencyScore = 0;
-  if (remPercent >= 20 && remPercent <= 25) {
-    consistencyScore = 15;
-  } else if (remPercent >= 15 && remPercent < 20) {
-    consistencyScore = 12;
-  } else if (remPercent > 25 && remPercent <= 30) {
-    consistencyScore = 12;
-  } else if (remPercent >= 10) {
-    consistencyScore = 8;
-  } else {
-    consistencyScore = 5;
-  }
-  
-  const totalScore = durationScore + deepScore + efficiencyScore + consistencyScore;
-  
+  const breakdown = computeSleepBreakdown(
+    sleep.deepMinutes,
+    sleep.lightMinutes,
+    sleep.remMinutes,
+    sleep.awakeMinutes,
+  );
+  const score = breakdown.duration + breakdown.deepSleep + breakdown.efficiency + breakdown.consistency;
+
   let quality: SleepScore['quality'] = 'Poor';
-  if (totalScore >= 85) quality = 'Excellent';
-  else if (totalScore >= 70) quality = 'Good';
-  else if (totalScore >= 50) quality = 'Fair';
-  
-  return {
-    score: totalScore,
-    quality,
-    breakdown: {
-      duration: durationScore,
-      deepSleep: deepScore,
-      efficiency: efficiencyScore,
-      consistency: consistencyScore,
-    },
-  };
+  if (score >= 85) quality = 'Excellent';
+  else if (score >= 70) quality = 'Good';
+  else if (score >= 50) quality = 'Fair';
+
+  return { score, quality, breakdown };
 }
 
 /**

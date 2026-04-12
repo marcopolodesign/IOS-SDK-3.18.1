@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import smartRingService from './UnifiedSmartRingService';
+import { reportError } from '../utils/sentry';
 import { supabase } from './SupabaseService';
 
 const TASK_NAME = 'BACKGROUND_SLEEP_CHECK';
@@ -161,6 +162,7 @@ TaskManager.defineTask(TASK_NAME, async () => {
         await bgLog('reconnected');
       } catch (e: any) {
         await bgLog('reconnect_error', { error: e?.message });
+        reportError(e, { op: 'backgroundTask.reconnect' });
         return BackgroundFetch.BackgroundFetchResult.Failed;
       }
     }
@@ -198,6 +200,7 @@ TaskManager.defineTask(TASK_NAME, async () => {
     return BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error: any) {
     await bgLog('task_error', { error: error?.message, stack: error?.stack?.slice(0, 300) });
+    reportError(error, { op: 'backgroundSleepTask.topLevel' }, 'fatal');
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });

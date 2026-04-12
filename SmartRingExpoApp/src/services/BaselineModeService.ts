@@ -5,6 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './SupabaseService';
+import { reportError } from '../utils/sentry';
 import type { BaselineModeState, BaselineMetrics, MetricBaselineProgress } from '../types/baseline.types';
 import type { FocusBaselines } from '../types/focus.types';
 
@@ -127,6 +128,7 @@ export async function persistBaselineCompletion(): Promise<string> {
     await AsyncStorage.setItem(BASELINE_COMPLETED_KEY, now);
   } catch (err) {
     console.warn('[BaselineMode] Failed to persist to AsyncStorage:', err);
+    reportError(err, { op: 'baselineMode.persistLocal' }, 'warning');
   }
 
   // Save to Supabase (best-effort)
@@ -142,6 +144,7 @@ export async function persistBaselineCompletion(): Promise<string> {
     }
   } catch (err) {
     console.warn('[BaselineMode] Failed to persist to Supabase:', err);
+    reportError(err, { op: 'baselineMode.persistSupabase' }, 'warning');
   }
 
   return now;

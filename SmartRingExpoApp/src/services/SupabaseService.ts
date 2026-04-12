@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { reportError } from '../utils/sentry';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 import { Database } from '../types/supabase.types';
@@ -54,6 +55,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching profile:', error);
+      reportError(error, { method: 'getProfile', table: 'profiles' });
       return null;
     }
     return data;
@@ -69,6 +71,7 @@ class SupabaseService {
 
     if (error) {
       console.error('Error updating profile:', error);
+      reportError(error, { method: 'updateProfile', table: 'profiles' });
       return null;
     }
     return data;
@@ -86,6 +89,7 @@ class SupabaseService {
 
     if (error) {
       console.warn('[SupabaseService] updateSleepBaselineTier error:', error);
+      reportError(error, { method: 'updateSleepBaselineTier', table: 'profiles' }, 'warning');
     }
   }
 
@@ -100,6 +104,7 @@ class SupabaseService {
 
     if (error) {
       console.error('Error inserting heart rate readings:', error);
+      reportError(error, { method: 'insertHeartRateReadings', table: 'heart_rate_readings' });
       return false;
     }
     return true;
@@ -120,6 +125,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching heart rate readings:', error);
+      reportError(error, { method: 'getHeartRateReadings', table: 'heart_rate_readings' });
       return [];
     }
     return data || [];
@@ -136,6 +142,7 @@ class SupabaseService {
 
     if (error) {
       console.error('Error inserting steps readings:', error);
+      reportError(error, { method: 'insertStepsReadings', table: 'steps_readings' });
       return false;
     }
     return true;
@@ -156,6 +163,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching steps readings:', error);
+      reportError(error, { method: 'getStepsReadings', table: 'steps_readings' });
       return [];
     }
     return data || [];
@@ -172,6 +180,7 @@ class SupabaseService {
 
     if (error) {
       console.error('Error inserting sleep session:', error);
+      reportError(error, { method: 'insertSleepSession', table: 'sleep_sessions' });
       return false;
     }
     return true;
@@ -192,6 +201,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching sleep sessions:', error);
+      reportError(error, { method: 'getSleepSessions', table: 'sleep_sessions' });
       return [];
     }
     return data || [];
@@ -235,6 +245,7 @@ class SupabaseService {
 
     if (error) {
       console.error('Error fetching nap sessions:', error);
+      reportError(error, { method: 'getNapSessionsForDate', table: 'sleep_sessions' });
       return [];
     }
     return data || [];
@@ -254,6 +265,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error upserting daily summary:', error);
+      reportError(error, { method: 'upsertDailySummary', table: 'daily_summaries' });
       return false;
     }
     return true;
@@ -274,6 +286,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching daily summaries:', error);
+      reportError(error, { method: 'getDailySummaries', table: 'daily_summaries' });
       return [];
     }
     return data || [];
@@ -290,6 +303,7 @@ class SupabaseService {
     
     if (error && error.code !== 'PGRST116') {
       console.error('Error fetching daily summary:', error);
+      reportError(error, { method: 'getDailySummary', table: 'daily_summaries' }, 'warning');
     }
     return data || null;
   }
@@ -313,6 +327,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching weekly summaries:', error);
+      reportError(error, { method: 'getWeeklySummaries', table: 'weekly_summaries' });
       return [];
     }
     return data || [];
@@ -333,6 +348,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching monthly summaries:', error);
+      reportError(error, { method: 'getMonthlySummaries', table: 'monthly_summaries' });
       return [];
     }
     return data || [];
@@ -349,6 +365,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error upserting Strava activities:', error);
+      reportError(error, { method: 'upsertStravaActivities', table: 'strava_activities' });
       return false;
     }
     return true;
@@ -369,6 +386,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error fetching Strava activities:', error);
+      reportError(error, { method: 'getStravaActivities', table: 'strava_activities' });
       return [];
     }
     return data || [];
@@ -397,6 +415,7 @@ class SupabaseService {
     
     if (error) {
       console.error('Error creating ring sync:', error);
+      reportError(error, { method: 'createRingSync', table: 'ring_syncs' }, 'warning');
       return null;
     }
     return data?.id || null;
@@ -414,6 +433,7 @@ class SupabaseService {
       .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting SpO2 readings:', error);
+      reportError(error, { method: 'insertSpO2Readings', table: 'spo2_readings' });
       return false;
     }
     return true;
@@ -436,6 +456,7 @@ class SupabaseService {
       .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: false });
     if (error) {
       console.error('Error inserting HRV readings:', error);
+      reportError(error, { method: 'insertHRVReadings', table: 'hrv_readings' });
       return false;
     }
     return true;
@@ -449,6 +470,7 @@ class SupabaseService {
       .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting stress readings:', error);
+      reportError(error, { method: 'insertStressReadings', table: 'stress_readings' });
       return false;
     }
     return true;
@@ -462,6 +484,7 @@ class SupabaseService {
       .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting temperature readings:', error);
+      reportError(error, { method: 'insertTemperatureReadings', table: 'temperature_readings' });
       return false;
     }
     return true;
@@ -485,6 +508,7 @@ class SupabaseService {
       .upsert(readings, { onConflict: 'user_id,recorded_at', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting BP readings:', error);
+      reportError(error, { method: 'insertBloodPressureReadings', table: 'blood_pressure_readings' });
       return false;
     }
     return true;
@@ -504,6 +528,7 @@ class SupabaseService {
       .order('recorded_at', { ascending: true });
     if (error) {
       console.error('Error fetching BP readings:', error);
+      reportError(error, { method: 'getBloodPressureReadings', table: 'blood_pressure_readings' });
       return [];
     }
     return data || [];
@@ -532,6 +557,7 @@ class SupabaseService {
       .upsert(records, { onConflict: 'user_id,start_time', ignoreDuplicates: true });
     if (error) {
       console.error('Error inserting sport records:', error);
+      reportError(error, { method: 'insertSportRecords', table: 'sport_records' });
       return false;
     }
     return true;
@@ -560,6 +586,7 @@ class SupabaseService {
       .order('start_time', { ascending: false });
     if (error) {
       console.error('Error fetching sport records:', error);
+      reportError(error, { method: 'getSportRecords', table: 'sport_records' });
       return [];
     }
     return data || [];
@@ -583,6 +610,7 @@ class SupabaseService {
       .order('recorded_at', { ascending: true });
     if (error) {
       console.error('Error fetching SpO2 readings:', error);
+      reportError(error, { method: 'getSpO2Readings', table: 'spo2_readings' });
       return [];
     }
     return data || [];
@@ -602,6 +630,7 @@ class SupabaseService {
       .order('recorded_at', { ascending: true });
     if (error) {
       console.error('Error fetching HRV readings:', error);
+      reportError(error, { method: 'getHRVReadings', table: 'hrv_readings' });
       return [];
     }
     return data || [];
@@ -621,6 +650,7 @@ class SupabaseService {
       .order('recorded_at', { ascending: true });
     if (error) {
       console.error('Error fetching stress readings:', error);
+      reportError(error, { method: 'getStressReadings', table: 'stress_readings' });
       return [];
     }
     return data || [];
@@ -640,6 +670,7 @@ class SupabaseService {
       .order('recorded_at', { ascending: true });
     if (error) {
       console.error('Error fetching temperature readings:', error);
+      reportError(error, { method: 'getTemperatureReadings', table: 'temperature_readings' });
       return [];
     }
     return data || [];

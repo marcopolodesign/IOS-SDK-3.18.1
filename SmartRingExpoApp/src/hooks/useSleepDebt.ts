@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/SupabaseService';
+import { reportError } from '../utils/sentry';
 import {
   computeSleepDebt,
   getCachedSleepDebt,
@@ -51,6 +52,7 @@ export function useSleepDebt() {
       await cacheSleepDebt(state);
     } catch (e) {
       console.warn('[useSleepDebt] load error:', e);
+      reportError(e, { op: 'sleepDebt.calculate' });
     } finally {
       setLoading(false);
     }
@@ -71,6 +73,7 @@ export function useSleepDebt() {
       await load(true);
     } catch (e) {
       console.warn('[useSleepDebt] updateTarget error:', e);
+      reportError(e, { op: 'sleepDebt.fallback' });
     }
   }, [load]);
 

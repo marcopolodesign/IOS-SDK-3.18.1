@@ -4,6 +4,210 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-12: Detail Pages — Border-Only Cards + Recovery Headline Sync
+
+**Changes:**
+
+1. **Border-only cards (both sleep-detail + recovery-detail):** Removed `backgroundColor: 'rgba(255,255,255,0.04)'` from all card containers below the score headline. Replaced with `borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'`. Also removed insight block background fills (kept their accent border colors). Affected: `statsContainer`, `hypnogramWrapper`, `insightBlock` in sleep-detail; `statsContainer`, `contribContainer`, `sStyles.card` (StrainAccumulationCard), `insightBlock` in recovery-detail.
+
+2. **Recovery headline synced to sleep-detail pattern:**
+   - Restructured JSX: `headlineOuter` (column) → `headlineRow` (row: score + label) + `badgeRow` (row wrapper for badge)
+   - `headlineScore`: `lineHeight: 80` → `lineHeight: 0`
+   - `headlineLabel`: `fontSize: 18` → `fontSize: 24`, added `marginBottom: 12`
+   - `badgeRow`: `flexDirection: 'row', alignSelf: 'flex-start'` (fixes badge overflow)
+   - `badge`: `paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10`
+   - `badgeText`: added `textTransform: 'uppercase'`
+   - `gradientZone`: removed `paddingBottom: spacing.md`
+
+**Files modified:** `app/detail/sleep-detail.tsx`, `app/detail/recovery-detail.tsx`
+
+---
+
+## 2026-04-12: Sleep Detail — Badge Overflow Fix + Label Margin Tweak
+
+**Change:** Fixed the quality badge (Excellent/Fair/Poor) on the sleep detail header still stretching to full width. Added `alignSelf: 'flex-start'` to `badgeRow` so the flex-row wrapper explicitly collapses to content width. Also reduced `headlineLabel` marginBottom from 16 → 12 for tighter vertical spacing between "Sleep Score" and the badge.
+
+**Files modified:** `app/detail/sleep-detail.tsx`
+
+---
+
+## 2026-04-12: Disable Vercel Plugin for Focus Project
+
+**Change:** Added `enabledPlugins: { "vercel@claude-plugins-official": false }` to `SmartRingExpoApp/.claude/settings.local.json`. This prevents the vercel/nextjs PostToolUse hooks from firing false-positive "use client" suggestions on Expo Router files — this is an Expo project, not Next.js.
+
+**Files modified:** `SmartRingExpoApp/.claude/settings.local.json`
+
+---
+
+## 2026-04-12: Comprehensive Sentry Instrumentation (All Services, Hooks, UI + Daily Agent)
+
+**Change:** Added full Sentry error reporting across the entire Focus app — ~140 previously invisible error-handling sites now report to Sentry. Created a centralized `src/utils/sentry.ts` utility, enhanced `Sentry.init()` config, wired user identification, and added BLE breadcrumbs. Also set up a daily remote Claude Code agent (cron `0 12 * * *`) that queries Sentry via REST API, analyzes stack traces, and auto-creates fix PRs for the `focus-app-1` project.
+
+**Files created:**
+- `src/utils/sentry.ts` — Central wrapper: `reportError`, `reportMessage`, `addBreadcrumb`, `setUserContext`, `setRingContext`. Fast path skips `withScope` when no context needed.
+
+**Files modified:**
+- `app/_layout.tsx` — Enhanced `Sentry.init()`: added `environment`, lowered sample rates to 0.3/0.1 for production, added `beforeSend` to strip token/secret keys from breadcrumb data
+- `src/hooks/useAuth.ts` — `setUserContext` called on both initial session load (`getSession()`) and every auth state change so Sentry always knows which user is affected
+- `src/services/SupabaseService.ts` — All 28 DB methods (insert/upsert/select/update across every table) now call `reportError` with `{ method, table }` context
+- `src/services/DataSyncService.ts` — 9 sites: `syncAllData` top-level, per-metric syncs (HR, steps, sleep, vitals, BP, sport), daily/weekly summary updates, battery/version fetches. Added `addBreadcrumb` on sync completion.
+- `src/services/BackgroundSleepTask.ts` — 2 sites: reconnect failure and top-level task crash (`'fatal'` level — runs without UI, invisible otherwise)
+- `src/services/AuthService.ts` — OAuth flow catch
+- `src/services/UnifiedSmartRingService.ts` — 8 sites: `getPersistedSDKType`, AsyncStorage persist/remove, autoReconnect failures (jstyle/v8) with `reason` tag, BLE breadcrumbs (connect/disconnect/reconnect), `setRingContext` on connection
+- `src/services/JstyleService.ts` — 5 sites: module load, `cancelPendingDataRequest`, `enqueueNativeCall` timeout (breadcrumb), `getAllDailyStepsHistory`, `enableAutoHRMonitoring`
+- `src/services/V8Service.ts` — 4 sites: queue tail, `stopScan` ×2, `disconnect`, `cancelPendingDataRequest` (all warning — inactive SDK)
+- `src/services/StravaService.ts` — 9 sites: connect, token exchange/refresh/load, API request, sync detail query, per-activity fetch, Supabase sync, background sync
+- `src/services/HealthKit/HealthKitDataFetchers.ts` — 7 sites across all fetch functions
+- `src/services/HealthKit/HealthKitPermissions.ts` — 3 sites: inner loop, fatal outer, auth request
+- `src/services/HealthKit/HealthKitSleepProcessor.ts` — 1 site
+- `src/services/HealthKit/HealthKitSubscriptions.ts` — 1 site
+- `src/services/NotificationService.ts` — background task registration
+- `src/services/BaselineModeService.ts` — AsyncStorage + Supabase persist
+- `src/services/TodayCardVitalsService.ts` — 6 sites across all fetch/cache operations
+- `src/hooks/useSleepBaseline.ts`, `useSleepDebt.ts`, `useHealthData.ts`, `useFocusData.ts`, `useMetricHistory.ts`, `useSmartRing.ts`, `useHomeData.ts` — 35 total sites across all hooks
+- `src/context/OnboardingContext.tsx` — 5 sites
+- `src/components/home/LiveHeartRateCard.tsx`, `DailySleepTrendCard.tsx`, `DailyHeartRateCard.tsx` — 6 sites
+- `src/components/sleep/SleepStageTimeline.tsx` — **Removed** 3 dead `fetch('http://127.0.0.1:7244/ingest/...')` debug blocks
+- `src/screens/NewHomeScreen.tsx`, `SettingsScreen.tsx` — 4 sites
+- `app/(onboarding)/connect.tsx` — 2 sites
+
+**Key notes:**
+- `'fatal'` used only for `BackgroundSleepTask` top-level crash (no UI, fully invisible without this)
+- `'warning'` for all BLE/recoverable errors; `'error'` (default) for unexpected failures
+- `setUserContext` called on both app-launch session restore AND auth state changes — fixes the common case where Sentry had no user ID on first launch
+- `withScope` fast path added: skips scope allocation when no context tags needed (efficiency fix)
+- Noisy `addBreadcrumb` on every BLE native call removed from `enqueueNativeCall` — only breadcrumb on timeout now
+- Daily scheduled agent: trigger ID `trig_016Md61YY21bVnYkcMoPZP4U`, runs at 12:00 UTC (9 AM Buenos Aires), hits `GET /api/0/projects/sparring-10/focus-app-1/issues/`, filters last 24h, auto-creates `sentry/fix-{id}` branches + PRs for fixable issues, appends to `sentry-report.md`
+
+---
+
+## 2026-04-12: Sentry Error Reporting — UI Files + SleepStageTimeline Debug Cleanup
+
+**Change:** Added `reportError` from `src/utils/sentry.ts` to 8 UI files (context, components, screens, hook, and onboarding screen), and removed all `fetch('http://127.0.0.1:7244/...')` dead debug instrumentation from `SleepStageTimeline.tsx`. All existing `console.log`/`console.error` calls preserved unchanged; `reportError` is added alongside each catch site.
+
+**Files modified:**
+- `src/context/OnboardingContext.tsx` — Added import; 5 sites: `onboarding.autoReconnect` (silent catch → named), `onboarding.deviceCheck` (warning, SDK check inner catch), `onboarding.loadDeviceState` (outer catch), `onboarding.forgetDevice` (warning, `clearDevicePairing` catch), `onboarding.reset.forgetDevice` (warning, `resetOnboarding` silent `catch (_) {}` → named)
+- `src/components/home/LiveHeartRateCard.tsx` — Added import; 3 sites: `liveHR.bleStart` (warning, `startMeasurement` outer catch), `liveHR.measure` (warning, retry `startHeartRateMeasuring` catch), `liveHR.persist` (info, `AsyncStorage.setItem` catch in `persistLastMeasurement`)
+- `src/components/home/DailySleepTrendCard.tsx` — Added import; 2 sites: `sleepTrend.fetch` (warning, inner per-day catch), `sleepTrend.fetch` (warning, outer `fetchSleep().catch` — converted from silent `() =>` to named `e =>`)
+- `src/components/home/DailyHeartRateCard.tsx` — Added import; 1 site: `dailyHR.fetchHourly` (warning, silent `.catch(() => setHourlyHrRanges([]))` → named with `reportError` + same state reset)
+- `src/components/sleep/SleepStageTimeline.tsx` — **No Sentry added.** Removed all 3 `fetch('http://127.0.0.1:7244/ingest/...')` debug blocks (entry, ringData, customData, and error catch) plus their `// #region agent log` / `// #endregion` wrappers — dead code from a previous debugging session
+- `src/screens/NewHomeScreen.tsx` — Added import; 3 sites: `homeScreen.topLevel` (reconnect catch), `homeScreen.notificationSetup` (NotificationService.setup silent catch → named block), `homeScreen.sleepNotification` (warning, maybeSendSleepNotification silent catch → named block)
+- `src/screens/SettingsScreen.tsx` — Added import; 1 site: `settings.load` (warning, `loadSettings` silent `catch {}` → named `catch (e)`)
+- `app/(onboarding)/connect.tsx` — Added import (`../../src/utils/sentry`); 2 sites: `onboarding.scan` (warning, `scan(7).catch` inline block), `onboarding.connect` (default error, `handleConnect` outer catch before Alert)
+- `src/hooks/useHomeData.ts` — Added import; 2 sites only: `homeData.syncAllData` (`.catch` on `dataSyncService.syncAllData()` — named `e`, added alongside existing state update), `homeData.fetchData` (`'fatal'` level, `fetchData` outer catch before `setData`)
+
+**Key notes:**
+- `'fatal'` level used only for `homeData.fetchData` — the outermost catch of the main data sync loop
+- `'info'` level for AsyncStorage persist failures in LiveHeartRateCard (non-critical, best-effort)
+- `'warning'` for all recoverable/expected failures; default `'error'` for unexpected paths
+- connect.tsx Next.js "use client" suggestions from the validator are inapplicable — this is Expo Router, not Next.js
+- SleepStageTimeline cleanup removed exactly 3 fetch blocks (10 lines of dead code) with zero behavior change to the component
+
+---
+
+## 2026-04-12: Sentry Error Reporting — Secondary Service Files
+
+**Change:** Added `reportError` from `src/utils/sentry.ts` to 8 secondary service files (Strava, HealthKit sub-services, NotificationService, BaselineModeService, TodayCardVitalsService). All existing `console.log`/`console.error`/`console.warn` calls are preserved unchanged; `reportError` is added alongside each catch block so errors surface in Sentry in production without altering runtime behavior.
+
+**Files modified:**
+- `src/services/StravaService.ts` — Added import + 9 `reportError` sites: `strava.connect`, `strava.exchangeCode`, `strava.refreshToken` (expanded silent `catch {}` to named param), `strava.loadTokens`, `strava.apiRequest`, `strava.syncDetails.query`, `strava.fetchActivityDetail` (warning, before `failed++`), `strava.syncToSupabase`, `strava.backgroundSync` (warning)
+- `src/services/HealthKit/HealthKitDataFetchers.ts` — Added import + 7 `reportError` sites: `healthKit.fetchHeartRateData`, `healthKit.fetchStepsData` (outer), `healthKit.fetchStepsData.fallback` (inner — expanded silent `catch {}` to named param), `healthKit.fetchHRVData`, `healthKit.fetchSpO2Data`, `healthKit.fetchActiveCaloriesData`, `healthKit.fetchDistanceData`; all at `'warning'` level
+- `src/services/HealthKit/HealthKitPermissions.ts` — Added import + 3 `reportError` sites: `healthKit.checkPermissions.inner` (warning, in permission loop catch after NSSortDescriptor rethrow), `healthKit.checkPermissions` (default `'error'`, fatal outer catch), `healthKit.requestAuth` (warning)
+- `src/services/HealthKit/HealthKitSleepProcessor.ts` — Added import + 1 `reportError` site: `healthKit.fetchLatestSleep` (warning) in `fetchSleepData` outer catch
+- `src/services/HealthKit/HealthKitSubscriptions.ts` — Added import + 1 `reportError` site: `healthKit.subscription.setup` (warning) in per-type subscription catch
+- `src/services/NotificationService.ts` — Added import + 1 `reportError` site: `notification.registerBackgroundTask` (default `'error'`) — expanded one-liner `.catch(e => console.warn(...))` to a block to accommodate both calls
+- `src/services/BaselineModeService.ts` — Added import + 2 `reportError` sites: `baselineMode.persistLocal` (warning, AsyncStorage save failure), `baselineMode.persistSupabase` (warning, Supabase upsert failure)
+- `src/services/TodayCardVitalsService.ts` — Added import + 6 `reportError` sites: `todayCard.fetchTemperature`, `todayCard.fetchSpO2`, `todayCard.connectionCheck`, `todayCard.loadCache`, `todayCard.saveCache`, `todayCard.hydrationCheck`; all at `'warning'` level
+
+**Key notes:**
+- All sites use `{ op: 'domain.operation' }` context tag for easy Sentry filtering/grouping
+- `'warning'` level used for recoverable failures (BLE reads, cache ops, best-effort network calls); default `'error'` reserved for unexpected or fatal paths
+- Two previously silent `catch {}` blocks (Strava `refreshToken`, HealthKit steps fallback) were expanded to named-param catches — behavior unchanged, errors now reported
+- HealthKit sub-services use `../../utils/sentry` relative path (two levels up from `src/services/HealthKit/`)
+- All other service files use `../utils/sentry` relative path
+
+---
+
+## 2026-04-12: Sentry Error Reporting — BLE Service Instrumentation
+
+**Change:** Added Sentry error reporting, breadcrumbs, and ring context tagging to three BLE service files using the existing `src/utils/sentry.ts` utility. All existing `console.log`/`console.error` calls are preserved; Sentry calls are added alongside them.
+
+**Files modified:**
+- `src/services/UnifiedSmartRingService.ts` — Added `reportError` on AsyncStorage failures (`getPersistedSDKType`, `persistSDKType.setItem`, `persistSDKType.removeItem`); `reportError` on Jstyle and V8 autoReconnect failure (both non-success result and thrown exception paths); `addBreadcrumb` at autoReconnect start/success and disconnect; `setRingContext` on successful Jstyle connection (already-connected path and post-reconnect path)
+- `src/services/JstyleService.ts` — Added `reportError` on native module load failure, `cancelPendingDataRequest` failure, final `enqueueNativeCall` failure (after retries exhausted), `getAllDailyStepsHistory` failure, and `enableAutoHRMonitoring` failure; `addBreadcrumb` when a native call is enqueued and when it times out
+- `src/services/V8Service.ts` — Added `reportError` on `stopScan` failures (setTimeout and direct), `disconnect` failure, and `cancelPendingDataRequest` failure; import is `reportError` only (inactive SDK — minimal changes)
+
+**Key notes:**
+- `src/utils/sentry.ts` (new untracked file) exports `reportError`, `addBreadcrumb`, `setRingContext`, `reportMessage`, `setUserContext` — all backed by `@sentry/react-native`; Sentry is a no-op in `__DEV__` mode
+- The V8 queue tail `.catch(() => {})` was intentionally kept as a silencer — replacing it with `reportError` would cause double-reporting since call errors already propagate to callers via `next`
+- Simplify pass fixed a copy-paste bug: V8 autoReconnect success was calling `setRingContext(deviceId, 'jstyle')` — corrected to `'v8'`
+- `String(operationName || '')` redundant coercions in breadcrumb data simplified to `operationName` (already typed `string`)
+
+---
+
+## 2026-04-12: Sentry Error Reporting — Hook Files
+
+**Change:** Added `reportError` from `src/utils/sentry.ts` to all six hook files that had silent or console-only error handling. All existing `console.log`/`console.warn` calls are preserved unchanged; `reportError` is added alongside them so errors surface in Sentry in production without altering runtime behavior.
+
+**Files modified:**
+- `src/hooks/useSleepBaseline.ts` — Added import; `reportError` on Supabase sync `.catch` and outer load catch (`sleepBaseline.supabaseSync`, `sleepBaseline.compute`)
+- `src/hooks/useSleepDebt.ts` — Added import; `reportError` on load catch and `updateTarget` catch (`sleepDebt.calculate`, `sleepDebt.fallback`)
+- `src/hooks/useHealthData.ts` — Added import; `reportError` on HRV, stress, and temperature refresh catch blocks (`healthData.fetchHeartRate`, `healthData.fetchSteps`, `healthData.fetchSleep`)
+- `src/hooks/useFocusData.ts` — Added import; `reportError` on `loadBaselines` silent catch, background refresh silent catch, outer fetch catch, and Strava `backgroundSync` silent `.catch(() => null)` (`focusData.loadBaselines`, `focusData.backgroundRefresh`, `focusData.fetch`, `focusData.isConnected`)
+- `src/hooks/useMetricHistory.ts` — Added import; `reportError` on all six ring SDK fallback catches (sleep, hr, hrv, spo2, temperature, activity) and the hook's outer `load()` catch (`metricHistory.ringFallback` with `metric` tag, `metricHistory.loadAll`)
+- `src/hooks/useSmartRing.ts` — Added import; `reportError` on per-metric fetch inner catches (battery, steps, hr, spo2), outer `fetchMetrics` catch, `connect` catch, `checkForPairedDevice` catch, `autoConnect` catch, `measureHeartRate` catch, `measureSpO2` catch
+
+**Key notes:**
+- All calls pass `{ op: 'domain.operation' }` context for Sentry filtering; ring fallback catches also include `{ metric: '...' }` tag
+- Silent `.catch(() => {})` blocks are converted to named-param catches that still return the same value (e.g. `return null`) — no behavior change
+- Warning-level severity for expected/recoverable failures (BLE errors, network fallbacks); default `'error'` for unexpected outer catches
+
+---
+
+## 2026-04-12: Detail Page Charts — Visual Polish (Recovery + Sleep)
+
+**Change:** Enhanced the bar charts and header gradients on the recovery and sleep detail pages.
+
+1. **Second header gradient** — Each detail page now has two layered radial gradients for depth:
+   - Recovery: primary `#10B981` (top-center) + secondary `#065F46` deep emerald (bottom-right)
+   - Sleep: primary `#7100C2` (top-center) + secondary `#3B0764` deep indigo (bottom-left)
+
+2. **Rounded bars** — Added `rx={4} ry={4}` to all bar `<Rect>` elements for a subtle pill shape.
+
+3. **Active-only color** — Only the selected bar shows its score-based color; all other bars render as `rgba(255,255,255,0.4)` (40% white), making the selected day stand out clearly.
+
+4. **Per-bar score labels** — Each bar now shows its numeric score above it (via `SvgText`). Active bar = white, inactive = 80% white. Zero-value days show no label. `CHART_H` bumped from 100→115 and `PAD_V` from 8→20 to accommodate labels.
+
+5. **Dotted guide lines** — Three horizontal dotted lines at score thresholds 25/50/75 (strokeDasharray `3,4`, `rgba(255,255,255,0.08)`) provide subtle visual reference without clutter.
+
+**Files modified:**
+- `app/detail/recovery-detail.tsx` — added `recoveryGrad2` radial gradient
+- `app/detail/sleep-detail.tsx` — added `sleepGrad2` radial gradient
+- `src/components/detail/ReadinessTrendChart.tsx` — rounded bars, active color logic, score labels, dotted guide lines, CHART_H/PAD_V bump
+- `src/components/detail/SleepTrendChart.tsx` — same changes as ReadinessTrendChart
+
+---
+
+## 2026-04-10: Activity Tab — Workout Card Flex Row Layout + Cleanup
+
+**Change:** Redesigned the Recent Workouts horizontal cards in the Activity tab. Removed the old vertical stack layout (icon on top, text below with `marginTop: 60`) in favor of a flex row: icon circle + source badge on the left, name/date/meta text block on the right. Also removed the "Recent Sessions" section entirely, removed card gradients (replaced with border-only), and removed the `#222` background from cards.
+
+**Files modified:**
+- `src/screens/home/ActivityTab.tsx` — Removed "Recent Sessions" section + `GlassCard` import; rewrote `HorizontalWorkoutCard` as flex row (icon + text side by side); updated `hCardStyles`: `card` now `flexDirection: row`, `iconWrap` no longer absolutely positioned, added `textBlock` style (`flex: 1, marginLeft: spacing.md`), removed `marginTop: 60` from `name`; added `SourceBadge` component with Strava/Apple Health/Ring logos; added `formatWorkoutDate` helper
+
+**Key notes:**
+- Cards are border-only (`rgba(255,255,255,0.12)`) with no background fill — transparent over the tab background
+- Source badge sits bottom-right of the icon circle (absolute positioned within `iconWrap`)
+- EAS OTA update published: group `71940d71-d09c-4be2-892e-ce7778cdf896`, iOS + Android, channel `production`
+
+---
+
+## 2026-04-11: TestFlight 1.0.23 (build 24)
+
+V8 sleep merge fixes: full-night stitching, correct stride-based window assembly, 3h session gap.
+
+---
+
 ## 2026-04-11: V8 Band — Fix full-night sleep stitching (overlapping 4-hour windows)
 
 **Root cause discovered:** `getSleepDetailsAndActivityWithMode` (type 81) streams the full night as multiple overlapping 4-hour window packets — one packet per BLE response. The band sends:

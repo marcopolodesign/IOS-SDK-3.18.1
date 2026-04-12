@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, PanResponder } from 'react-native';
-import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { spacing, fontFamily } from '../../theme/colors';
 
 export type SleepStage = 'awake' | 'rem' | 'core' | 'deep';
@@ -29,13 +29,6 @@ interface SleepHypnogramProps {
 
 const stages: SleepStage[] = ['awake', 'rem', 'core', 'deep'];
 
-const stageColors: Record<SleepStage, string> = {
-  awake: '#FF6B6B',
-  rem:   '#81D4FA',
-  core:  '#42A5F5',
-  deep:  '#5C4DB1',
-};
-
 const stageLabels: Record<SleepStage, string> = {
   awake: 'Awake',
   rem:   'REM',
@@ -58,7 +51,6 @@ const PADDING_TOP   = 15;
 const PADDING_BOTTOM = 38;
 const LANE_HEIGHT   = 40;
 const LANE_GAP      = 10;
-const BLOCK_RADIUS  = 4;
 const CHART_HEIGHT  = PADDING_TOP + stages.length * (LANE_HEIGHT + LANE_GAP) - LANE_GAP + PADDING_BOTTOM;
 // Minimum SVG-unit gap between an hour-mark label and the bed/wake labels
 const MIN_LABEL_GAP = 38;
@@ -175,25 +167,38 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     stageDurations[seg.stage] += (seg.endTime.getTime() - seg.startTime.getTime()) / 60000;
   });
 
-  // Transition connector lines — within each session only, not across gaps
-  const connectors: Array<{ x: number; y1: number; y2: number; color: string }> = [];
-  for (const session of resolvedSessions) {
-    for (let i = 0; i < session.segments.length - 1; i++) {
-      const cur  = session.segments[i];
-      const next = session.segments[i + 1];
-      if (cur.stage !== next.stage) {
-        const x      = getXPosition(cur.endTime);
-        const curIdx = getStageIndex(cur.stage);
-        const nxtIdx = getStageIndex(next.stage);
-        connectors.push({
-          x,
-          y1:    getLaneY(curIdx) + LANE_HEIGHT / 2,
-          y2:    getLaneY(nxtIdx) + LANE_HEIGHT / 2,
-          color: curIdx > nxtIdx ? stageColors[cur.stage] : stageColors[next.stage],
-        });
+  // Step figure — Rect per segment + filled vertical connector rects between stage changes.
+  // Connectors span center-to-center (overlapping both blocks) using the destination color,
+  // creating a seamless mesh between stages.
+  const CONNECTOR_W = 0.75;
+  const stepPaths = useMemo(() => {
+    return resolvedSessions.map(session => {
+      if (session.segments.length === 0) return null;
+      const rects: Array<{ x: number; width: number; stage: SleepStage }> = [];
+      const connectors: Array<{ x: number; y: number; height: number }> = [];
+      for (let i = 0; i < session.segments.length; i++) {
+        const seg = session.segments[i];
+        const x1 = getXPosition(seg.startTime);
+        const x2 = getXPosition(seg.endTime);
+        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage });
+        if (i < session.segments.length - 1) {
+          const next = session.segments[i + 1];
+          if (seg.stage !== next.stage) {
+            const y1 = getLaneY(getStageIndex(seg.stage));
+            const y2 = getLaneY(getStageIndex(next.stage));
+            const connY = Math.min(y1, y2);
+            const connBottom = Math.max(y1, y2) + LANE_HEIGHT;
+            connectors.push({
+              x: x2 - CONNECTOR_W / 2,
+              y: connY,
+              height: connBottom - connY,
+            });
+          }
+        }
       }
-    }
-  }
+      return { rects, connectors };
+    });
+  }, [resolvedSessions]);
 
   // Gaps between sessions — render a dashed separator line
   const gaps = useMemo(() => {
@@ -257,17 +262,20 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
         </View>
       ) : (
         <View style={styles.summaryRow}>
-          {stages.map(stage => (
-            <View
-              key={stage}
-              style={[styles.summaryChip, { borderColor: stageColors[stage] }]}
-            >
-              <Text style={styles.summaryLabel}>{stageLabels[stage]}</Text>
-              <Text style={styles.summaryValue}>
-                {formatDuration(stageDurations[stage])}
-              </Text>
-            </View>
-          ))}
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>SLEPT</Text>
+            <Text style={styles.statValue}>
+              {formatDuration(stageDurations.rem + stageDurations.core + stageDurations.deep)}
+            </Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>BEDTIME</Text>
+            <Text style={styles.statValue}>{formatTimeLabel(timelineBed)}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>WAKE</Text>
+            <Text style={styles.statValue}>{formatTimeLabel(timelineWake)}</Text>
+          </View>
         </View>
       )}
 
@@ -277,6 +285,20 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
         height={CHART_HEIGHT}
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
       >
+        <Defs>
+          <LinearGradient
+            id="sleepGradient"
+            x1="0" y1={PADDING_TOP}
+            x2="0" y2={laneAreaBottom}
+            gradientUnits="userSpaceOnUse"
+          >
+            <Stop offset="0%"   stopColor="#FFFFFF" />
+            <Stop offset="33%"  stopColor="#F5DEDE" />
+            <Stop offset="66%"  stopColor="#CC3535" />
+            <Stop offset="100%" stopColor="#8C0B0B" />
+          </LinearGradient>
+        </Defs>
+
         {/* Hourly vertical grid lines */}
         {hourMarks.map((mark, i) => {
           const x = getXPosition(mark);
@@ -339,31 +361,33 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           );
         })}
 
-        {/* Stage-transition connectors */}
-        {connectors.map((c, i) => (
-          <Line
-            key={`cn-${i}`}
-            x1={c.x} y1={c.y1} x2={c.x} y2={c.y2}
-            stroke={c.color} strokeWidth={2} strokeOpacity={0.7} strokeLinecap="round"
-          />
-        ))}
-
-        {/* Sleep segment blocks — rendered per session */}
-        {allSegments.map((seg, i) => {
-          const x = getXPosition(seg.startTime);
-          const w = Math.max(2, getXPosition(seg.endTime) - x);
-          const y = getLaneY(getStageIndex(seg.stage));
-          const r = Math.min(BLOCK_RADIUS, w / 2);
-          return (
-            <Rect
-              key={`bl-${i}`}
-              x={x} y={y} width={w} height={LANE_HEIGHT}
-              rx={r} ry={r}
-              fill={stageColors[seg.stage]}
-              opacity={0.9}
-            />
-          );
-        })}
+        {/* Step-line figure — single gradient across blocks + connectors */}
+        {stepPaths.map((p, i) =>
+          p ? (
+            <React.Fragment key={`sl-${i}`}>
+              {p.rects.map((r, j) => (
+                <Rect
+                  key={`bl-${i}-${j}`}
+                  x={r.x}
+                  y={getLaneY(getStageIndex(r.stage))}
+                  width={r.width}
+                  height={LANE_HEIGHT}
+                  fill="url(#sleepGradient)"
+                />
+              ))}
+              {p.connectors.map((c, j) => (
+                <Rect
+                  key={`cn-${i}-${j}`}
+                  x={c.x}
+                  y={c.y}
+                  width={CONNECTOR_W}
+                  height={c.height}
+                  fill="url(#sleepGradient)"
+                />
+              ))}
+            </React.Fragment>
+          ) : null
+        )}
 
         {/* X-axis time labels */}
         {xAxisLabels ? (
@@ -420,38 +444,34 @@ const styles = StyleSheet.create({
   container: {
     paddingVertical: spacing.sm,
   },
-  // ── Summary chips ──
+  // ── Summary stat row ──
+  // HEIGHT MUST match tooltipReplacement.height below — they occupy the same vertical slot.
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     marginBottom: spacing.sm,
     paddingHorizontal: spacing.xs,
-    gap: 6,
-    height: 64,
-  },
-  summaryChip: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 16,
-    paddingHorizontal: 8,
+    height: 50,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
   },
-  summaryLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
     fontFamily: fontFamily.regular,
-    marginBottom: 2,
+    letterSpacing: 0.8,
+    marginBottom: 3,
   },
-  summaryValue: {
+  statValue: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: fontFamily.demiBold,
   },
-  // ── Tooltip replacement (same height as chip row) ──
+  // ── Tooltip replacement — HEIGHT MUST match summaryRow.height above. ──
   tooltipReplacement: {
-    height: 64,
+    height: 50,
     marginBottom: spacing.sm,
     paddingHorizontal: spacing.xs,
     alignItems: 'center',

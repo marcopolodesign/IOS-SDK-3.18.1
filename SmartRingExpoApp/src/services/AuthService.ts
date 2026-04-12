@@ -1,4 +1,5 @@
 import { Session, User } from '@supabase/supabase-js';
+import { reportError } from '../utils/sentry';
 import { supabase } from './SupabaseService';
 import { Profile } from '../types/supabase.types';
 import * as WebBrowser from 'expo-web-browser';
@@ -170,6 +171,7 @@ async function oAuthSignIn(provider: 'google' | 'strava'): Promise<SignInResult>
     return { success: false, error: 'No OAuth URL returned' };
   } catch (e) {
     const error = e as Error;
+    reportError(error, { op: 'oAuthSignIn' });
     return { success: false, error: error.message };
   }
 }

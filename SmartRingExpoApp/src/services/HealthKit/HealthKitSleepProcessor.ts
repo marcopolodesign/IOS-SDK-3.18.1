@@ -4,6 +4,7 @@
  */
 
 import { queryCategorySamples } from '@kingstinct/react-native-healthkit';
+import { reportError } from '../../utils/sentry';
 
 export interface HKSleepResult {
   totalSleep: number; // minutes
@@ -51,6 +52,7 @@ class HealthKitSleepProcessor {
       return result;
     } catch (error) {
       console.log('[HealthKit] Error fetching sleep data:', error);
+      reportError(error, { op: 'healthKit.fetchLatestSleep' }, 'warning');
       return null;
     }
   }

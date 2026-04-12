@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { reportError } from '../../src/utils/sentry';
 import {
   View,
   Text,
@@ -274,7 +275,7 @@ export default function ConnectScreen() {
     transitionTo('scanning');
 
     // Fire scan without awaiting — devices arrive via onDeviceDiscovered events.
-    scan(7).catch(err => console.log('⚠️ [ConnectScreen] scan error:', err));
+    scan(7).catch(err => { console.log('⚠️ [ConnectScreen] scan error:', err); reportError(err, { op: 'onboarding.scan' }, 'warning'); });
 
     // Fallback: after 7 s, show whatever was found (or nothing).
     if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
@@ -313,6 +314,7 @@ export default function ConnectScreen() {
       }
     } catch (error) {
       console.log('❌ [ConnectScreen] Connection ERROR:', error);
+      reportError(error, { op: 'onboarding.connect' });
       Alert.alert(
         'Connection Error',
         'An error occurred while connecting. Please try again.',

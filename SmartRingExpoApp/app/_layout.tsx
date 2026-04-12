@@ -7,14 +7,33 @@ SplashScreen.preventAutoHideAsync();
 
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: 1.0,
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: __DEV__ ? 1.0 : 0.3,
   _experiments: {
-    profilesSampleRate: 1.0,
+    profilesSampleRate: __DEV__ ? 1.0 : 0.1,
   },
   enableAutoSessionTracking: true,
   attachScreenshot: true,
   debug: __DEV__,
   enabled: !__DEV__,
+  beforeSend(event) {
+    // Strip any auth tokens or sensitive strings from breadcrumb data
+    if (event.breadcrumbs?.values) {
+      event.breadcrumbs.values = event.breadcrumbs.values.map(crumb => {
+        if (crumb.data) {
+          const cleaned = { ...crumb.data };
+          for (const key of Object.keys(cleaned)) {
+            if (/token|password|secret|key/i.test(key)) {
+              cleaned[key] = '[Filtered]';
+            }
+          }
+          return { ...crumb, data: cleaned };
+        }
+        return crumb;
+      });
+    }
+    return event;
+  },
 });
 import { Platform } from 'react-native';
 // Inject Figma capture script on web (removed after design capture)

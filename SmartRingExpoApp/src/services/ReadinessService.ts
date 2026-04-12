@@ -19,7 +19,7 @@ import type {
 } from '../types/focus.types';
 import type { SleepBaselineTier, SleepBaselineState } from '../types/sleepBaseline.types';
 
-const BASELINES_KEY = 'focus_baselines_v1';
+const BASELINES_KEY = 'focus_baselines_v2';
 
 // ─── Baseline persistence ──────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
     supabase.from('hrv_readings').select('sdnn, recorded_at')
       .eq('user_id', userId).gte('recorded_at', since).order('recorded_at'),
     supabase.from('sleep_sessions').select('sleep_score, deep_min, light_min, rem_min, start_time')
-      .eq('user_id', userId).gte('start_time', since).order('start_time'),
+      .eq('user_id', userId).eq('session_type', 'night').gte('start_time', since).order('start_time'),
     supabase.from('temperature_readings').select('temperature_c, recorded_at')
       .eq('user_id', userId).gte('recorded_at', since).order('recorded_at'),
     supabase.from('heart_rate_readings').select('heart_rate, recorded_at')
@@ -210,7 +210,6 @@ function scoreSleepComponent(
   scoreBaseline: number[],
   minutesBaseline: number[]
 ): number | null {
-  // sleep_score is not persisted in Supabase, so fall back to minutes-only scoring
   if (sleepScore == null && sleepMinutes == null) return null;
   const baselineMins = median(minutesBaseline) ?? 480;
   const minsScore = sleepMinutes != null ? clamp((sleepMinutes / baselineMins) * 100, 0, 100) : 50;

@@ -1,6 +1,7 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { supabase } from './SupabaseService';
+import { reportError } from '../utils/sentry';
 import {
   StravaTokens,
   StravaTokenResponse,
@@ -119,6 +120,7 @@ class StravaService {
     } catch (e) {
       const error = e as Error;
       console.error('Strava connect error:', error);
+      reportError(e, { op: 'strava.connect' });
       return { success: false, error: error.message };
     }
   }
@@ -163,6 +165,7 @@ class StravaService {
       return { success: true };
     } catch (e) {
       const error = e as Error;
+      reportError(e, { op: 'strava.exchangeCode' });
       return { success: false, error: error.message };
     }
   }
@@ -202,7 +205,8 @@ class StravaService {
 
       await this.saveTokensToDatabase();
       return true;
-    } catch {
+    } catch (e) {
+      reportError(e, { op: 'strava.refreshToken' });
       return false;
     }
   }
@@ -280,6 +284,7 @@ class StravaService {
       console.log('[StravaService] Athlete loaded:', this._athlete?.firstname);
     } catch (e) {
       console.error('[StravaService] Error loading tokens:', e);
+      reportError(e, { op: 'strava.loadTokens' });
       this._isConnected = false;
     }
   }
@@ -351,6 +356,7 @@ class StravaService {
       return await response.json();
     } catch (e) {
       console.error('Strava API request failed:', e);
+      reportError(e, { op: 'strava.apiRequest' });
       return null;
     }
   }
@@ -433,6 +439,7 @@ class StravaService {
 
     if (error) {
       console.error('[StravaService] syncAllActivityDetails: query error', error);
+      reportError(error, { op: 'strava.syncDetails.query' });
       return { synced: 0, failed: 0 };
     }
     if (!pending || pending.length === 0) {
@@ -474,7 +481,8 @@ class StravaService {
             .eq('id', activityId);
           synced++;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, { op: 'strava.fetchActivityDetail' }, 'warning');
         failed++;
       }
 
@@ -562,6 +570,7 @@ class StravaService {
       return { success: true, count: allActivities.length };
     } catch (e) {
       console.error('[StravaService] syncActivitiesToSupabase error:', e);
+      reportError(e, { op: 'strava.syncToSupabase' });
       return { success: false, count: 0 };
     }
   }
@@ -625,6 +634,7 @@ class StravaService {
       return await this.syncActivitiesToSupabase(days);
     } catch (error) {
       console.log('[StravaService] backgroundSync error (non-fatal):', error);
+      reportError(error, { op: 'strava.backgroundSync' }, 'warning');
       return { success: false, count: 0 };
     }
   }

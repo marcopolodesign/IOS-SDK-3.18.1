@@ -27,6 +27,7 @@ import { DeviceSheet } from '../components/home/DeviceSheet';
 import { BaselineCompleteOverlay } from '../components/home/BaselineCompleteOverlay';
 import { NotificationService } from '../services/NotificationService';
 import { maybeSendSleepNotificationFromForeground } from '../services/BackgroundSleepTask';
+import { reportError } from '../utils/sentry';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -124,6 +125,7 @@ function NewHomeScreenContent() {
       void homeData.refresh();
     } catch (error) {
       console.log('Reconnect failed:', error);
+      reportError(error, { op: 'homeScreen.topLevel' });
     } finally {
       setIsReconnecting(false);
     }
@@ -198,7 +200,7 @@ function NewHomeScreenContent() {
 
   // Register for push notifications on first authenticated mount (permission + Expo token → Supabase)
   useEffect(() => {
-    NotificationService.setup().catch(() => {});
+    NotificationService.setup().catch(e => { reportError(e, { op: 'homeScreen.notificationSetup' }); });
   }, []);
 
   // Deeplink: ?tab=sleep|activity navigates to the correct sub-tab
@@ -217,7 +219,7 @@ function NewHomeScreenContent() {
     const phase = homeData.syncProgress?.phase;
     if (phase === 'complete' && prevSyncPhaseRef.current !== 'complete') {
       if (homeData.sleepScore && homeData.sleepScore > 0 && homeData.lastNightSleep?.wakeTime) {
-        maybeSendSleepNotificationFromForeground(homeData.lastNightSleep.wakeTime).catch(() => {});
+        maybeSendSleepNotificationFromForeground(homeData.lastNightSleep.wakeTime).catch(e => { reportError(e, { op: 'homeScreen.sleepNotification' }, 'warning'); });
       }
     }
     if (phase) prevSyncPhaseRef.current = phase;

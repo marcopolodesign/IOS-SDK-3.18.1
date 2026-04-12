@@ -7,6 +7,7 @@ import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
+import { reportError } from '../../utils/sentry';
 
 // Get event emitters for both SDKs so we can listen to measurement results
 let _jstyleEmitter: NativeEventEmitter | null = null;
@@ -142,6 +143,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
       setLastMeasurement(payload);
     } catch (e) {
       console.log('[LiveHR] Failed to persist last measurement:', e);
+      reportError(e, { op: 'liveHR.persist' }, 'info');
     }
   };
 
@@ -219,6 +221,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
       console.log('[LiveHR] startHeartRateMeasuring result:', JSON.stringify(startResult));
     } catch (e) {
       console.log('[LiveHR] startMeasurement error:', e);
+      reportError(e, { op: 'liveHR.bleStart' }, 'warning');
       setState('error');
       cleanup();
       await stopNativeSession();
@@ -233,6 +236,7 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
         await UnifiedSmartRingService.startHeartRateMeasuring();
       } catch (e) {
         console.log('[LiveHR] retry startHeartRateMeasuring error:', e);
+        reportError(e, { op: 'liveHR.measure' }, 'warning');
       }
     }, 6000);
 

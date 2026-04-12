@@ -62,7 +62,11 @@
     "insight_activity_low": "Has estado menos activo últimamente. Incluso una caminata corta de 10 minutos puede mejorar tu energía y ánimo.",
     "insight_activity_great": "¡Lo estás dando todo! Tu nivel de actividad es excelente. Recuerda hidratarte y alimentarte bien.",
     "insight_general": "Tus signos vitales se ven bien hoy. Mantén la rutina constante para una salud óptima.",
-    "ask_coach": "Preguntar al Coach"
+    "ask_coach": "Preguntar al Coach",
+    "coach_q_sleep": "Hey Coach, ¿cómo dormí anoche?",
+    "coach_q_train": "Hey Coach, ¿debería entrenar fuerte hoy?",
+    "coach_q_hrv": "Hey Coach, ¿por qué mi VFC está baja esta semana?",
+    "coach_q_run": "Hey Coach, ¿estoy listo para una carrera larga?"
   },
   "sleep": {
     "title": "Sueño",
@@ -542,7 +546,9 @@
   },
   "sleep_trend": {
     "card_title": "Sueño prom.",
+    "card_title_last": "Última noche",
     "subtitle_great": "Excelente",
+    "subtitle_last_night": "Última noche registrada",
     "value_none": "Ninguno",
     "status_no_data": "Sin datos",
     "day_sun": "D",
@@ -615,12 +621,12 @@
     "sleep_score_range_3": "0–39 → Malo",
 
     "strain_title": "Esfuerzo",
-    "strain_subtitle": "Carga cardiovascular de la actividad de hoy",
-    "strain_body": "El esfuerzo mide el estrés cardiovascular acumulado durante el día basado en los datos de frecuencia cardíaca. Mayor esfuerzo implica más exigencia. Equilibrar el esfuerzo con la recuperación ayuda a evitar el sobreentrenamiento.",
-    "strain_range_0": "0–9 → Descanso / Ligero",
-    "strain_range_1": "10–13 → Moderado",
-    "strain_range_2": "14–17 → Intenso",
-    "strain_range_3": "18–21 → Máximo",
+    "strain_subtitle": "Carga cardiovascular acumulada de los últimos 7 días",
+    "strain_body": "El esfuerzo refleja la carga de entrenamiento acumulada en los últimos 7 días, no solo el día de hoy. Los días más recientes tienen mayor peso (EWMA), por lo que un entrenamiento intenso se proyecta hacia adelante mientras que el descanso lo reduce gradualmente. Equilibrar el esfuerzo con la recuperación ayuda a evitar el sobreentrenamiento.",
+    "strain_range_0": "0–24 → Descanso / Ligero",
+    "strain_range_1": "25–49 → Moderado",
+    "strain_range_2": "50–74 → Intenso",
+    "strain_range_3": "75–100 → Máximo",
 
     "readiness_title": "Preparación",
     "readiness_subtitle": "Equilibrio entre el esfuerzo reciente y la recuperación",
@@ -895,6 +901,8 @@
     },
     "about": {
       "app_version": "Versión de la app",
+      "ota_version": "Actualización OTA",
+      "ota_embedded": "Integrada",
       "sdk_version": "Versión del SDK"
     },
     "developer": {

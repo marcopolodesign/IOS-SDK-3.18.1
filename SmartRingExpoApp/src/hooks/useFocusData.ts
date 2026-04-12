@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { reportError } from '../utils/sentry';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/SupabaseService';
 import { stravaService } from '../services/StravaService';
@@ -27,7 +28,7 @@ import type {
 } from '../types/focus.types';
 import type { IllnessScore } from '../types/supabase.types';
 
-const CACHE_KEY = 'focus_state_cache_v5';
+const CACHE_KEY = 'focus_state_cache_v6';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 interface CachedFocusState {
@@ -118,7 +119,7 @@ export function useFocusData(): FocusState {
               hasDataRef.current = true;
               // Baselines are not in the cache payload — load them separately so
               // ReadinessCard can show confidence dots without waiting for a full refresh.
-              loadBaselines().then(setBaselines).catch(() => {});
+              loadBaselines().then(setBaselines).catch(e => reportError(e, { op: 'focusData.loadBaselines' }, 'warning'));
               setIsLoading(false);
               // If restingHR component is missing, check if home_data_cache now has it.
               // Race condition: useFocusData may have run before useHomeData wrote the cache.
@@ -133,7 +134,7 @@ export function useFocusData(): FocusState {
                       load(true);
                     }
                   } catch {}
-                }).catch(() => {}).finally(() => { bgRefreshInFlight.current = false; });
+                }).catch(e => reportError(e, { op: 'focusData.backgroundRefresh' })).finally(() => { bgRefreshInFlight.current = false; });
               }
               return;
             } else {
@@ -190,6 +191,7 @@ export function useFocusData(): FocusState {
             .from('sleep_sessions')
             .select('sleep_score, deep_min, light_min, rem_min, awake_min')
             .eq('user_id', userId)
+            .eq('session_type', 'night')
             .gte('start_time', sleepLookbackStart)
             .lt('start_time', todayEnd)
             .order('start_time', { ascending: false })
@@ -345,6 +347,7 @@ export function useFocusData(): FocusState {
       console.log('[FocusData] Cache saved');
     } catch (e) {
       console.log('[FocusData] ERROR:', e instanceof Error ? e.message : e);
+      reportError(e, { op: 'focusData.fetch' });
       setError(e instanceof Error ? e.message : 'Failed to load focus data');
     } finally {
       setIsLoading(false);
@@ -358,7 +361,7 @@ export function useFocusData(): FocusState {
       // Background: sync latest Strava activities then reload silently.
       // hasDataRef prevents the reload from showing a spinner when data is already visible.
       stravaService.backgroundSync(3)
-        .catch(() => null)
+        .catch(e => { reportError(e, { op: 'focusData.isConnected' }, 'warning'); return null; })
         .then(() => load(true));
     }, [load])
   );

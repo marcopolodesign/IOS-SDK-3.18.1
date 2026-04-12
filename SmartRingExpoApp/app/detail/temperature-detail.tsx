@@ -12,6 +12,7 @@ import Svg, { Line, Path, Rect, Circle, Text as SvgText } from 'react-native-svg
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
+import { BackArrow } from '../../src/components/detail/BackArrow';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { DetailChartContainer } from '../../src/components/detail/DetailChartContainer';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
@@ -141,7 +142,7 @@ export default function TemperatureDetailScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.backArrow}>{'‹'}</Text>
+          <BackArrow />
         </TouchableOpacity>
         <Text style={styles.title}>Body Temperature</Text>
         <View style={styles.headerRight} />

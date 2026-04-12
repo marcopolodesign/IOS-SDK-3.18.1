@@ -1,50 +1,30 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-import Svg, { Rect, Path, G, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { Rect, Path, G, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import { fontFamily } from '../../theme/colors';
+import { spacing, fontSize, fontFamily } from '../../theme/colors';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const COL_W = 38;
-const BAR_W = 28;
-const CHART_H = 130;
-const PAD_V = 20;
+const COL_W = 32;
+const BAR_W = 22;
+const CHART_H = 100;
+const PAD_V = 8;
 const GHOST_COLS = Math.ceil(SCREEN_WIDTH / COL_W / 2) + 1;
 
-const R_TOP = 8;
-const R_BOT = 2;
-
-function scoreColor(score: number): string {
-  if (score >= 80) return '#4ADE80';
-  if (score >= 60) return '#FFD700';
-  if (score > 0) return '#FF6B6B';
+// SDNN thresholds: >=50 optimal (green), >=30 moderate (yellow), <30 low (red)
+function sdnnColor(val: number): string {
+  if (val >= 50) return '#4ADE80';
+  if (val >= 30) return '#FBBF24';
+  if (val > 0) return '#EF4444';
   return '#222233';
 }
 
-/** SVG path for a rect with independent top and bottom corner radii. */
-function roundedBar(x: number, y: number, w: number, h: number, rTop: number, rBot: number): string {
-  const rt = Math.min(rTop, h / 2, w / 2);
-  const rb = Math.min(rBot, h / 2, w / 2);
-  return [
-    `M ${x + rt} ${y}`,
-    `H ${x + w - rt}`,
-    `Q ${x + w} ${y} ${x + w} ${y + rt}`,
-    `V ${y + h - rb}`,
-    `Q ${x + w} ${y + h} ${x + w - rb} ${y + h}`,
-    `H ${x + rb}`,
-    `Q ${x} ${y + h} ${x} ${y + h - rb}`,
-    `V ${y + rt}`,
-    `Q ${x} ${y} ${x + rt} ${y}`,
-    `Z`,
-  ].join(' ');
-}
-
-/** 5-day centered rolling average. Skips zero scores. Returns null if no valid scores in window. */
-function rollingAvg(scores: number[], i: number, window = 5): number | null {
+/** 5-day centered rolling average. Skips zero/null values. */
+function rollingAvg(values: number[], i: number, window = 5): number | null {
   const half = Math.floor(window / 2);
   const from = Math.max(0, i - half);
-  const to = Math.min(scores.length - 1, i + half);
-  const valid = scores.slice(from, to + 1).filter(s => s > 0);
+  const to = Math.min(values.length - 1, i + half);
+  const valid = values.slice(from, to + 1).filter(v => v > 0);
   return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
 }
 
@@ -80,18 +60,17 @@ function monotoneCubicPath(pts: Array<{ x: number; y: number }>): string {
   return path;
 }
 
-interface SleepTrendChartProps {
+interface HRVTrendChartProps {
   dayEntries: Array<{ label: string; dateKey: string }>;
-  scores: Array<{ dateKey: string; score: number }>;
+  values: Array<{ dateKey: string; sdnn: number }>;
   selectedIndex: number;
   onSelectDay: (index: number) => void;
 }
 
-export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay }: SleepTrendChartProps) {
+export function HRVTrendChart({ dayEntries, values, selectedIndex, onSelectDay }: HRVTrendChartProps) {
   const scrollRef = useRef<ScrollView>(null);
   const lastHapticColRef = useRef<number>(-1);
 
-  // reversed: oldest first, today last
   const reversed = [...dayEntries].reverse();
   const todayColIndex = reversed.length - 1;
   const totalCols = reversed.length + GHOST_COLS;
@@ -99,7 +78,9 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
   const maxBarH = CHART_H - PAD_V * 2;
   const baseline = CHART_H - PAD_V;
 
-  // Scroll today to center on mount
+  // SDNN values are 0-100+, normalize bar heights relative to 80 (anything above still fills full bar)
+  const MAX_SDNN = 80;
+
   useEffect(() => {
     const todayCenterX = todayColIndex * COL_W + COL_W / 2;
     const offset = todayCenterX - SCREEN_WIDTH / 2;
@@ -118,16 +99,15 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
     }
   }
 
-  // Raw score array aligned to reversed (oldest-first)
-  const rawScores = reversed.map(d => scores.find(s => s.dateKey === d.dateKey)?.score ?? 0);
+  const rawValues = reversed.map(d => values.find(v => v.dateKey === d.dateKey)?.sdnn ?? 0);
 
-  // Rolling average trendline (5-day centered window)
+  // Rolling average trendline
   const trendPoints: Array<{ x: number; y: number }> = [];
   reversed.forEach((_, i) => {
-    const avg = rollingAvg(rawScores, i);
+    const avg = rollingAvg(rawValues, i);
     if (avg !== null) {
       const cx = i * COL_W + COL_W / 2;
-      const barH = (avg / 100) * maxBarH;
+      const barH = (Math.min(avg, MAX_SDNN) / MAX_SDNN) * maxBarH;
       trendPoints.push({ x: cx, y: baseline - barH });
     }
   });
@@ -189,63 +169,31 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
         <View style={{ width: contentW, height: CHART_H }}>
           <Svg width={contentW} height={CHART_H}>
             <G>
-              {/* Dotted guide lines at 25 / 50 / 75 */}
-              {[25, 50, 75].map(threshold => {
-                const lineY = baseline - (threshold / 100) * maxBarH;
-                return (
-                  <Line
-                    key={threshold}
-                    x1={0} y1={lineY} x2={contentW} y2={lineY}
-                    stroke="rgba(255,255,255,0.08)" strokeWidth={1}
-                    strokeDasharray="3,4"
-                  />
-                );
-              })}
-
-              {/* X axis baseline */}
               <Line
-                x1={0}
-                y1={baseline}
-                x2={contentW}
-                y2={baseline}
-                stroke="rgba(255,255,255,0.12)"
-                strokeWidth={1}
+                x1={0} y1={baseline} x2={contentW} y2={baseline}
+                stroke="rgba(255,255,255,0.12)" strokeWidth={1}
               />
 
-              {/* Bars + score labels inside */}
+              {/* Bars */}
               {reversed.map((d, i) => {
-                const v = rawScores[i];
-                const barH = Math.max(3, (v / 100) * maxBarH);
+                const v = rawValues[i];
+                const barH = Math.max(3, (Math.min(v, MAX_SDNN) / MAX_SDNN) * maxBarH);
                 const cx = i * COL_W + COL_W / 2;
                 const x = cx - BAR_W / 2;
                 const y = baseline - barH;
                 const origIndex = reversed.length - 1 - i;
                 const isSel = origIndex === selectedIndex;
-                const showLabel = v > 0 && barH >= 24;
                 return (
-                  <G key={d.dateKey}>
-                    <Path
-                      d={roundedBar(x, y, BAR_W, barH, R_TOP, R_BOT)}
-                      fill={isSel ? scoreColor(v) : 'rgba(255,255,255,0.4)'}
-                    />
-                    {showLabel && (
-                      <SvgText
-                        x={cx}
-                        y={y + 10 + 9}
-                        textAnchor="middle"
-                        fontSize={12}
-                        fontWeight="bold"
-                        fill={isSel ? '#FFFFFF' : 'rgba(255,255,255,0.8)'}
-                        fontFamily={fontFamily.demiBold}
-                      >
-                        {String(v)}
-                      </SvgText>
-                    )}
-                  </G>
+                  <Rect
+                    key={d.dateKey}
+                    x={x} y={y} width={BAR_W} height={barH}
+                    fill={sdnnColor(v)}
+                    opacity={isSel ? 1 : 0.28}
+                  />
                 );
               })}
 
-              {/* Rolling average trendline */}
+              {/* Trendline */}
               {trendPath.length > 0 && (
                 <Path
                   d={trendPath}
@@ -263,10 +211,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
                 return (
                   <Rect
                     key={`t-${d.dateKey}`}
-                    x={i * COL_W}
-                    y={0}
-                    width={COL_W}
-                    height={CHART_H}
+                    x={i * COL_W} y={0} width={COL_W} height={CHART_H}
                     fill="transparent"
                     onPress={() => onSelectDay(origIndex)}
                   />
@@ -283,8 +228,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
 const styles = StyleSheet.create({
   labelsRow: {
     flexDirection: 'row',
-    marginBottom: -15,
-    marginTop: 12,
+    marginBottom: 4,
   },
   labelCell: {
     width: COL_W,

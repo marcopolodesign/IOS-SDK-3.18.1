@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Rect } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BackArrow } from '../../src/components/detail/BackArrow';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type {
   DaySleepData,
@@ -217,7 +218,7 @@ export default function BaselineDetailScreen() {
           style={styles.backBtn}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Text style={styles.backArrow}>{'‹'}</Text>
+          <BackArrow />
         </TouchableOpacity>
         <Text style={styles.title}>Your Baseline</Text>
         <View style={styles.headerRight} />

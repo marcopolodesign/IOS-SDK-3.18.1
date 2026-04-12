@@ -2,6 +2,7 @@ import { Platform, NativeModules, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './SupabaseService';
 import { registerBackgroundSleepTask } from './BackgroundSleepTask';
+import { reportError } from '../utils/sentry';
 
 async function saveTokenToSupabase(token: string): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -55,9 +56,10 @@ async function setup(): Promise<void> {
   console.log('[PushToken] token:', token);
 
   // Register background sleep notification task
-  registerBackgroundSleepTask().catch(e =>
-    console.warn('[BackgroundSleep] Registration failed:', e),
-  );
+  registerBackgroundSleepTask().catch(e => {
+    console.warn('[BackgroundSleep] Registration failed:', e);
+    reportError(e, { op: 'notification.registerBackgroundTask' });
+  });
 
   const saved = await saveTokenToSupabase(token);
   if (saved) return;

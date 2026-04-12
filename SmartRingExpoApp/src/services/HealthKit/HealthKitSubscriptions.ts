@@ -4,6 +4,7 @@
  */
 
 import { subscribeToChanges } from '@kingstinct/react-native-healthkit';
+import { reportError } from '../../utils/sentry';
 
 export interface HealthKitCallbacks {
   onHeartRateChange?: () => void;
@@ -30,6 +31,7 @@ class HealthKitSubscriptions {
         this.subscriptions.push(sub);
       } catch (error) {
         console.log(`[HealthKit] Error subscribing to ${type} changes:`, error);
+        reportError(error, { op: 'healthKit.subscription.setup' }, 'warning');
       }
     }
   }

@@ -9,6 +9,7 @@ import {
   getMostRecentCategorySample,
   requestAuthorization,
 } from '@kingstinct/react-native-healthkit';
+import { reportError } from '../../utils/sentry';
 
 class HealthKitPermissions {
   private _hasRequestedAuthorization = false;
@@ -43,6 +44,7 @@ class HealthKitPermissions {
           if (result) hasAnyPermission = true;
         } catch (e: any) {
           if (e?.message?.includes('NSSortDescriptor')) throw e;
+          reportError(e, { op: 'healthKit.checkPermissions.inner' }, 'warning');
         }
       }
 
@@ -53,6 +55,7 @@ class HealthKitPermissions {
       return hasAnyPermission;
     } catch (error) {
       console.error('[HealthKit] Fatal error checking permissions:', error);
+      reportError(error, { op: 'healthKit.checkPermissions' });
       this._hasRequestedAuthorization = false;
       return false;
     }
@@ -80,6 +83,7 @@ class HealthKitPermissions {
       return true;
     } catch (error) {
       console.log('[HealthKit] Error requesting authorization:', error);
+      reportError(error, { op: 'healthKit.requestAuth' }, 'warning');
       return false;
     }
   }

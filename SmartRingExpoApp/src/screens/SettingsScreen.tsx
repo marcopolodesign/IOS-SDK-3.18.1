@@ -1,5 +1,7 @@
 import React, { useCallback, useState } from 'react';
+import { reportError } from '../utils/sentry';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import {
   View,
   Text,
@@ -64,7 +66,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       ]);
       setProfile(profileData);
       setGoal(goalData.goal);
-    } catch {}
+    } catch (e) { reportError(e, { op: 'settings.load' }, 'warning'); }
   }, []);
 
   useFocusEffect(
@@ -493,6 +495,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
             <View style={[styles.glassRow, styles.glassRowFirst]}>
               <Text style={styles.rowLabel}>{t('profile.about.app_version')}</Text>
               <Text style={styles.rowValue}>{Constants.expoConfig?.version ?? '—'}</Text>
+            </View>
+            <View style={styles.glassRow}>
+              <Text style={styles.rowLabel}>{t('profile.about.ota_version')}</Text>
+              <Text style={[styles.rowValue, { maxWidth: 200, textAlign: 'right' }]} numberOfLines={1}>
+                {Updates.isEmbeddedLaunch
+                  ? t('profile.about.ota_embedded')
+                  : (Updates.updateId?.slice(0, 8) ?? '—')}
+              </Text>
             </View>
             <View style={[styles.glassRow, styles.glassRowLast, { borderBottomWidth: 0 }]}>
               <Text style={styles.rowLabel}>{t('profile.about.sdk_version')}</Text>

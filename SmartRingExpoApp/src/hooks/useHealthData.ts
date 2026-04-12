@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
+import { reportError } from '../utils/sentry';
 import type {
   StepsData,
   SleepData,
@@ -121,6 +122,7 @@ export const useHealthData = (): UseHealthDataReturn => {
       setHRV(data);
     } catch (error) {
       console.log('HRV data not available');
+      reportError(error, { op: 'healthData.fetchHeartRate' }, 'warning');
     } finally {
       setIsLoading(false);
     }
@@ -133,6 +135,7 @@ export const useHealthData = (): UseHealthDataReturn => {
       setStress(data);
     } catch (error) {
       console.log('Stress data not available');
+      reportError(error, { op: 'healthData.fetchSteps' }, 'warning');
     } finally {
       setIsLoading(false);
     }
@@ -145,6 +148,7 @@ export const useHealthData = (): UseHealthDataReturn => {
       setTemperature(data);
     } catch (error) {
       console.log('Temperature data not available');
+      reportError(error, { op: 'healthData.fetchSleep' }, 'warning');
     } finally {
       setIsLoading(false);
     }

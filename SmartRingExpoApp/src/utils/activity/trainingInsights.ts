@@ -10,29 +10,31 @@ import { getSportConfig } from '../../services/ActivityDeduplicator';
 
 export const ZONE_COLORS = ['#6B8EFF', '#8AAAFF', '#FFD700', '#FC4C02', '#FF2D2D'];
 
-// 5-zone model: Z1 <60%, Z2 60-70%, Z3 70-80%, Z4 80-90%, Z5 ≥90%
-// Consistent thresholds used for both zone assignment and BPM range display.
-const ZONE_PCT_THRESHOLDS = [0, 0.60, 0.70, 0.80, 0.90] as const;
+// Strava's default 5-zone model (from Strava help docs):
+//   Z1 Active Recovery : < 55%
+//   Z2 Endurance       : 55 – 75%
+//   Z3 Aerobic         : 75 – 87%
+//   Z4 Threshold       : 87 – 95%
+//   Z5 Anaerobic       : ≥ 95%
+const ZONE_UPPER_PCT = [0.55, 0.75, 0.87, 0.95, 1.0] as const;
 
 function hrToZoneIndex(hr: number, maxHR: number): number {
   const pct = hr / maxHR;
-  if (pct < 0.60) return 0;
-  if (pct < 0.70) return 1;
-  if (pct < 0.80) return 2;
-  if (pct < 0.90) return 3;
+  if (pct < 0.55) return 0;
+  if (pct < 0.75) return 1;
+  if (pct < 0.87) return 2;
+  if (pct < 0.95) return 3;
   return 4;
 }
 
-/** Fallback BPM ranges computed from age when no Strava zone data is available. */
+/** Fallback BPM ranges using Strava's default percentages when no zones_json is available. */
 function getFallbackBpmRanges(age: number = 30): Array<{ min: number; max: number }> {
   const maxHR = 220 - age;
-  return ZONE_PCT_THRESHOLDS.map((low, i) => {
-    const highPct = i < 4 ? ZONE_PCT_THRESHOLDS[i + 1] : 1.0;
-    return {
-      min: Math.round(low * maxHR),
-      max: Math.round(highPct * maxHR) - 1,
-    };
-  });
+  const lowers = [0, ...ZONE_UPPER_PCT.slice(0, 4)];
+  return lowers.map((low, i) => ({
+    min: Math.round(low * maxHR),
+    max: Math.round(ZONE_UPPER_PCT[i] * maxHR) - 1,
+  }));
 }
 
 /**

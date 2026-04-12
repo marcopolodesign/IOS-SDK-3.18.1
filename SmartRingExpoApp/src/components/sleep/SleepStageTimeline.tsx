@@ -33,18 +33,10 @@ export function SleepStageTimeline({ dayIndex = 0 }: Props) {
     console.log('📊 [SleepTimeline] Loading sleep data for visualization...');
     setLoading(true);
     
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SleepStageTimeline.tsx:loadData:entry',message:'loadData started',data:{dayIndex},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
-    
     try {
       // Get ring's native data
       const ring = await getSleep(dayIndex);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SleepStageTimeline.tsx:loadData:ringData',message:'Ring data received',data:{ringData:ring,hasSegments:!!ring?.segments,segmentsLength:ring?.segments?.length,totalMinutes:ring?.totalSleepMinutes,deepMinutes:ring?.deepMinutes},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-      // #endregion
-      
+
       console.log('📊 [SleepTimeline] Ring data loaded:', {
         totalMinutes: ring.totalSleepMinutes,
         segments: ring.segments?.length || 0,
@@ -56,11 +48,7 @@ export function SleepStageTimeline({ dayIndex = 0 }: Props) {
       
       // Get custom analysis
       const custom = await getCustomSleepAnalysis(dayIndex);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SleepStageTimeline.tsx:loadData:customData',message:'Custom analysis received',data:{hasCustomStages:!!custom?.customStages,stagesLength:custom?.customStages?.length,agreement:custom?.agreement?.overallMatch},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-      // #endregion
-      
+
       console.log('📊 [SleepTimeline] Custom analysis loaded:', {
         stages: custom.customStages.length,
         agreement: custom.agreement.overallMatch,
@@ -78,9 +66,6 @@ export function SleepStageTimeline({ dayIndex = 0 }: Props) {
       
       setCustomStages(custom.customStages);
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/2c24bd97-750e-43e0-a3f7-87f9cbe31856',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SleepStageTimeline.tsx:loadData:error',message:'Error loading data',data:{error:error?.toString(),errorMessage:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       console.error('📊 [SleepTimeline] Error loading data:', error);
     } finally {
       setLoading(false);

@@ -14,10 +14,10 @@ const GHOST_COLS = Math.ceil(SCREEN_WIDTH / COL_W / 2) + 1;
 const R_TOP = 8;
 const R_BOT = 2;
 
-function scoreColor(score: number): string {
-  if (score >= 80) return '#4ADE80';
-  if (score >= 60) return '#FFD700';
-  if (score > 0) return '#FF6B6B';
+function readinessColor(val: number): string {
+  if (val >= 80) return '#4ADE80';
+  if (val >= 60) return '#FBBF24';
+  if (val > 0) return '#EF4444';
   return '#222233';
 }
 
@@ -39,12 +39,12 @@ function roundedBar(x: number, y: number, w: number, h: number, rTop: number, rB
   ].join(' ');
 }
 
-/** 5-day centered rolling average. Skips zero scores. Returns null if no valid scores in window. */
-function rollingAvg(scores: number[], i: number, window = 5): number | null {
+/** 5-day centered rolling average. Skips zero/null values. */
+function rollingAvg(values: number[], i: number, window = 5): number | null {
   const half = Math.floor(window / 2);
   const from = Math.max(0, i - half);
-  const to = Math.min(scores.length - 1, i + half);
-  const valid = scores.slice(from, to + 1).filter(s => s > 0);
+  const to = Math.min(values.length - 1, i + half);
+  const valid = values.slice(from, to + 1).filter(v => v > 0);
   return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
 }
 
@@ -80,18 +80,17 @@ function monotoneCubicPath(pts: Array<{ x: number; y: number }>): string {
   return path;
 }
 
-interface SleepTrendChartProps {
+interface ReadinessTrendChartProps {
   dayEntries: Array<{ label: string; dateKey: string }>;
   scores: Array<{ dateKey: string; score: number }>;
   selectedIndex: number;
   onSelectDay: (index: number) => void;
 }
 
-export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay }: SleepTrendChartProps) {
+export function ReadinessTrendChart({ dayEntries, scores, selectedIndex, onSelectDay }: ReadinessTrendChartProps) {
   const scrollRef = useRef<ScrollView>(null);
   const lastHapticColRef = useRef<number>(-1);
 
-  // reversed: oldest first, today last
   const reversed = [...dayEntries].reverse();
   const todayColIndex = reversed.length - 1;
   const totalCols = reversed.length + GHOST_COLS;
@@ -99,7 +98,8 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
   const maxBarH = CHART_H - PAD_V * 2;
   const baseline = CHART_H - PAD_V;
 
-  // Scroll today to center on mount
+  const MAX_SCORE = 100;
+
   useEffect(() => {
     const todayCenterX = todayColIndex * COL_W + COL_W / 2;
     const offset = todayCenterX - SCREEN_WIDTH / 2;
@@ -118,16 +118,15 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
     }
   }
 
-  // Raw score array aligned to reversed (oldest-first)
-  const rawScores = reversed.map(d => scores.find(s => s.dateKey === d.dateKey)?.score ?? 0);
+  const rawValues = reversed.map(d => scores.find(s => s.dateKey === d.dateKey)?.score ?? 0);
 
-  // Rolling average trendline (5-day centered window)
+  // Rolling average trendline
   const trendPoints: Array<{ x: number; y: number }> = [];
   reversed.forEach((_, i) => {
-    const avg = rollingAvg(rawScores, i);
+    const avg = rollingAvg(rawValues, i);
     if (avg !== null) {
       const cx = i * COL_W + COL_W / 2;
-      const barH = (avg / 100) * maxBarH;
+      const barH = (Math.min(avg, MAX_SCORE) / MAX_SCORE) * maxBarH;
       trendPoints.push({ x: cx, y: baseline - barH });
     }
   });
@@ -191,7 +190,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
             <G>
               {/* Dotted guide lines at 25 / 50 / 75 */}
               {[25, 50, 75].map(threshold => {
-                const lineY = baseline - (threshold / 100) * maxBarH;
+                const lineY = baseline - (threshold / MAX_SCORE) * maxBarH;
                 return (
                   <Line
                     key={threshold}
@@ -202,20 +201,16 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
                 );
               })}
 
-              {/* X axis baseline */}
+              {/* Baseline */}
               <Line
-                x1={0}
-                y1={baseline}
-                x2={contentW}
-                y2={baseline}
-                stroke="rgba(255,255,255,0.12)"
-                strokeWidth={1}
+                x1={0} y1={baseline} x2={contentW} y2={baseline}
+                stroke="rgba(255,255,255,0.12)" strokeWidth={1}
               />
 
               {/* Bars + score labels inside */}
               {reversed.map((d, i) => {
-                const v = rawScores[i];
-                const barH = Math.max(3, (v / 100) * maxBarH);
+                const v = rawValues[i];
+                const barH = Math.max(3, (Math.min(v, MAX_SCORE) / MAX_SCORE) * maxBarH);
                 const cx = i * COL_W + COL_W / 2;
                 const x = cx - BAR_W / 2;
                 const y = baseline - barH;
@@ -226,7 +221,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
                   <G key={d.dateKey}>
                     <Path
                       d={roundedBar(x, y, BAR_W, barH, R_TOP, R_BOT)}
-                      fill={isSel ? scoreColor(v) : 'rgba(255,255,255,0.4)'}
+                      fill={isSel ? readinessColor(v) : 'rgba(255,255,255,0.4)'}
                     />
                     {showLabel && (
                       <SvgText
@@ -245,7 +240,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
                 );
               })}
 
-              {/* Rolling average trendline */}
+              {/* Trendline */}
               {trendPath.length > 0 && (
                 <Path
                   d={trendPath}
@@ -263,10 +258,7 @@ export function SleepTrendChart({ dayEntries, scores, selectedIndex, onSelectDay
                 return (
                   <Rect
                     key={`t-${d.dateKey}`}
-                    x={i * COL_W}
-                    y={0}
-                    width={COL_W}
-                    height={CHART_H}
+                    x={i * COL_W} y={0} width={COL_W} height={CHART_H}
                     fill="transparent"
                     onPress={() => onSelectDay(origIndex)}
                   />

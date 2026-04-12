@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { BackArrow } from '../../src/components/detail/BackArrow';
 import { SleepDebtGauge } from '../../src/components/home/SleepDebtGauge';
 import { useSleepDebt } from '../../src/hooks/useSleepDebt';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
@@ -77,7 +78,7 @@ export default function SleepDebtDetailScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.backArrow}>{'‹'}</Text>
+          <BackArrow />
         </TouchableOpacity>
         <Text style={styles.title}>{t('sleep_debt.detail_title')}</Text>
         <View style={styles.headerRight} />

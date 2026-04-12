@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
+import { reportError } from '../../utils/sentry';
 
 type HourRange = { hour: number; min: number; max: number; hasData: boolean };
 
@@ -107,7 +108,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
         }
         if (points.length > 0) buildRanges(points);
       })
-      .catch(() => setHourlyHrRanges([]));
+      .catch(e => { reportError(e, { op: 'dailyHR.fetchHourly' }, 'warning'); setHourlyHrRanges([]); });
   }, [preloadedData]);
 
   const hrMin = useMemo(() => {

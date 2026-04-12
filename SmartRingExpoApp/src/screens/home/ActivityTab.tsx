@@ -1,22 +1,26 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, Animated, TouchableOpacity, FlatList, Dimensions } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { HeroLinearGauge } from '../../components/home/HeroLinearGauge';
-import { GlassCard } from '../../components/home/GlassCard';
 import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
-import { getActivityMessage, Workout } from '../../hooks/useHomeData';
+import { getActivityMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, borderRadius, fontFamily } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 import type { UnifiedActivity } from '../../types/activity.types';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatSleepDuration } from '../../utils/ringData/sleep';
 import { TrainingInsightsCard } from '../../components/home/TrainingInsightsCard';
+import { RingIcon } from '../../assets/icons';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_W = SCREEN_WIDTH * 0.6;
+const CARD_GAP = spacing.md;
 
 function formatUnifiedMeta(a: UnifiedActivity): string {
   const parts: string[] = [];
@@ -26,109 +30,76 @@ function formatUnifiedMeta(a: UnifiedActivity): string {
   return parts.join(' · ');
 }
 
-const SOURCE_COLORS: Record<string, string> = {
+function formatWorkoutDate(isoDate: string): string {
+  const d = new Date(isoDate);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function StravaLogo({ size = 12 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="white">
+      <Path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+    </Svg>
+  );
+}
+
+function AppleHealthLogo({ size = 12 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="white">
+      <Path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" />
+    </Svg>
+  );
+}
+
+const SOURCE_BG: Record<string, string> = {
   strava: '#FC4C02',
   appleHealth: '#FF375F',
-  ring: '#00D4AA',
+  ring: '#2A2A3E',
 };
 
-const SOURCE_LABEL_KEYS: Record<string, string> = {
-  strava: 'Strava',
-  appleHealth: 'activity.source_health',
-  ring: 'activity.source_ring',
-};
-
-function UnifiedWorkoutCard({ activity }: { activity: UnifiedActivity }) {
-  const { t } = useTranslation();
-  const color = SOURCE_COLORS[activity.source] || SOURCE_COLORS.ring;
-  const labelKey = SOURCE_LABEL_KEYS[activity.source] || SOURCE_LABEL_KEYS.ring;
-  const label = labelKey.startsWith('activity.') ? t(labelKey) : labelKey;
+function SourceBadge({ source }: { source: string }) {
+  const bg = SOURCE_BG[source] ?? SOURCE_BG.ring;
   return (
-    <View style={styles.workoutCard}>
-      <View style={[styles.workoutIconContainer, { backgroundColor: `${activity.color}18` }]}>
-        <Ionicons name={activity.icon as any} size={18} color={activity.color} />
-      </View>
-      <View style={styles.workoutInfo}>
-        <Text style={styles.workoutName}>{activity.name}</Text>
-        <Text style={styles.workoutMeta}>{formatUnifiedMeta(activity)}</Text>
-      </View>
-      <View style={{ backgroundColor: `${color}20`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-        <Text style={{ fontSize: 10, fontFamily: fontFamily.demiBold, color }}>{label}</Text>
-      </View>
+    <View style={[hCardStyles.sourceBadge, { backgroundColor: bg }]}>
+      {source === 'strava' && <StravaLogo size={10} />}
+      {source === 'appleHealth' && <AppleHealthLogo size={10} />}
+      {source === 'ring' && <RingIcon width={10} height={10} fill="white" />}
     </View>
   );
 }
 
-// Workout type icons
-function WorkoutIcon({ type }: { type: string }) {
-  const getIcon = () => {
-    switch (type.toLowerCase()) {
-      case 'running':
-        return (
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"
-              fill="#FF6B35"
-            />
-          </Svg>
-        );
-      case 'gym':
-      case 'strength':
-        return (
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29l-1.43-1.43z"
-              fill="#4ADE80"
-            />
-          </Svg>
-        );
-      case 'cycling':
-      case 'bike':
-        return (
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5 2.1V9c-1.5 0-2.7-.6-3.6-1.5l-1.9-1.9c-.5-.4-1-.6-1.6-.6s-1.1.2-1.4.6L7.8 8.4c-.4.4-.6.9-.6 1.4 0 .6.2 1.1.6 1.4L11 14v5h2v-6.2l-2.2-2.3zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"
-              fill="#3B82F6"
-            />
-          </Svg>
-        );
-      default:
-        return (
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Circle cx={12} cy={12} r={8} stroke="#FFD700" strokeWidth={2} fill="none" />
-            <Path d="M12 8v4l3 3" stroke="#FFD700" strokeWidth={2} strokeLinecap="round" />
-          </Svg>
-        );
-    }
-  };
-
-  return <View style={styles.workoutIconContainer}>{getIcon()}</View>;
-}
-
-function WorkoutCard({ workout }: { workout: Workout }) {
-  const { t } = useTranslation();
-  const formatDate = (date: Date) => {
-    const today = new Date();
-    const isToday = date.toDateString() === today.toDateString();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday = date.toDateString() === yesterday.toDateString();
-
-    if (isToday) return t('last_run.date_today');
-    if (isYesterday) return t('last_run.date_yesterday');
-    return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+function HorizontalWorkoutCard({ activity }: { activity: UnifiedActivity }) {
+  const handlePress = () => {
+    if (activity.source !== 'strava') return;
+    const numericId = activity.id.replace('strava_', '');
+    router.push({ pathname: '/(tabs)/settings/strava-detail', params: { id: numericId } });
   };
 
   return (
-    <View style={styles.workoutCard}>
-      <WorkoutIcon type={workout.type} />
-      <View style={styles.workoutInfo}>
-        <Text style={styles.workoutName}>{workout.name}</Text>
-        <Text style={styles.workoutMeta}>
-          {formatDate(workout.date)} • {workout.duration} min • {workout.calories} kcal
-        </Text>
+    <TouchableOpacity
+      style={hCardStyles.card}
+      onPress={handlePress}
+      activeOpacity={activity.source === 'strava' ? 0.75 : 1}
+    >
+      {/* Icon + source badge */}
+      <View style={hCardStyles.iconWrap}>
+        <View style={[hCardStyles.iconCircle, { backgroundColor: `${activity.color}28` }]}>
+          <Ionicons name={activity.icon as any} size={20} color={activity.color} />
+        </View>
+        <SourceBadge source={activity.source} />
       </View>
-    </View>
+      {/* Text info */}
+      <View style={hCardStyles.textBlock}>
+        <Text style={hCardStyles.name} numberOfLines={1}>{activity.name}</Text>
+        <Text style={hCardStyles.date}>{formatWorkoutDate(activity.startDate)}</Text>
+        <Text style={hCardStyles.meta} numberOfLines={1}>{formatUnifiedMeta(activity)}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -264,29 +235,25 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
 
       {/* Recent Workouts */}
       <Reanimated.View style={[styles.workoutsSection, firstCardStyle]}>
-        <Text style={styles.sectionTitle}>{t('activity.recent_workouts')}</Text>
-        <GlassCard style={styles.workoutsCard} noPadding>
-          {homeData.unifiedActivities?.length > 0 ? (
-            homeData.unifiedActivities.slice(0, 5).map((ua, index) => (
-              <React.Fragment key={ua.id}>
-                <UnifiedWorkoutCard activity={ua} />
-                {index < Math.min(homeData.unifiedActivities.length, 5) - 1 && <View style={styles.workoutDivider} />}
-              </React.Fragment>
-            ))
-          ) : activity.workouts.length > 0 ? (
-            activity.workouts.map((workout, index) => (
-              <React.Fragment key={workout.id}>
-                <WorkoutCard workout={workout} />
-                {index < activity.workouts.length - 1 && <View style={styles.workoutDivider} />}
-              </React.Fragment>
-            ))
-          ) : (
-            <View style={styles.emptyWorkouts}>
-              <Text style={styles.emptyText}>{t('activity.no_workouts')}</Text>
-              <Text style={styles.emptySubtext}>{t('activity.no_workouts_hint')}</Text>
-            </View>
-          )}
-        </GlassCard>
+        <Text style={[styles.sectionTitle, { paddingHorizontal: spacing.lg }]}>{t('activity.recent_workouts')}</Text>
+        {homeData.unifiedActivities?.length > 0 ? (
+          <FlatList
+            data={homeData.unifiedActivities.slice(0, 10)}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={CARD_W + CARD_GAP}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: CARD_GAP }}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => <HorizontalWorkoutCard activity={item} />}
+          />
+        ) : (
+          <View style={[styles.emptyWorkouts, { marginHorizontal: spacing.lg }]}>
+            <Text style={styles.emptyText}>{t('activity.no_workouts')}</Text>
+            <Text style={styles.emptySubtext}>{t('activity.no_workouts_hint')}</Text>
+          </View>
+        )}
       </Reanimated.View>
 
       {/* Goals Progress */}
@@ -376,41 +343,6 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           </GradientInfoCard>
         </View>
       </View>
-
-      {/* Recent Sessions (X3 parity additive section) */}
-      {homeData.featureAvailability.activitySessions && (
-        <View style={styles.sessionsSection}>
-          <Text style={styles.sectionTitle}>{t('activity.recent_sessions')}</Text>
-          <GlassCard style={styles.sessionsCard} noPadding>
-            {homeData.activitySessions.length > 0 ? (
-              homeData.activitySessions.slice(0, 4).map((session, index) => (
-                <React.Fragment key={`${session.startTime}-${session.type}-${index}`}>
-                  <View style={styles.sessionRow}>
-                    <View style={styles.sessionLeft}>
-                      <Text style={styles.sessionTitle}>{session.typeLabel}</Text>
-                      <Text style={styles.sessionMeta}>
-                        {Math.round(session.duration / 60)} min • {session.calories} kcal
-                      </Text>
-                    </View>
-                    <View style={styles.sessionRight}>
-                      <Text style={styles.sessionStat}>{session.steps.toLocaleString()} steps</Text>
-                      <Text style={styles.sessionStat}>{Math.round(session.distance / 1000)} km</Text>
-                    </View>
-                  </View>
-                  {index < Math.min(homeData.activitySessions.length, 4) - 1 && (
-                    <View style={styles.workoutDivider} />
-                  )}
-                </React.Fragment>
-              ))
-            ) : (
-              <View style={styles.emptyWorkouts}>
-                <Text style={styles.emptyText}>{t('activity.no_sessions')}</Text>
-                <Text style={styles.emptySubtext}>{t('activity.no_sessions_hint')}</Text>
-              </View>
-            )}
-          </GlassCard>
-        </View>
-      )}
 
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
@@ -515,7 +447,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   workoutsSection: {
-    paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   sectionTitle: {
@@ -523,38 +454,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontFamily: fontFamily.demiBold,
     marginBottom: spacing.md,
-  },
-  workoutsCard: {
-    paddingVertical: spacing.sm,
-  },
-  workoutCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  workoutIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  workoutInfo: {
-    flex: 1,
-  },
-  workoutName: {
-    color: '#FFFFFF',
-    fontSize: fontSize.md,
-    fontFamily: fontFamily.demiBold,
-  },
-  workoutMeta: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-    marginTop: 2,
   },
   workoutDivider: {
     height: 1,
@@ -689,6 +588,62 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontFamily: fontFamily.regular,
     lineHeight: 16,
+  },
+});
+
+const hCardStyles = StyleSheet.create({
+  card: {
+    width: CARD_W,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: 16,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconWrap: {
+    alignItems: 'center',
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sourceBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#1A1A2E',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textBlock: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  name: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontFamily: fontFamily.demiBold,
+    marginBottom: 2,
+  },
+  date: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+    marginBottom: 4,
+  },
+  meta: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
   },
 });
 

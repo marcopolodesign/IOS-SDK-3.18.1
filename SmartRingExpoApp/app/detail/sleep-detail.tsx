@@ -11,6 +11,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { BackArrow } from '../../src/components/detail/BackArrow';
 import { SleepHypnogram } from '../../src/components/home/SleepHypnogram';
 import { SleepTrendChart } from '../../src/components/detail/SleepTrendChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
@@ -73,6 +74,122 @@ function buildTodaySleepFromContext(sleep: ReturnType<typeof useHomeDataContext>
   };
 }
 
+// ─── Recommended sleep stage ranges (from customSleepAnalysis.ts THRESHOLDS) ──
+const STAGE_RANGES: Record<string, { min: number; max: number }> = {
+  deep:  { min: 13, max: 23 },
+  rem:   { min: 20, max: 25 },
+  light: { min: 50, max: 65 },
+  awake: { min: 0,  max: 5 },
+};
+
+function SleepStageBar({
+  label,
+  minutes,
+  totalMinutes,
+  color,
+  stage,
+}: {
+  label: string;
+  minutes: number;
+  totalMinutes: number;
+  color: string;
+  stage: keyof typeof STAGE_RANGES;
+}) {
+  const pct = totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0;
+  const range = STAGE_RANGES[stage];
+  const fillW = Math.min(100, pct); // clamp to 100%
+
+  return (
+    <View style={stageStyles.row}>
+      <View style={stageStyles.header}>
+        <View style={[stageStyles.dot, { backgroundColor: color }]} />
+        <Text style={stageStyles.label}>{label}</Text>
+        <Text style={stageStyles.value}>{minutes} min</Text>
+        <Text style={stageStyles.pct}>{Math.round(pct)}%</Text>
+      </View>
+      <View style={stageStyles.track}>
+        {/* Actual fill */}
+        <View style={[stageStyles.fill, { width: `${fillW}%`, backgroundColor: color }]} />
+        {/* Recommended range overlay */}
+        <View
+          style={[
+            stageStyles.rangeOverlay,
+            { left: `${range.min}%`, width: `${range.max - range.min}%` },
+          ]}
+        />
+        {/* Range edge markers */}
+        <View style={[stageStyles.rangeMark, { left: `${range.min}%` }]} />
+        <View style={[stageStyles.rangeMark, { left: `${range.max}%` }]} />
+      </View>
+    </View>
+  );
+}
+
+const stageStyles = StyleSheet.create({
+  row: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    gap: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  label: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  value: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+  },
+  pct: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.regular,
+    width: 32,
+    textAlign: 'right',
+  },
+  track: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  fill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    borderRadius: 3,
+  },
+  rangeOverlay: {
+    position: 'absolute',
+    top: 0,
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  rangeMark: {
+    position: 'absolute',
+    top: -1,
+    width: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+});
+
 export default function SleepDetailScreen() {
   const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -130,14 +247,19 @@ export default function SleepDetailScreen() {
               <Stop offset="0%" stopColor="#7100C2" stopOpacity={0.85} />
               <Stop offset="55%" stopColor="#7100C2" stopOpacity={0} />
             </RadialGradient>
+            <RadialGradient id="sleepGrad2" cx="15%" cy="20%" rx="50%" ry="65%">
+              <Stop offset="0%" stopColor="#3B0764" stopOpacity={0.6} />
+              <Stop offset="100%" stopColor="#3B0764" stopOpacity={0} />
+            </RadialGradient>
           </Defs>
           <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad2)" />
         </Svg>
 
         {/* Header — safe area padding here so gradient fills from screen top */}
         <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={styles.backArrow}>{'‹'}</Text>
+            <BackArrow />
           </TouchableOpacity>
           <Text style={styles.title}>Sleep</Text>
           <View style={styles.headerRight} />
@@ -170,10 +292,12 @@ export default function SleepDetailScreen() {
         ) : (
           <>
             {/* Headline score */}
-            <View style={styles.headlineRow}>
-              <Text style={[styles.headlineScore, { color: scoreColor }]}>{dayData.score}</Text>
-              <View style={styles.headlineRight}>
-                <Text style={styles.headlineLabel}>SLEEP SCORE</Text>
+            <View style={styles.headlineOuter}>
+              <View style={styles.headlineRow}>
+                <Text style={[styles.headlineScore, { color: scoreColor }]}>{dayData.score}</Text>
+                <Text style={styles.headlineLabel}>Sleep Score</Text>
+              </View>
+              <View style={styles.badgeRow}>
                 <View style={[styles.badge, { backgroundColor: `${scoreColor}22`, borderColor: `${scoreColor}55` }]}>
                   <Text style={[styles.badgeText, { color: scoreColor }]}>
                     {dayData.score >= 80 ? 'Excellent' : dayData.score >= 60 ? 'Fair' : 'Poor'}
@@ -199,13 +323,17 @@ export default function SleepDetailScreen() {
               );
             })()}
 
-            {/* Stats */}
+            {/* Sleep stages with range bars */}
             <View style={styles.statsContainer}>
               <DetailStatRow title="Total Sleep" value={dayData.timeAsleep} />
-              <DetailStatRow title="Deep Sleep" value={`${dayData.deepMin} min`} accent="#5C4DB1" />
-              <DetailStatRow title="REM Sleep" value={`${dayData.remMin} min`} accent="#81D4FA" />
-              <DetailStatRow title="Light Sleep" value={`${dayData.lightMin} min`} accent="#42A5F5" />
-              <DetailStatRow title="Awake" value={`${dayData.awakeMin} min`} accent="#FF6B6B" />
+              <SleepStageBar label="Deep" minutes={dayData.deepMin} totalMinutes={dayData.timeAsleepMinutes} color="#5C4DB1" stage="deep" />
+              <SleepStageBar label="REM" minutes={dayData.remMin} totalMinutes={dayData.timeAsleepMinutes} color="#81D4FA" stage="rem" />
+              <SleepStageBar label="Light" minutes={dayData.lightMin} totalMinutes={dayData.timeAsleepMinutes} color="#42A5F5" stage="light" />
+              <SleepStageBar label="Awake" minutes={dayData.awakeMin} totalMinutes={dayData.timeAsleepMinutes} color="#FF6B6B" stage="awake" />
+            </View>
+
+            {/* Other stats */}
+            <View style={styles.statsContainer}>
               {efficiency !== null && (
                 <DetailStatRow title="Sleep Efficiency" value={`${efficiency}%`} />
               )}
@@ -246,7 +374,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
   gradientZone: {
     overflow: 'hidden',
-    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',
@@ -266,34 +393,41 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.sm },
   emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.md, fontFamily: fontFamily.demiBold },
   emptySubtext: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, textAlign: 'center', paddingHorizontal: spacing.xl },
+  headlineOuter: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    gap: spacing.xs,
+  },
   headlineRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+    alignItems: 'flex-end',
+    gap: spacing.xs,
   },
-  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular, lineHeight: 80 },
-  headlineRight: { gap: spacing.xs },
-  headlineLabel: { color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: fontFamily.regular, textTransform: 'uppercase', letterSpacing: 1 },
+  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular, lineHeight: 0 },
+  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold, marginBottom: 12 },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start' },
   badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
     alignSelf: 'flex-start',
   },
-  badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold },
+  badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
   hypnogramWrapper: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
     overflow: 'hidden',
   },
   statsContainer: {
     marginHorizontal: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: spacing.md,
@@ -302,7 +436,6 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
     padding: spacing.md,
-    backgroundColor: 'rgba(113,0,194,0.15)',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(113,0,194,0.3)',

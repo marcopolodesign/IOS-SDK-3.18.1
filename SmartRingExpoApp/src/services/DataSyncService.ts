@@ -1,4 +1,5 @@
 import { supabase, supabaseService } from './SupabaseService';
+import { reportError, addBreadcrumb } from '../utils/sentry';
 import UnifiedSmartRingService from './UnifiedSmartRingService';
 import { stravaService } from './StravaService';
 import {
@@ -115,11 +116,11 @@ class DataSyncService {
       try {
         const battery = await smartRingService.getBattery();
         batteryLevel = battery?.battery;
-      } catch (e) { console.warn('[Sync] getBattery failed:', (e as Error).message); }
+      } catch (e) { console.warn('[Sync] getBattery failed:', (e as Error).message); reportError(e, { op: 'sync.getBattery' }, 'warning'); }
       try {
         const version = await smartRingService.getVersion();
         versionStr = version?.version;
-      } catch (e) { console.warn('[Sync] getVersion failed:', (e as Error).message); }
+      } catch (e) { console.warn('[Sync] getVersion failed:', (e as Error).message); reportError(e, { op: 'sync.getVersion' }, 'warning'); }
 
       const syncId = await supabaseService.createRingSync(
         userId,
@@ -155,6 +156,7 @@ class DataSyncService {
       };
       this.notifyListeners();
 
+      addBreadcrumb('sync', 'syncAllData completed');
       console.log('Data sync completed successfully');
       return { success: true };
     } catch (e) {
@@ -166,6 +168,7 @@ class DataSyncService {
       };
       this.notifyListeners();
       console.error('Data sync failed:', error);
+      reportError(error, { op: 'syncAllData' });
       return { success: false, error: error.message };
     }
   }
@@ -205,6 +208,7 @@ class DataSyncService {
       }
     } catch (e) {
       console.error('Error syncing heart rate data:', e);
+      reportError(e, { op: 'syncHeartRateData' });
     }
   }
 
@@ -262,6 +266,7 @@ class DataSyncService {
       }
     } catch (e) {
       console.error('Error syncing steps data:', e);
+      reportError(e, { op: 'syncStepsData' });
     }
   }
 
@@ -282,6 +287,7 @@ class DataSyncService {
       rawRecords = rawResult.records || [];
     } catch (e) {
       console.error('[Sync] getSleepDataRaw failed:', e);
+      reportError(e, { op: 'syncSleepData.getSleepDataRaw' });
       return;
     }
     if (rawRecords.length === 0) {
@@ -557,6 +563,7 @@ class DataSyncService {
       }
     } catch (e) {
       console.error('Error syncing vitals data:', e);
+      reportError(e, { op: 'syncVitalsData' });
     }
   }
 
@@ -578,6 +585,7 @@ class DataSyncService {
       }
     } catch (e) {
       console.error('Error syncing blood pressure data:', e);
+      reportError(e, { op: 'syncBloodPressure' });
     }
   }
 
@@ -605,6 +613,7 @@ class DataSyncService {
       }
     } catch (e) {
       console.error('Error syncing sport records:', e);
+      reportError(e, { op: 'syncSportRecords' });
     }
   }
 
@@ -734,6 +743,7 @@ class DataSyncService {
       return true;
     } catch (e) {
       console.error('Error updating daily summary:', e);
+      reportError(e, { op: 'updateDailySummary' });
       return false;
     }
   }
@@ -781,6 +791,7 @@ class DataSyncService {
       return !error;
     } catch (e) {
       console.error('Error updating weekly summary:', e);
+      reportError(e, { op: 'updateWeeklySummary' });
       return false;
     }
   }

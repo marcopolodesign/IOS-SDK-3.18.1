@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/SupabaseService';
+import { setUserContext } from '../utils/sentry';
 import {
   signInWithEmail,
   signUpWithEmail,
@@ -36,6 +37,9 @@ export function useAuth() {
       // console.log('[useAuth] User in session:', session?.user);
       setSession(session);
       setIsLoading(false);
+      if (session?.user) {
+        setUserContext({ id: session.user.id, email: session.user.email });
+      }
     });
 
     // Listen for auth state changes
@@ -43,6 +47,11 @@ export function useAuth() {
       console.log('[useAuth] Auth state changed:', _event, !!session);
       setSession(session);
       setIsLoading(false);
+      if (session?.user) {
+        setUserContext({ id: session.user.id, email: session.user.email });
+      } else {
+        setUserContext(null);
+      }
     });
 
     return () => subscription.unsubscribe();

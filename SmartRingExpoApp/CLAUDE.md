@@ -106,6 +106,20 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Recent Changes
 
+### 2026-04-10: Sleep Hypnogram — Continuous Gradient Step Figure
+
+**Design:** The hypnogram figure (`src/components/home/SleepHypnogram.tsx`) is now a continuous step chart using a single figure-wide vertical `LinearGradient` (`gradientUnits="userSpaceOnUse"`). All blocks and connectors share `fill="url(#sleepGradient)"` — no per-stage colors on the figure.
+
+**Gradient palette (awake top → deep bottom):**
+- Awake: `#FFFFFF` (pure white)
+- REM: `#F5DEDE` (near-white pink)
+- Core: `#CC3535` (medium maroon)
+- Deep: `#8C0B0B` (dark maroon)
+
+**Structure:** Per-segment `<Rect>` blocks (no rounded corners) + 0.75px-wide `<Rect>` connector bars spanning top-of-higher-lane to bottom-of-lower-lane. Header row shows SLEPT / BEDTIME / WAKE stats (no chips).
+
+> **INVARIANT:** `styles.summaryRow.height` and `styles.tooltipReplacement.height` in `SleepHypnogram.tsx` must always be equal — they occupy the same vertical slot and the tooltip swaps in place of the stat row on drag. Currently both are `50`. Comments in the stylesheet enforce this.
+
 ### 2026-03-22: Apple Health Full Rewrite (New Architecture)
 
 **Implemented:** Replaced `react-native-health` with `@kingstinct/react-native-healthkit` v13 (Nitro Modules). Modular sub-services: HealthKitPermissions, HealthKitDataFetchers, HealthKitSleepProcessor, HealthKitSubscriptions. Fixed onboarding connect, redesigned Apple Health screen (glassmorphism + i18n), added HealthKit fallback in useHomeData when ring disconnected. Code quality pass via `/simplify` fixed 8 issues.
