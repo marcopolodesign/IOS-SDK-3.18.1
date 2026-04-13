@@ -15,9 +15,11 @@ import { Platform } from 'react-native';
 import smartRingService from './UnifiedSmartRingService';
 import { reportError } from '../utils/sentry';
 import { supabase } from './SupabaseService';
+import dataSyncService from './DataSyncService';
 
 const TASK_NAME = 'BACKGROUND_SLEEP_CHECK';
 const SCHEDULED_KEY = '@focus_sleep_notif_scheduled_v2';
+const BG_SYNC_KEY = '@focus_bg_sync_last_at';
 const MIN_NIGHT_DURATION_MS = 180 * 60 * 1000; // 3 hours — minimum to count as a night
 const NOTIFICATION_DELAY_MS = 30 * 60 * 1000; // 30 minutes after wake
 const MIN_HOUR = 7; // Don't process wake times before 7 AM (fragmented sleep guard)
@@ -135,8 +137,8 @@ TaskManager.defineTask(TASK_NAME, async () => {
     const now = new Date();
     const hour = now.getHours();
 
-    // Only run between 5 AM and 2 PM — no point checking outside this window
-    if (hour < 5 || hour >= 14) {
+    // Only run between 5 AM and 11 PM — sleep check is morning; data sync runs all day
+    if (hour < 5 || hour >= 23) {
       await bgLog('skipped_outside_window', { hour });
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
@@ -194,10 +196,24 @@ TaskManager.defineTask(TASK_NAME, async () => {
 
     if (didSchedule) {
       await AsyncStorage.setItem(SCHEDULED_KEY, today);
-      return BackgroundFetch.BackgroundFetchResult.NewData;
     }
 
-    return BackgroundFetch.BackgroundFetchResult.NoData;
+    // Background full data sync — at most once every 2 hours
+    const lastBgSync = await AsyncStorage.getItem(BG_SYNC_KEY);
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    if (!lastBgSync || Number(lastBgSync) < twoHoursAgo) {
+      try {
+        const syncResult = await dataSyncService.syncAllData();
+        await AsyncStorage.setItem(BG_SYNC_KEY, String(Date.now()));
+        await bgLog('bg_sync_complete', { success: syncResult.success, error: syncResult.error });
+      } catch (e: any) {
+        await bgLog('bg_sync_error', { error: e?.message });
+      }
+    }
+
+    return didSchedule
+      ? BackgroundFetch.BackgroundFetchResult.NewData
+      : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error: any) {
     await bgLog('task_error', { error: error?.message, stack: error?.stack?.slice(0, 300) });
     reportError(error, { op: 'backgroundSleepTask.topLevel' }, 'fatal');

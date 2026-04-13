@@ -591,7 +591,45 @@ SmartRingExpoApp/
 - **AuthService** - User authentication via Supabase
 - **DataSyncService** - Cloud data synchronization
 - **SupabaseService** - Database operations
+- **BackgroundSleepTask** - Background fetch task (5 AM–11 PM): syncs sleep data from ring, schedules "Sleep Ready" local notification, runs full DataSyncService.syncAllData() at most once every 2 hours
 - ~~QCBandService~~ - **NOT USED. Do not call.**
+
+## Push Notifications
+
+### Local notifications (device-side)
+- Registered via `src/services/BackgroundSleepTask.ts` + foreground fallback `maybeSendSleepNotificationFromForeground()`
+- "Your Sleep Analysis is Ready 🌙" — fires ~30 min after detected wake time
+- Requires iOS notification permission; deeplinks to `smartring:///?tab=sleep`
+
+### Server-side push (Supabase pg_cron → Edge Function)
+Edge function: `supabase/functions/daily-summary-push/index.ts`
+Auth: `Authorization: Bearer focus-notify-2026`
+
+| Cron job | UTC | ART | Notification |
+|----------|-----|-----|-------------|
+| `daily-summary-push-morning` | 12:00 | 9 AM | Sleep summary (rich if synced, fallback "Your sleep summary is ready" if not) |
+| `daily-summary-push-evening` | 23:00 | 8 PM | Activity summary (steps + avg HR); skipped if no data |
+| `daily-wind-down-push` | 01:00 | 10 PM | Wind-down reminder based on last wake time → 8h sleep target |
+
+**How cron calls edge function:**
+- `trigger_daily_summary_push(type TEXT)` PL/pgSQL function in DB
+- Reads `edge_function_url` and `notification_secret` from `app_config` table
+- Calls `net.http_post` via `pg_net` extension
+- `app_config` seeded by migration `20260416_wire_daily_push_via_app_config.sql`
+
+**To add a new scheduled notification type:**
+1. Add `type: "your-type"` branch to `daily-summary-push/index.ts`
+2. Add `SELECT cron.schedule(...)` calling `trigger_daily_summary_push('your-type')` in a new migration
+3. Deploy: `/deploy-functions daily-summary-push` then `npx supabase db push`
+
+**To test immediately (skip the cron):**
+```bash
+# Use the /push skill or call the edge function directly:
+curl -X POST https://pxuemdkxdjuwxtupeqoa.supabase.co/functions/v1/daily-summary-push \
+  -H "Authorization: Bearer focus-notify-2026" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "morning"}'
+```
 
 ## Development Commands
 

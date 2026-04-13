@@ -3,16 +3,14 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Rect } from 'react-native-svg';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type {
   DaySleepData,
@@ -211,18 +209,7 @@ export default function BaselineDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <BackArrow />
-        </TouchableOpacity>
-        <Text style={styles.title}>Your Baseline</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <DetailPageHeader title="Your Baseline" useSafeArea={false} />
 
       {/* Overall progress bar */}
       <View style={styles.overallBar}>
@@ -320,17 +307,6 @@ export default function BaselineDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   overallBar: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,

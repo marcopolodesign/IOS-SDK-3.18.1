@@ -4,6 +4,273 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-13: HR Detail — Scroll-Animated Collapsing Header
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The heart rate detail page now has a scroll-linked collapsing headline section outside the ScrollView. As the user scrolls down, the big resting HR number (72px) shrinks to 28px and fades from the metric color to white; the "Resting BPM" label shrinks from 24px to 14px; the quality badge (e.g. "Excellent") below the number fades out while an identical badge slides up from below on the right edge — creating a compact justify-between row at full collapse (44px).
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Replaced `ScrollView` import with `Reanimated.ScrollView`; added Reanimated imports (`useSharedValue`, `useAnimatedScrollHandler`, `useAnimatedStyle`, `interpolate`, `interpolateColor`, `Extrapolation`); added `COLLAPSE_END = 80` constant; moved headline block outside `ScrollView` into a `Reanimated.View` with animated height (100→44px) and `overflow: hidden`; added 5 animated styles for number fontSize/lineHeight/color, label fontSize/marginBottom, badge fade, chip translateY+opacity, and container height; replaced `scrollEventThrottle` with Reanimated's native UI-thread scroll handler; added `chipRight` and `headlineLeft`/`headlineSection` styles
+
+**Key notes:**
+- Two badge instances are intentional: `badgeRow` fades out (opacity 1→0 by scroll 32px), `chipRight` slides up (translateY 30→0 by scroll 80px) — they cross-fade smoothly
+- `useAnimatedScrollHandler` runs on the UI thread natively; `scrollEventThrottle` was removed as redundant
+- `headlineSection` uses `overflow: 'hidden'` to clip the chip before it slides in — no conditional rendering needed
+- `color` in `numberAnimStyle` worklet closes over the JS-side `color` value; re-renders when `selectedIndex` changes so day-switching updates the gradient endpoints correctly
+
+---
+
+## 2026-04-13: Go Live — Wire pg_cron to Edge Function + CLAUDE.md docs
+
+**Problem:** `trigger_daily_summary_push()` read from PostgreSQL DB-level settings (`current_setting('app.edge_function_url')`) which require superuser to set — cron jobs silently no-oped.
+
+**Fix (`20260416_wire_daily_push_via_app_config.sql`):** Rewrote the function to read `edge_function_url` and `notification_secret` from the existing `app_config` table. Seeded both values in the same migration. Full pipeline now works end-to-end.
+
+**CLAUDE.md updated** with full push notification system docs: local vs server-side, cron schedule table, how pg_cron → edge function wiring works, curl test command.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Fix Sleep Data Mismatch — Overlap Guard + Trend Card Day-of-Week
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Two bugs causing wrong sleep values in the UI. (1) Supabase was storing 5h26m when the ring showed 7h26m — the overlap guard in `DataSyncService` unconditionally skipped any new sync block that overlapped an existing session, so a partial mid-sleep sync permanently blocked the full-night update. Fixed by comparing actual sleep minutes: only skip if existing ≥ new, otherwise delete and replace. (2) The home screen weekly sleep trend card showed wrong durations for specific days (e.g. 4h Saturday, 9h27m yesterday) — it was fetching from `UnifiedSmartRingService.getSleepByDay()` which buckets sessions by start date, splitting overnight sessions across two calendar days. Replaced with a Supabase `daily_summaries` query keyed by wake-up date.
+
+**Files modified:**
+- `src/services/DataSyncService.ts` — Changed overlap guard from `some()` skip to `find()` + minutes comparison; if new session has more sleep minutes, deletes old session (if `start_time` differs) and splices it from in-memory list before upserting; caches `startTimeIso` to avoid redundant `.toISOString()` calls
+- `src/services/SupabaseService.ts` — Added `deleteSleepSession(userId, startTime)` method used when replacing a session with a different `start_time`
+- `src/components/home/DailySleepTrendCard.tsx` — Replaced ring-based 7-day `getSleepByDay()` polling with Supabase `daily_summaries` query; removed `retryNonce` state, `retryCountRef`, `retryTimerRef`, `hasCompletedLiveFetchRef`, `toMinutes()` helper, and `loadedRef` gate (was blocking re-fetch after new sync); now re-fetches whenever `homeData.lastNightSleep?.timeAsleepMinutes` changes; uses `parseLocalDate()` from `chartMath.ts` for correct local-midnight day-of-week
+- `src/utils/chartMath.ts` — Added `parseLocalDate(dateStr)` utility to parse YYYY-MM-DD strings as local midnight (avoids UTC offset shifting the day)
+- `src/components/detail/TrendBarChart.tsx` — Updated to import and use `parseLocalDate` from `chartMath.ts`, eliminating duplicate inline date parsing
+
+**Key notes:**
+- Root cause of wrong day bars: a session starting at 10:18 PM Saturday was placed on the Saturday bar instead of Sunday because `getSleepByDay` uses start date; `daily_summaries` is already keyed by wake-up date (correct anchor)
+- `deleteSleepSession` is only called when start_times differ; when they match, the existing `upsert` with `onConflict: 'user_id,start_time'` handles the update automatically
+- Overlap guard logs `[Sync] Sleep day N: replacing existing (Xmin) with new (Ymin)` on replacement and `skipping` on keep — useful for verifying the fix in Expo console
+
+---
+
+## 2026-04-13: HR Detail Chart — Always 24h + Filter Future Data
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The HR chart now always spans the full 24-hour day (midnight to midnight) instead of compressing the X-axis to the current hour. Future hours show as blank space. Also filters out any ring data points labeled at `hour > currentHour` for today — the Jstyle ring end-of-hour buckets a reading collected during 5PM–6PM as "hour 18", making it appear as a 6PM reading at 5:47 PM local time. Filtering prevents these from rendering in the future portion of the chart.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — `endHour` changed from dynamic `Math.min(currentHour + 1, 24)` to constant `24`; `HourlyHRLine` gains `isToday?: boolean` prop and filters out `hour > currentHour` points when true; time axis labels changed from dynamic fractions of endHour to fixed `[0, 6, 12, 18, 24]` (always `12AM / 6AM / 12PM / 6PM / 12AM`); `isToday={selectedIndex === 0}` passed from screen
+
+**Key notes:**
+- Ring end-of-hour bucket behavior: a reading collected between 5PM–6PM is stored with hour=18, appearing as "6PM". Filtering `hour > currentHour` prevents these from showing on today's chart
+- Past days always show all data across the full 24h axis
+
+---
+
+## 2026-04-13: HR Detail Chart — Straight Lines + Right-Edge Padding Fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The HR intraday chart was still rendering smooth bezier curves via `monotoneCubicPath` (Fritsch-Carlson monotone cubic spline). Replaced with a straight polyline so line segments between hourly data points are sharp/angular. Also fixed two visual issues: the last data point was cramped at the extreme right edge (fixed by adding +1 to `endHour`), and the area fill only started at the first data point (~4AM) rather than at midnight (fixed by starting the area path at `PAD_LEFT` at baseline, drawing horizontally to the first data point, then up through all data points).
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Removed `monotoneCubicPath` import; replaced cubic spline with `'M ' + linePts.map(p => \`${p.x} ${p.y}\`).join(' L ')` polyline; rewrote `areaPath` to start at `PAD_LEFT` (midnight) at baseline; changed `endHour` from `currentHour || 24` to `Math.min(currentHour + 1, 24)` for today and `24` (was `23`) for past days; removed `strokeLinecap="round"` and `strokeLinejoin="round"` from line Path for sharp joins
+
+**Key notes:**
+- Past-day charts now use `endHour = 24` (was 23) so the X axis always spans the full day
+- Area fill path: `M PAD_LEFT baselineY → L firstX baselineY → L` through all data pts `→ L lastX baselineY → Z` — ensures shaded region spans from midnight even when first reading is hours after midnight
+
+---
+
+## 2026-04-13: HR Detail — Y-axis Labels, Chart Padding, Live HR Card Margin
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Three final polish items on the HR detail chart: Y-axis BPM indicators added at the three horizontal grid lines, slight horizontal padding added to the chart container so the line doesn't sit flush against the edges, and the embedded live HR card now has the correct `marginHorizontal` to align with the rest of the content.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — `PAD_LEFT = 34` / `PAD_RIGHT = 8` replace symmetric `PAD_H`; `toX` updated to use asymmetric padding; `CHART_W` reduced by `spacing.sm * 2` to account for container `paddingHorizontal`; each of the 3 grid lines now renders a paired `SvgText` Y label (BPM value at `x=2`, muted `rgba(255,255,255,0.3)`); `chartContainer` gains `paddingHorizontal: spacing.sm`; `LiveHeartRateCard` wrapped in `liveCardWrapper` with `marginHorizontal: spacing.md`
+
+**Key notes:**
+- Y labels use `textAnchor="start"` at `x=2` so they sit in the 34px left gutter without overlapping the plotted line area
+- BPM value at each grid line computed as `Math.round(minY + (1 - frac) * range)` — matches the actual scale for that day's data range
+- No vertical axis line — labels only, keeping the chart visually clean
+
+---
+
+## 2026-04-13: HR Detail — Chart Polish, 24h X-axis, Live HR Card, Border Cleanup
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Polished the HR detail page (thinner line, white dots, press-to-inspect tooltip, chart height ×1.3, dynamic X-axis), fixed a bug where yesterday's Peak HR (130 BPM) appeared as today's, and introduced a reusable 2×2 `MetricsGrid` component adopted across all 8 detail pages.
+
+**Files created:**
+- `src/components/detail/MetricsGrid.tsx` — Reusable 2×2 metrics grid with `MetricCell` interface (`label`, `value`, `unit?`, `accent?`, `onPress?`); subtle `rgba(255,255,255,0.06)` dividers; 24px demiBold values; optional `TouchableOpacity` per cell
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — `CHART_H` 180→234 (×1.3); line `strokeWidth` 2→1.2; dots `r=4.5 fill="#FFFFFF"`; `PanResponder` tooltip overlay (floating `View` + vertical cursor `<Line>` + highlighted dot); dynamic X-axis: `minHour`/`maxHour`/`hourSpan` so partial-day data fills full chart width; `todayLive` gated on `homeData.hrDataIsToday` to prevent yesterday's data contaminating today's display; MetricsGrid replaces old `statsContainer` rows (Resting HR / Avg HR / Peak HR / Hours Tracked)
+- `src/hooks/useHomeData.ts` — Added `hrDataIsToday: boolean` to `HomeData` interface, default state, HR fetch block, and `setData` payload; true only when ring's target date equals today's date
+- `app/detail/recovery-detail.tsx` — MetricsGrid for Readiness / Sleep Score / Resting HR / Recommended; remaining conditional rows kept as `DetailStatRow`
+- `app/detail/sleep-detail.tsx` — MetricsGrid for Sleep Efficiency / Bed Time / Wake Time / Resting HR
+- `app/detail/hrv-detail.tsx` — MetricsGrid for SDNN / RMSSD / pNN50 / Stress Level with accent colors
+- `app/detail/spo2-detail.tsx` — MetricsGrid for Overnight Avg / Min / Max / Status
+- `app/detail/temperature-detail.tsx` — MetricsGrid for Current / Average / Min / Max with accent colors
+- `app/detail/activity-detail.tsx` — MetricsGrid for Steps / Distance / Calories / Avg HR
+- `app/detail/sleep-debt-detail.tsx` — MetricsGrid for Avg Sleep / Target Sleep / Days Tracked / Total Debt
+
+**Key notes:**
+- Peak HR fix root cause: `useHomeData` falls back to yesterday's ring data when today's ring buffer is empty (ring last synced at 11:26 AM → yesterday's data from 11:26 AM onward is in the buffer). `hrDataIsToday` flag prevents `buildTodayHRFromContext` from treating this as today's data.
+- Dynamic X-axis: chart maps `minHour`–`maxHour` (actual recorded range) so a sync at 11:26 AM shows data starting from left edge, not stranded at 48% of the width.
+- PanResponder uses `handleRef.current` reassignment pattern: PanResponder created once (avoids recreation), handler reassigned every render to capture fresh `sorted`/`toX` closures.
+- `formatHourCompact()` and `formatHourLabel()` extracted as module-level helpers (not inline IIFEs).
+- `touchableCell` style lives in `StyleSheet`, not inline.
+
+---
+
+## 2026-04-13: HR Detail — Chart Polish, 24h X-axis, Live HR Card, Border Cleanup
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Three visual/UX improvements to the HR detail page and all detail pages with line charts: (1) HR chart now spans midnight → current time rather than just the recorded data range; (2) chart containers lose their border and get tighter corner radius (16→8); (3) the live heart-rate measurement card from the Health tab is embedded below the metrics grid on the HR detail page.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — `endHour` prop added to `HourlyHRLine`; X-axis always starts at 0 (midnight) and ends at current hour (or 23 for past days); midnight edge case handled with `|| 24`; `endHour` memoized in screen component; `chartContainer` border removed, `borderRadius` 16→8; `LiveHeartRateCard` rendered after MetricsGrid; `chartStyles.chartWrapper` extracted from inline `position: 'relative'`
+- `app/detail/sleep-detail.tsx` — `hypnogramWrapper` border removed, `borderRadius` 16→8
+- `src/components/detail/DetailChartContainer.tsx` — wrapper `borderRadius` 16→8 (applies to temperature and SpO₂ pages)
+
+**Key notes:**
+- `endHour = new Date().getHours() || 24` — `|| 24` prevents the chart collapsing to a single pixel column at midnight (hour 0)
+- `LiveHeartRateCard` is self-contained with its own cleanup; safe to embed — listeners unsubscribe on unmount
+- Removed border only from chart containers that are the primary/first chart on the page; `statsContainer` and insight cards keep their borders
+
+---
+
+## 2026-04-13: Fix Sleep Sync Overlap Guard Dropping Full-Night Data
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The Supabase sleep sync was permanently stuck on a partial session (5h 26m) even after the ring had the full night's data (7h 26m). The overlap guard in `syncSleepData` unconditionally skipped any new block that overlapped an existing session by >30 min — so once a partial sync ran (e.g. mid-sleep), the full night was blocked forever. Fixed by comparing actual sleep minutes: if the new block has strictly more `deep+light+rem` minutes than the stored session, it replaces it.
+
+**Files modified:**
+- `src/services/DataSyncService.ts` — overlap guard changed from binary skip to a minutes-comparison; caches `startTimeIso` to avoid redundant `.toISOString()` calls per loop iteration
+- `src/services/SupabaseService.ts` — added `deleteSleepSession(userId, startTime)` for the case where the replacement block has a different `start_time` than the stored one
+
+**Key notes:**
+- Same-`start_time` replacements are handled automatically by the existing `upsert` with `onConflict: 'user_id,start_time'`
+- Different-`start_time` replacements delete the old row first, then upsert the new one
+- The in-memory `nightSessions` array is spliced after replacement so subsequent loop iterations (day 1, day 2…) don't re-match the deleted session
+- `daily_summaries.sleep_total_min` is refreshed automatically by `updateDailySummary()` which runs after `syncSleepData()` completes
+
+---
+
+## 2026-04-13: Wind-down Notification + Morning Fallback Push
+
+**Morning fallback (`daily-summary-push`, type=`morning`):**
+Users who haven't synced by 9 AM now receive a generic "Your sleep summary is ready 🌙 — See how you slept last night. Tap to view your analysis." instead of being silently skipped. Users who did sync get the rich version with actual duration and score.
+
+**Wind-down notification (`daily-summary-push`, type=`wind-down`):**
+New notification type. At 10 PM ART (01:00 UTC), reads each user's most recent `sleep_sessions.end_time` from the last 7 days. Computes `bedtime = wake_time - 8h` and sends: "Time to wind down 🌙 To wake at 6:45 AM well-rested, aim to be asleep by 10:45 PM." Skips users with no sleep history.
+
+**Migration `20260414_wind_down_push_cron.sql`:** Added `daily-wind-down-push` pg_cron at `0 1 * * *` calling `trigger_daily_summary_push('wind-down')`. Both deployed to Supabase.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Detail Pages — Color Cleanup (Sleep Stages + Recovery Breakdown)
+
+**Sleep detail:**
+- Restored stage-specific colors on `SleepStageBar` fill bars and dots (Deep `#7C6CC0`, REM `#60A5FA`, Light `#93C5FD`, Awake `#F87171`)
+- Removed confusing range overlay from the progress bar track
+- Added `target X–Y%` text label per row (muted, replaces the visual band) — turns green when in range
+
+**Recovery detail:**
+- `ContributionBar` (Sleep Quality, Resting HR, Activity Load) fill and value text now white — removed purple/blue/green per-metric colors
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Sleep Detail — Score Breakdown Decolored
+
+- `SleepStageBar` dots and fill bars are now white (`rgba(255,255,255,0.45)` / `0.6`) — removed per-stage colors (purple/blue/red)
+- Removed `color` prop from `SleepStageBar` entirely
+- Removed `accent="#8B5CF6"` from Total Nap Time stat row
+- Headline score and quality badge keep their color
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Detail Page Refactor — TrendBarChart, DetailPageHeader, Resting HR Fix
+
+**What changed (user-visible):**
+- All 9 detail pages now share a consistent back-button header (centered title, correct safe-area handling)
+- Heart Rate detail: spacing added between title and trend chart; stat rows are now white (no colored accents)
+- Recovery detail: sub-metric rows (sleep HR, sleep quality, strain) now white
+- Resting HR on HR detail now shows real values instead of 0 — was a UTC vs local date mismatch in `toDateStr`
+
+**Shared components created:**
+- `src/utils/chartMath.ts` — `roundedBar`, `rollingAvg`, `monotoneCubicPath` extracted from 4 duplicated chart files
+- `src/components/detail/TrendBarChart.tsx` — Generic scrollable bar chart replacing `HRTrendChart`, `SleepTrendChart`, `HRVTrendChart`, `ReadinessTrendChart` (~900 lines reduced)
+- `src/components/detail/DetailPageHeader.tsx` — Shared header with `useSafeArea` flag for Group A (header owns insets) vs Group B (container owns insets) pages
+
+**Bug fixed:**
+- `toDateStr` in `useMetricHistory.ts` used `toISOString().split('T')[0]` (UTC date). Users in UTC-offset zones saw resting HR = 0 because overnight readings (local hours 0–7) were assigned to the wrong dateKey. Fixed by using `getFullYear()/getMonth()/getDate()` (local date components).
+
+**Files deleted:** `HRTrendChart.tsx`, `SleepTrendChart.tsx`, `HRVTrendChart.tsx`, `ReadinessTrendChart.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Background Fetch Expansion + Daily Summary Push Notifications
+
+**Phase 2 — Expanded Background Fetch (`src/services/BackgroundSleepTask.ts`):**
+- Extended active time window from `5 AM–2 PM` to `5 AM–11 PM` so the background task keeps the data fresh throughout the day, not just the morning
+- Added a full data sync (via `dataSyncService.syncAllData()`) on each background wake, rate-limited to once every 2 hours via `@focus_bg_sync_last_at` AsyncStorage key. Result is logged to `background_logs` table. This means Supabase data stays fresh even when the user hasn't opened the app
+
+**Phase 3 — Daily Summary Push Notifications:**
+
+New edge function `supabase/functions/daily-summary-push/index.ts`:
+- **Morning** (12:00 UTC = 9 AM ART): queries `sleep_sessions` for each user (24-hour lookback to avoid UTC timezone cutoff bugs) and sends "You slept 7h 32m · Score: 85. Tap to see your full analysis." → deeplinks to Sleep tab
+- **Evening** (23:00 UTC = 8 PM ART): queries `daily_summaries` for today and sends "8,234 steps · avg HR 72 bpm. Tap to see your full day." → deeplinks to Activity tab
+- Bulk-fetches all users' data upfront (not N+1) then fans out to push tokens
+- Sends to Expo Push API in batches of 100 with error checking per batch
+
+New migration `20260413_daily_summary_push_cron.sql`:
+- `trigger_daily_summary_push(type)` PL/pgSQL function calls the edge function via `net.http_post`
+- Two pg_cron schedules: `daily-summary-push-morning` (0 12 * * *) and `daily-summary-push-evening` (0 23 * * *)
+
+Both deployed to Supabase (edge function + migration applied).
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-12: Instant Cached Data on App Open + "Last Synced" in Device Sheet
+
+**Problem:** Users saw a blank screen for 12-14s every time they opened the app while the ring reconnected. This happened because the disconnect handler called `getEmptyData()`, wiping all cached values from the previous sync.
+
+**Changes:**
+
+1. **`src/hooks/useHomeData.ts`** — Disconnect handler no longer clears data. Instead it preserves all existing state and only flips `isRingConnected: false`. Added `lastSyncedAt: number | null` to `HomeData` + `CachedData`. Set on each successful `fetchData()` call and persisted in AsyncStorage cache (falls back to `cachedAt` for old cache entries).
+
+2. **`src/components/home/DeviceSheet.tsx`** — Added `lastSyncedAt` prop and `formatSyncedAt()` helper. Shows "Synced just now / Xm ago / Xh ago / yesterday" below the connected/disconnected badge.
+
+3. **`src/screens/NewHomeScreen.tsx`** — Passes `lastSyncedAt={homeData.lastSyncedAt}` to `DeviceSheet`.
+
+4. **`app/_layout.tsx`** — Moved `Notifications.setNotificationHandler` from inside a lazy async `import()` to module scope (synchronous). Fixed deprecated `shouldShowAlert` → `shouldShowBanner` + `shouldShowList`. Simplifies deeplink `useEffect` to use the synchronous import.
+
+5. **`ios/JstyleBridge/JstyleBridge.m`** — Removed all background-test code (scheduleTestNotification, appDidEnterBackground/Foreground observers). Kept the `EnableCommunicate` bug fix (moves `enableAutomaticHRMonitoring` to after characteristic discovery completes).
+
+**User-visible result:** Data is visible instantly on app open. Device sheet shows how long ago the ring last synced.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ## 2026-04-12: Fix HR Detail Page Crash (undefined `todayFallback`)
 
 **Bug:** HR detail page crashed immediately on open. Root cause: `hrValues` useMemo referenced `todayFallback` (undefined) instead of `todayLive` (the correct variable name used earlier in the component). This caused a `ReferenceError` at render time.

@@ -22,6 +22,7 @@ interface DeviceSheetProps {
   connectedDevice: DeviceInfo | null;
   battery: number | null;
   isConnected: boolean;
+  lastSyncedAt?: number | null;
 }
 
 const BatteryIcon = () => (
@@ -30,12 +31,23 @@ const BatteryIcon = () => (
   </Svg>
 );
 
+function formatSyncedAt(ts: number): string {
+  const diffMs = Date.now() - ts;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Synced just now';
+  if (diffMin < 60) return `Synced ${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Synced ${diffH}h ago`;
+  return 'Synced yesterday';
+}
+
 export const DeviceSheet = memo(function DeviceSheet({
   visible,
   onDismiss,
   connectedDevice,
   battery,
   isConnected,
+  lastSyncedAt,
 }: DeviceSheetProps) {
   const { t } = useTranslation();
   const modalRef = useRef<BottomSheetModal>(null);
@@ -108,6 +120,10 @@ export const DeviceSheet = memo(function DeviceSheet({
             {isConnected ? t('profile.account.connected') : t('profile.account.not_connected')}
           </Text>
         </View>
+
+        {lastSyncedAt != null && (
+          <Text style={styles.syncedAt}>{formatSyncedAt(lastSyncedAt)}</Text>
+        )}
       </BottomSheetView>
     </BottomSheetModal>
   );
@@ -176,5 +192,12 @@ const styles = StyleSheet.create({
   },
   statusTextConnected: {
     color: colors.success,
+  },
+  syncedAt: {
+    marginTop: 12,
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center',
   },
 });

@@ -93,17 +93,6 @@ RCT_EXPORT_MODULE();
 
         // Set delegate for BLE manager
         [[NewBle sharedManager] setDelegate:self];
-
-        // === BACKGROUND TEST: register observers in init so they survive stopObserving ===
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(appDidEnterBackground)
-                                                     name:UIApplicationDidEnterBackgroundNotification
-                                                   object:nil];
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(appWillEnterForeground)
-                                                     name:UIApplicationWillEnterForegroundNotification
-                                                   object:nil];
-        // === END BACKGROUND TEST ===
     }
     return self;
 }
@@ -132,42 +121,6 @@ RCT_EXPORT_MODULE();
 - (void)stopObserving {
     _hasListeners = NO;
 }
-
-// === BACKGROUND TEST: handlers ===
-- (void)scheduleTestNotification:(NSTimeInterval)delay title:(NSString *)title body:(NSString *)body {
-    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = title;
-    content.body = body;
-    content.sound = [UNNotificationSound defaultSound];
-    // UNTimeIntervalNotificationTrigger is delivered by the OS — fires even when app is suspended
-    UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:delay repeats:NO];
-    NSString *identifier = [NSString stringWithFormat:@"focus.bg_test.%lld.%.0f",
-                            (long long)([[NSDate date] timeIntervalSince1970]), delay];
-    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
-                                                                          content:content
-                                                                          trigger:trigger];
-    [center addNotificationRequest:request withCompletionHandler:^(NSError *error) {
-        if (error) NSLog(@"JstyleBridge: bg_test schedule error: %@", error);
-        else NSLog(@"JstyleBridge: bg_test scheduled for %.0fs from now", delay);
-    }];
-}
-
-- (void)appDidEnterBackground {
-    [self scheduleTestNotification:10
-                             title:@"🔵 BLE Test: 10s in background"
-                              body:@"App backgrounded. Notification 1 of 2."];
-    [self scheduleTestNotification:130
-                             title:@"🟢 BLE Test: 2 min in background"
-                              body:@"App survived 2 min in background. Notification 2 of 2."];
-}
-
-- (void)appWillEnterForeground {
-    // Cancel pending test notifications when returning to foreground
-    [[UNUserNotificationCenter currentNotificationCenter]
-        removePendingNotificationRequestsWithIdentifiers:@[]]; // can't cancel by prefix; harmless
-}
-// === END BACKGROUND TEST ===
 
 #pragma mark - Helper Methods
 

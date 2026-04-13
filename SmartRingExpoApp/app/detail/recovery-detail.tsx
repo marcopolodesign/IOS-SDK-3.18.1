@@ -3,16 +3,14 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
-import { BackArrow } from '../../src/components/detail/BackArrow';
-import { ReadinessTrendChart } from '../../src/components/detail/ReadinessTrendChart';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
+import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DaySleepData, DayHRData, DayHRVData, DayActivityData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
@@ -83,14 +81,14 @@ function readinessLabel(score: number): string {
 
 // ─── Contribution bar ─────────────────────────────────────────────────────────
 
-function ContributionBar({ label, value, pct, color }: { label: string; value: string; pct: number; color: string }) {
+function ContributionBar({ label, value, pct }: { label: string; value: string; pct: number }) {
   return (
     <View style={cStyles.contribRow}>
       <Text style={cStyles.contribLabel}>{label}</Text>
       <View style={cStyles.contribBarWrap}>
-        <View style={[cStyles.contribBarFill, { width: `${Math.round(pct)}%`, backgroundColor: color }]} />
+        <View style={[cStyles.contribBarFill, { width: `${Math.round(pct)}%` }]} />
       </View>
-      <Text style={[cStyles.contribValue, { color }]}>{value}</Text>
+      <Text style={cStyles.contribValue}>{value}</Text>
     </View>
   );
 }
@@ -99,8 +97,8 @@ const cStyles = StyleSheet.create({
   contribRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 16 },
   contribLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontFamily: fontFamily.regular, width: 90 },
   contribBarWrap: { flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
-  contribBarFill: { height: '100%', borderRadius: 3 },
-  contribValue: { fontSize: 12, fontFamily: fontFamily.demiBold, width: 32, textAlign: 'right' },
+  contribBarFill: { height: '100%', borderRadius: 3, backgroundColor: '#FFFFFF' },
+  contribValue: { color: '#FFFFFF', fontSize: 12, fontFamily: fontFamily.demiBold, width: 32, textAlign: 'right' },
 });
 
 // ─── Strain accumulation explainer ────────────────────────────────────────────
@@ -379,7 +377,6 @@ function recoveryInsight(r: DayReadiness): string {
 // ─── Screen ────────────────────────────────────────────────────────────────────
 
 export default function RecoveryDetailScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const homeData = useHomeDataContext();
 
@@ -484,19 +481,16 @@ export default function RecoveryDetailScreen() {
           <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad2)" />
         </Svg>
 
-        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <BackArrow />
-          </TouchableOpacity>
-          <Text style={styles.title}>Recovery</Text>
-          <View style={styles.headerRight} />
-        </View>
+        <DetailPageHeader title="Recovery" marginBottom={spacing.md} />
 
-        <ReadinessTrendChart
+        <TrendBarChart
           dayEntries={DAY_ENTRIES}
-          scores={allScores}
+          values={allScores.map(s => ({ dateKey: s.dateKey, value: s.score }))}
           selectedIndex={selectedIndex}
           onSelectDay={setSelectedIndex}
+          colorFn={readinessColor}
+          maxValue={100}
+          guideLines={[25, 50, 75]}
         />
       </View>
 
@@ -526,24 +520,9 @@ export default function RecoveryDetailScreen() {
             {/* Score Breakdown */}
             <View style={styles.contribContainer}>
               <Text style={styles.contribTitle}>Score Breakdown</Text>
-              <ContributionBar
-                label="Sleep Quality"
-                value={`${readiness.sleepScore || '--'}`}
-                pct={readiness.sleepScore}
-                color="#8B5CF6"
-              />
-              <ContributionBar
-                label="Resting HR"
-                value={`${readiness.restingHRScore}`}
-                pct={readiness.restingHRScore}
-                color="#3B82F6"
-              />
-              <ContributionBar
-                label="Activity Load"
-                value={`${readiness.strainScore}`}
-                pct={readiness.strainScore}
-                color="#4ADE80"
-              />
+              <ContributionBar label="Sleep Quality" value={`${readiness.sleepScore || '--'}`} pct={readiness.sleepScore} />
+              <ContributionBar label="Resting HR" value={`${readiness.restingHRScore}`} pct={readiness.restingHRScore} />
+              <ContributionBar label="Activity Load" value={`${readiness.strainScore}`} pct={readiness.strainScore} />
             </View>
 
             {/* Strain Accumulation (today only — shows live EWMA breakdown) */}
@@ -554,49 +533,33 @@ export default function RecoveryDetailScreen() {
               />
             )}
 
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow
-                title="Readiness"
-                value={`${readiness.score}`}
-                unit="/100"
-                accent={color}
-              />
-              <DetailStatRow
-                title="Sleep Score"
-                value={readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--'}
-                unit="/100"
-                accent="#8B5CF6"
-                badge={readiness.sleepScore > 0 ? { label: readiness.sleepLabel, color: readiness.sleepScore >= 80 ? '#4ADE80' : readiness.sleepScore >= 60 ? '#FBBF24' : '#EF4444' } : undefined}
-              />
-              <DetailStatRow
-                title="Resting HR"
-                value={readiness.restingHR > 0 ? `${readiness.restingHR}` : '--'}
-                unit="bpm"
-                accent="#3B82F6"
-                badge={readiness.restingHR > 0 ? { label: readiness.hrLabel, color: readiness.restingHR < 65 ? '#4ADE80' : readiness.restingHR < 75 ? '#FBBF24' : '#EF4444' } : undefined}
-              />
-              {getHRV(selectedDateKey ?? '') && (
-                <DetailStatRow
-                  title="HRV (SDNN)"
-                  value={`${getHRV(selectedDateKey ?? '')?.sdnn ?? '--'}`}
-                  unit="ms"
-                  accent="#A78BFA"
-                />
-              )}
-              {selectedIndex === 0 && homeData.strain > 0 && (
-                <DetailStatRow
-                  title="Strain (7d EWMA)"
-                  value={`${homeData.strain}`}
-                  unit="/100"
-                  accent="#FF6B35"
-                />
-              )}
-              <DetailStatRow
-                title="Recommended"
-                value={readiness.score >= 80 ? 'High Intensity' : readiness.score >= 60 ? 'Moderate' : 'Rest / Recover'}
-              />
-            </View>
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'Readiness', value: `${readiness.score}`, unit: '/100' },
+              { label: 'Sleep Score', value: readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--', unit: readiness.sleepScore > 0 ? '/100' : undefined },
+              { label: 'Resting HR', value: readiness.restingHR > 0 ? `${readiness.restingHR}` : '--', unit: readiness.restingHR > 0 ? 'bpm' : undefined },
+              { label: 'Recommended', value: readiness.score >= 80 ? 'High Intensity' : readiness.score >= 60 ? 'Moderate' : 'Rest' },
+            ]} />
+
+            {/* Additional stats */}
+            {(getHRV(selectedDateKey ?? '') || (selectedIndex === 0 && homeData.strain > 0)) && (
+              <View style={styles.statsContainer}>
+                {getHRV(selectedDateKey ?? '') && (
+                  <DetailStatRow
+                    title="HRV (SDNN)"
+                    value={`${getHRV(selectedDateKey ?? '')?.sdnn ?? '--'}`}
+                    unit="ms"
+                  />
+                )}
+                {selectedIndex === 0 && homeData.strain > 0 && (
+                  <DetailStatRow
+                    title="Strain (7d EWMA)"
+                    value={`${homeData.strain}`}
+                    unit="/100"
+                  />
+                )}
+              </View>
+            )}
 
             <View style={styles.insightBlock}>
               <Text style={styles.insightText}>{recoveryInsight(readiness)}</Text>
@@ -611,17 +574,6 @@ export default function RecoveryDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
   gradientZone: { overflow: 'hidden' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   centered: { flex: 1, alignItems: 'center', paddingTop: 80 },

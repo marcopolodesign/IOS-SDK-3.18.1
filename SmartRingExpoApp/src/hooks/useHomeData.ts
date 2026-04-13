@@ -141,6 +141,7 @@ export interface HomeData {
   avatarUrl: string;
   isRingConnected: boolean;
   hrChartData: Array<{ timeMinutes: number; heartRate: number }>;
+  hrDataIsToday: boolean;
   hrvSdnn: number;
   todayVitals: TodayVitals;
   cardDataStatus: CardDataStatus;
@@ -150,6 +151,7 @@ export interface HomeData {
   activitySessions: X3ActivitySession[];
   recoveryContributors: RecoveryContributors;
   syncProgress: SyncProgressState;
+  lastSyncedAt: number | null;
   stravaActivities: StravaActivitySummary[];
   unifiedActivities: UnifiedActivity[];
   todayNaps: Array<{
@@ -188,6 +190,7 @@ interface CachedData {
   strain: number;
   readiness: number;
   cachedAt: number;
+  lastSyncedAt: number | null;
   stravaActivities?: StravaActivitySummary[];
 }
 
@@ -574,6 +577,7 @@ async function saveToCache(data: HomeData): Promise<void> {
       strain: data.strain,
       readiness: data.readiness,
       cachedAt: Date.now(),
+      lastSyncedAt: data.lastSyncedAt ?? Date.now(),
       stravaActivities: data.stravaActivities,
     };
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cached));
@@ -618,6 +622,7 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
       overallScore: data.overallScore,
       strain: data.strain,
       readiness: data.readiness,
+      lastSyncedAt: data.lastSyncedAt ?? data.cachedAt,
       stravaActivities: (data.stravaActivities as StravaActivitySummary[]) ?? [],
     };
   } catch (error) {
@@ -1072,6 +1077,7 @@ const getEmptyData = (): HomeData => ({
   avatarUrl: '',
   isRingConnected: false,
   hrChartData: [],
+  hrDataIsToday: false,
   hrvSdnn: 0,
   todayVitals: getEmptyTodayVitals(),
   cardDataStatus: 'idle',
@@ -1084,6 +1090,7 @@ const getEmptyData = (): HomeData => ({
     phase: 'idle',
     metrics: [...INITIAL_METRICS],
   },
+  lastSyncedAt: null,
   stravaActivities: [],
   unifiedActivities: [],
   todayNaps: [],
@@ -1572,6 +1579,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
 
       // 4. Continuous HR → resting HR + hrChartData (testing.tsx pattern)
       let restingHR = 0;
+      let hrDataIsToday = false;
       const hrChartData: Array<{ timeMinutes: number; heartRate: number }> = [];
       updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
@@ -1604,6 +1612,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         targetDateStr = dates[dates.length - 1] || todayDateStr;
         console.log(`📊 [useHomeData] HR: no today data, using most recent day: ${targetDateStr}`);
       }
+      hrDataIsToday = targetDateStr === todayDateStr;
       const isRecordFromTargetDate = (rec: any): boolean => {
         return getRecordDateStr(rec) === targetDateStr;
       };
@@ -2058,6 +2067,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           userName,
           isRingConnected: true,
           hrChartData: finalHrChartData,
+          hrDataIsToday,
           hrvSdnn,
           todayVitals: prev.todayVitals,
           cardDataStatus: prev.cardDataStatus === 'retrying' ? 'retrying' : getCardDataStatusFromVitals(prev.todayVitals),
@@ -2067,6 +2077,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           activitySessions,
           recoveryContributors,
           syncProgress: sp,
+          lastSyncedAt: Date.now(),
           stravaActivities,
           unifiedActivities: unifiedActs,
           todayNaps,
@@ -2153,22 +2164,16 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           void refreshMissingCardData('reconnect');
         }
       } else if (state === 'disconnected') {
-        // When ring disconnects, clear data and mark as disconnected
-        console.log('😴 [useHomeData] Ring disconnected - clearing data');
+        // Keep existing data — user will see cached values instantly on next open
+        console.log('📡 [useHomeData] Ring disconnected — preserving cached data');
         hasLoadedRealData.current = false;
-        supabase.auth.getUser().then(({ data: { user } }) => {
-          setData(prev => ({
-            ...getEmptyData(),
-            userName: resolveUserName(user),
-            avatarUrl: resolveAvatarUrl(user),
-            isLoading: false,
-            isSyncing: false,
-            isRingConnected: false,
-            todayVitals: prev.todayVitals,
-            cardDataStatus: getCardDataStatusFromVitals(prev.todayVitals),
-            syncProgress: { phase: 'idle', metrics: [...INITIAL_METRICS] },
-          }));
-        });
+        setData(prev => ({
+          ...prev,
+          isRingConnected: false,
+          isLoading: false,
+          isSyncing: false,
+          syncProgress: { phase: 'idle', metrics: [...INITIAL_METRICS] },
+        }));
       }
     });
 

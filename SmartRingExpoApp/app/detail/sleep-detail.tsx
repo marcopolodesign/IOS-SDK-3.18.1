@@ -3,17 +3,15 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
+import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { SleepHypnogram } from '../../src/components/home/SleepHypnogram';
-import { SleepTrendChart } from '../../src/components/detail/SleepTrendChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DaySleepData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
@@ -48,7 +46,8 @@ function formatTime(date: Date | null): string {
 
 function buildTodaySleepFromContext(sleep: ReturnType<typeof useHomeDataContext>['lastNightSleep']): DaySleepData | null {
   if (!sleep || sleep.score === 0) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const d0 = new Date();
+  const today = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   // Compute stage minutes from segments
   let deepMin = 0, lightMin = 0, remMin = 0, awakeMin = 0;
   for (const seg of sleep.segments ?? []) {
@@ -97,7 +96,9 @@ function SleepStageBar({
 }) {
   const pct = totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0;
   const range = STAGE_RANGES[stage];
-  const fillW = Math.min(100, pct); // clamp to 100%
+  const fillW = Math.min(100, pct);
+  const inRange = pct >= range.min && pct <= range.max;
+  const targetLabel = range.max === 0 ? `< ${range.max + 5}%` : `${range.min}–${range.max}%`;
 
   return (
     <View style={stageStyles.row}>
@@ -105,21 +106,13 @@ function SleepStageBar({
         <View style={[stageStyles.dot, { backgroundColor: color }]} />
         <Text style={stageStyles.label}>{label}</Text>
         <Text style={stageStyles.value}>{minutes} min</Text>
-        <Text style={stageStyles.pct}>{Math.round(pct)}%</Text>
+        <View style={stageStyles.pctGroup}>
+          <Text style={[stageStyles.pct, { color: inRange ? '#4ADE80' : 'rgba(255,255,255,0.4)' }]}>{Math.round(pct)}%</Text>
+          <Text style={stageStyles.target}>target {targetLabel}</Text>
+        </View>
       </View>
       <View style={stageStyles.track}>
-        {/* Actual fill */}
         <View style={[stageStyles.fill, { width: `${fillW}%`, backgroundColor: color }]} />
-        {/* Recommended range overlay */}
-        <View
-          style={[
-            stageStyles.rangeOverlay,
-            { left: `${range.min}%`, width: `${range.max - range.min}%` },
-          ]}
-        />
-        {/* Range edge markers */}
-        <View style={[stageStyles.rangeMark, { left: `${range.min}%` }]} />
-        <View style={[stageStyles.rangeMark, { left: `${range.max}%` }]} />
       </View>
     </View>
   );
@@ -154,11 +147,19 @@ const stageStyles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontFamily: fontFamily.demiBold,
   },
+  pctGroup: {
+    alignItems: 'flex-end',
+    gap: 1,
+  },
   pct: {
-    color: 'rgba(255,255,255,0.4)',
     fontSize: fontSize.xs,
+    fontFamily: fontFamily.demiBold,
+    textAlign: 'right',
+  },
+  target: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
     fontFamily: fontFamily.regular,
-    width: 32,
     textAlign: 'right',
   },
   track: {
@@ -166,7 +167,6 @@ const stageStyles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
-    position: 'relative',
   },
   fill: {
     position: 'absolute',
@@ -175,23 +175,9 @@ const stageStyles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
-  rangeOverlay: {
-    position: 'absolute',
-    top: 0,
-    height: '100%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  rangeMark: {
-    position: 'absolute',
-    top: -1,
-    width: 1,
-    height: 8,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
 });
 
 export default function SleepDetailScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   // Progressive: show last 7 days immediately, extend to 30 silently in background
@@ -256,21 +242,16 @@ export default function SleepDetailScreen() {
           <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad2)" />
         </Svg>
 
-        {/* Header — safe area padding here so gradient fills from screen top */}
-        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <BackArrow />
-          </TouchableOpacity>
-          <Text style={styles.title}>Sleep</Text>
-          <View style={styles.headerRight} />
-        </View>
+        <DetailPageHeader title="Sleep" marginBottom={spacing.md} />
 
-        {/* Day trend chart */}
-        <SleepTrendChart
+        <TrendBarChart
           dayEntries={DAY_ENTRIES}
-          scores={allScores}
+          values={allScores.map(s => ({ dateKey: s.dateKey, value: s.score }))}
           selectedIndex={selectedIndex}
           onSelectDay={setSelectedIndex}
+          colorFn={sleepScoreColor}
+          maxValue={100}
+          guideLines={[25, 50, 75]}
         />
       </View>
 
@@ -326,29 +307,25 @@ export default function SleepDetailScreen() {
             {/* Sleep stages with range bars */}
             <View style={styles.statsContainer}>
               <DetailStatRow title="Total Sleep" value={dayData.timeAsleep} />
-              <SleepStageBar label="Deep" minutes={dayData.deepMin} totalMinutes={dayData.timeAsleepMinutes} color="#5C4DB1" stage="deep" />
-              <SleepStageBar label="REM" minutes={dayData.remMin} totalMinutes={dayData.timeAsleepMinutes} color="#81D4FA" stage="rem" />
-              <SleepStageBar label="Light" minutes={dayData.lightMin} totalMinutes={dayData.timeAsleepMinutes} color="#42A5F5" stage="light" />
-              <SleepStageBar label="Awake" minutes={dayData.awakeMin} totalMinutes={dayData.timeAsleepMinutes} color="#FF6B6B" stage="awake" />
+              <SleepStageBar label="Deep" minutes={dayData.deepMin} totalMinutes={dayData.timeAsleepMinutes} color="#7C6CC0" stage="deep" />
+              <SleepStageBar label="REM" minutes={dayData.remMin} totalMinutes={dayData.timeAsleepMinutes} color="#60A5FA" stage="rem" />
+              <SleepStageBar label="Light" minutes={dayData.lightMin} totalMinutes={dayData.timeAsleepMinutes} color="#93C5FD" stage="light" />
+              <SleepStageBar label="Awake" minutes={dayData.awakeMin} totalMinutes={dayData.timeAsleepMinutes} color="#F87171" stage="awake" />
             </View>
 
-            {/* Other stats */}
-            <View style={styles.statsContainer}>
-              {efficiency !== null && (
-                <DetailStatRow title="Sleep Efficiency" value={`${efficiency}%`} />
-              )}
-              <DetailStatRow title="Bed Time" value={formatTime(dayData.bedTime)} />
-              <DetailStatRow title="Wake Time" value={formatTime(dayData.wakeTime)} />
-              {dayData.restingHR > 0 && (
-                <DetailStatRow title="Resting HR" value={`${dayData.restingHR}`} unit="bpm" />
-              )}
-            </View>
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'Sleep Efficiency', value: efficiency !== null ? `${efficiency}%` : '--' },
+              { label: 'Bed Time', value: formatTime(dayData.bedTime) },
+              { label: 'Wake Time', value: formatTime(dayData.wakeTime) },
+              { label: 'Resting HR', value: dayData.restingHR > 0 ? `${dayData.restingHR}` : '--', unit: dayData.restingHR > 0 ? 'bpm' : undefined },
+            ]} />
 
             {/* Nap Stats (today only) */}
             {selectedIndex === 0 && homeData.todayNaps.length > 0 && (
               <View style={styles.statsContainer}>
                 <DetailStatRow title="Naps" value={`${homeData.todayNaps.length}`} />
-                <DetailStatRow title="Total Nap Time" value={`${homeData.totalNapMinutesToday} min`} accent="#8B5CF6" />
+                <DetailStatRow title="Total Nap Time" value={`${homeData.totalNapMinutesToday} min`} />
                 {homeData.todayNaps.map((nap, i) => (
                   <DetailStatRow
                     key={nap.id}
@@ -375,17 +352,6 @@ const styles = StyleSheet.create({
   gradientZone: {
     overflow: 'hidden',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   loadingContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.md },
@@ -419,9 +385,7 @@ const styles = StyleSheet.create({
   hypnogramWrapper: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   statsContainer: {

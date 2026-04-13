@@ -3,17 +3,16 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { DetailChartContainer } from '../../src/components/detail/DetailChartContainer';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DaySpO2Data } from '../../src/hooks/useMetricHistory';
@@ -105,13 +104,7 @@ export default function SpO2DetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <BackArrow />
-        </TouchableOpacity>
-        <Text style={styles.title}>Blood Oxygen</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <DetailPageHeader title="Blood Oxygen" useSafeArea={false} />
 
       <DayNavigator
         days={DAY_ENTRIES.map(d => d.label)}
@@ -160,22 +153,22 @@ export default function SpO2DetailScreen() {
               <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} /><Text style={styles.legendText}>Low &lt;90%</Text></View>
             </View>
 
-            {/* Stats */}
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'Overnight Avg', value: dayData.avg ? `${dayData.avg}` : '--', unit: '%', accent: '#4ADE80' },
+              { label: 'Minimum', value: dayData.min ? `${dayData.min}` : '--', unit: '%', accent: dayData.min < 90 ? '#EF4444' : dayData.min < 95 ? '#FBBF24' : undefined },
+              { label: 'Maximum', value: dayData.max ? `${dayData.max}` : '--', unit: '%' },
+              { label: 'Status', value: riskLabel, accent: riskColor },
+            ]} />
+
+            {/* Additional stats */}
             <View style={styles.statsContainer}>
-              <DetailStatRow title="Overnight Avg" value={dayData.avg ? `${dayData.avg}` : '--'} unit="%" accent="#4ADE80" />
-              <DetailStatRow title="Minimum" value={dayData.min ? `${dayData.min}` : '--'} unit="%" accent={dayData.min < 90 ? '#EF4444' : dayData.min < 95 ? '#FBBF24' : undefined} />
-              <DetailStatRow title="Maximum" value={dayData.max ? `${dayData.max}` : '--'} unit="%" />
               <DetailStatRow title="Readings" value={`${dayData.readings.length}`} unit="recorded" />
               <DetailStatRow
                 title="Time Below 95%"
                 value={`${dayData.timeBelowNormal}`}
                 unit="readings"
                 accent={dayData.timeBelowNormal > 5 ? '#EF4444' : dayData.timeBelowNormal > 0 ? '#FBBF24' : undefined}
-              />
-              <DetailStatRow
-                title="Status"
-                value={riskLabel}
-                badge={{ label: riskLabel, color: riskColor }}
               />
             </View>
 
@@ -191,11 +184,6 @@ export default function SpO2DetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   centered: { flex: 1, alignItems: 'center', paddingTop: 80 },

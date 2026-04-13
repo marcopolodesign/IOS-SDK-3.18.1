@@ -3,17 +3,16 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import Svg, { Line, Path, Rect, Circle, Text as SvgText } from 'react-native-svg';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { DetailChartContainer } from '../../src/components/detail/DetailChartContainer';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DayTemperatureData } from '../../src/hooks/useMetricHistory';
@@ -140,13 +139,7 @@ export default function TemperatureDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <BackArrow />
-        </TouchableOpacity>
-        <Text style={styles.title}>Body Temperature</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <DetailPageHeader title="Body Temperature" useSafeArea={false} />
 
       <DayNavigator
         days={DAY_ENTRIES.map(d => d.label)}
@@ -198,26 +191,38 @@ export default function TemperatureDetailScreen() {
               <Text style={styles.normalText}>Normal range: 36.1–37.2°C</Text>
             </View>
 
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow title="Current" value={dayData.current > 0 ? `${dayData.current.toFixed(1)}` : '--'} unit="°C" accent={statusColor} />
-              <DetailStatRow title="Average" value={dayData.avg > 0 ? `${dayData.avg.toFixed(1)}` : '--'} unit="°C" />
-              <DetailStatRow title="Minimum" value={dayData.min > 0 ? `${dayData.min.toFixed(1)}` : '--'} unit="°C" accent="#60A5FA" />
-              <DetailStatRow title="Maximum" value={dayData.max > 0 ? `${dayData.max.toFixed(1)}` : '--'} unit="°C" accent={dayData.max > NORMAL_HIGH ? '#EF4444' : undefined} />
-              {baseline !== null && (
-                <DetailStatRow title="7-Day Baseline" value={`${baseline.toFixed(1)}`} unit="°C" />
-              )}
-              {deviation !== null && (
-                <DetailStatRow
-                  title="Deviation"
-                  value={`${deviation > 0 ? '+' : ''}${deviation}`}
-                  unit="°C"
-                  accent={Math.abs(deviation) > 0.5 ? '#EF4444' : Math.abs(deviation) > 0.3 ? '#FBBF24' : undefined}
-                />
-              )}
-              <DetailStatRow title="Readings" value={`${dayData.readings.length}`} unit="recorded" />
-              <DetailStatRow title="Status" value={statusLabel} badge={{ label: statusLabel, color: statusColor }} />
-            </View>
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'Current', value: dayData.current > 0 ? `${dayData.current.toFixed(1)}` : '--', unit: '°C', accent: statusColor },
+              { label: 'Average', value: dayData.avg > 0 ? `${dayData.avg.toFixed(1)}` : '--', unit: '°C' },
+              { label: 'Minimum', value: dayData.min > 0 ? `${dayData.min.toFixed(1)}` : '--', unit: '°C', accent: '#60A5FA' },
+              { label: 'Maximum', value: dayData.max > 0 ? `${dayData.max.toFixed(1)}` : '--', unit: '°C', accent: dayData.max > NORMAL_HIGH ? '#EF4444' : undefined },
+            ]} />
+
+            {/* Additional stats */}
+            {(baseline !== null || deviation !== null) && (
+              <View style={styles.statsContainer}>
+                {baseline !== null && (
+                  <DetailStatRow title="7-Day Baseline" value={`${baseline.toFixed(1)}`} unit="°C" />
+                )}
+                {deviation !== null && (
+                  <DetailStatRow
+                    title="Deviation"
+                    value={`${deviation > 0 ? '+' : ''}${deviation}`}
+                    unit="°C"
+                    accent={Math.abs(deviation) > 0.5 ? '#EF4444' : Math.abs(deviation) > 0.3 ? '#FBBF24' : undefined}
+                  />
+                )}
+                <DetailStatRow title="Readings" value={`${dayData.readings.length}`} unit="recorded" />
+                <DetailStatRow title="Status" value={statusLabel} badge={{ label: statusLabel, color: statusColor }} />
+              </View>
+            )}
+            {baseline === null && deviation === null && (
+              <View style={styles.statsContainer}>
+                <DetailStatRow title="Readings" value={`${dayData.readings.length}`} unit="recorded" />
+                <DetailStatRow title="Status" value={statusLabel} badge={{ label: statusLabel, color: statusColor }} />
+              </View>
+            )}
 
             <View style={styles.insightBlock}>
               <Text style={styles.insightText}>{tempInsight(dayData, baseline)}</Text>
@@ -231,11 +236,6 @@ export default function TemperatureDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   centered: { flex: 1, alignItems: 'center', paddingTop: 80 },

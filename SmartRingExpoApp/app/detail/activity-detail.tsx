@@ -3,17 +3,16 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import Svg, { Circle, Path, G, Text as SvgText, Rect, Line } from 'react-native-svg';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DayActivityData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
@@ -205,13 +204,7 @@ export default function ActivityDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <BackArrow />
-        </TouchableOpacity>
-        <Text style={styles.title}>Activity</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <DetailPageHeader title="Activity" useSafeArea={false} />
 
       <DayNavigator
         days={DAY_ENTRIES.map(d => d.label)}
@@ -248,15 +241,17 @@ export default function ActivityDetailScreen() {
               <StepsBarChart data={chartData} dayEntries={DAY_ENTRIES} selectedIndex={selectedIndex} />
             </View>
 
-            {/* Stats */}
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'Steps', value: dayData.steps.toLocaleString(), accent: '#3B82F6' },
+              { label: 'Distance', value: `${(dayData.distanceM / 1000).toFixed(2)}`, unit: 'km' },
+              { label: 'Calories', value: `${dayData.calories}`, unit: 'kcal' },
+              { label: 'Avg HR', value: dayData.hrAvg !== null ? `${dayData.hrAvg}` : '--', unit: dayData.hrAvg !== null ? 'bpm' : undefined },
+            ]} />
+
+            {/* Additional stats */}
             <View style={styles.statsContainer}>
-              <DetailStatRow title="Steps" value={dayData.steps.toLocaleString()} accent="#3B82F6" />
               <DetailStatRow title="Goal" value={`${pct}%`} unit={`of ${STEP_GOAL.toLocaleString()}`} accent={pct >= 100 ? '#4ADE80' : undefined} />
-              <DetailStatRow title="Distance" value={`${(dayData.distanceM / 1000).toFixed(2)}`} unit="km" />
-              <DetailStatRow title="Calories" value={`${dayData.calories}`} unit="kcal" />
-              {dayData.hrAvg !== null && (
-                <DetailStatRow title="Avg Heart Rate" value={`${dayData.hrAvg}`} unit="bpm" />
-              )}
               {dayData.sleepTotalMin !== null && (
                 <DetailStatRow
                   title="Sleep"
@@ -282,11 +277,6 @@ export default function ActivityDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   centered: { flex: 1, alignItems: 'center', paddingTop: 80 },

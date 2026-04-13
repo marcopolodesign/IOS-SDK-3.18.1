@@ -186,6 +186,21 @@ class SupabaseService {
     return true;
   }
 
+  async deleteSleepSession(userId: string, startTime: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('sleep_sessions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('start_time', startTime);
+
+    if (error) {
+      console.error('Error deleting sleep session:', error);
+      reportError(error, { method: 'deleteSleepSession', table: 'sleep_sessions' });
+      return false;
+    }
+    return true;
+  }
+
   async getSleepSessions(
     userId: string,
     startDate: Date,

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
-import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { spacing, fontFamily, fontSize } from '../../theme/colors';
 import { useHomeDataContext } from '../../context/HomeDataContext';
+import { supabase } from '../../services/SupabaseService';
+import { parseLocalDate } from '../../utils/chartMath';
 import { reportError } from '../../utils/sentry';
 
 // dayOfWeek index (0=Sun..6=Sat) → bar position in S M T W T F S layout
@@ -26,138 +27,51 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
     t('sleep_trend.day_sat'),
   ];
   const [sleepDays, setSleepDays] = useState<SleepDay[]>([]);
-  const [retryNonce, setRetryNonce] = useState(0);
   const homeData = useHomeDataContext();
-  const hasCompletedLiveFetchRef = useRef(false);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
-
-  const toMinutes = (sleep: any): number => {
-    if (!sleep) return 0;
-    const explicit = Number(sleep.totalSleepMinutes ?? sleep.timeAsleepMinutes ?? 0);
-    if (Number.isFinite(explicit) && explicit > 0) return explicit;
-    const deep = Number(sleep.deep ?? 0);
-    const light = Number(sleep.light ?? 0);
-    const rem = Number(sleep.rem ?? 0);
-    const sum = deep + light + rem;
-    return Number.isFinite(sum) && sum > 0 ? sum : 0;
-  };
 
   useEffect(() => {
     let cancelled = false;
 
     const fetchSleep = async () => {
-      // No ring: use context-only today fallback and reset live fetch lifecycle.
-      if (!homeData.isRingConnected) {
-        hasCompletedLiveFetchRef.current = false;
-        retryCountRef.current = 0;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-        // Fallback: use context for today only, mapped to correct bar
-        const contextMinutes = toMinutes(homeData.lastNightSleep as any);
-        if (!cancelled && contextMinutes > 0) {
-          const todayBarIndex = new Date().getDay(); // 0=Sun..6=Sat
-          setSleepDays([{ barIndex: todayBarIndex, minutes: contextMinutes }]);
-        } else if (!cancelled) {
-          setSleepDays([]);
-        }
+      // Query daily_summaries keyed by wake-up date — overnight sessions spanning midnight
+      // are always credited to the correct calendar day.
+      const since = new Date();
+      since.setDate(since.getDate() - 7);
+      const { data, error } = await supabase
+        .from('daily_summaries')
+        .select('date, sleep_total_min, nap_total_min')
+        .eq('user_id', user.id)
+        .gte('date', since.toISOString().slice(0, 10))
+        .order('date', { ascending: true });
+
+      if (error || !data) {
+        reportError(error, { op: 'sleepTrend.fetch' }, 'warning');
         return;
       }
 
-      // Wait for home sync to finish so we don't race BLE calls and cache warm-up.
-      if (homeData.isSyncing) {
-        return;
-      }
-
-      // Already fetched reliable 7-day data in this mounted session.
-      if (hasCompletedLiveFetchRef.current) {
-        return;
-      }
-
-      const today = new Date();
-      const resultsByBar = new Map<number, number>();
-
-      for (let i = 0; i < 7; i++) {
-        try {
-          const data = await UnifiedSmartRingService.getSleepByDay(i);
-          const mins = toMinutes(data);
-          if (mins > 0) {
-            // Prefer SDK timestamp date if present; fallback to dayIndex-based date.
-            const startTs = Number((data as any)?.startTime ?? (data as any)?.endTime ?? 0);
-            const d = Number.isFinite(startTs) && startTs > 0
-              ? new Date(startTs)
-              : (() => {
-                  const fallback = new Date(today);
-                  fallback.setDate(fallback.getDate() - i);
-                  return fallback;
-                })();
-            const barIndex = d.getDay();
-            const prev = resultsByBar.get(barIndex) ?? 0;
-            if (mins > prev) {
-              resultsByBar.set(barIndex, mins);
-            }
-          }
-        } catch (e) {
-          console.log(`[DailySleepTrendCard] sleep fetch day ${i} error`, e);
-          reportError(e, { op: 'sleepTrend.fetch' }, 'warning');
-        }
-      }
-
-      const results: SleepDay[] = Array.from(resultsByBar.entries())
-        .map(([barIndex, minutes]) => ({ barIndex, minutes }))
-        .sort((a, b) => a.barIndex - b.barIndex);
+      const results: SleepDay[] = data
+        .map(row => {
+          const mins = (row.sleep_total_min ?? 0) + (row.nap_total_min ?? 0);
+          if (mins <= 0) return null;
+          const barIndex = parseLocalDate(row.date as string).getDay();
+          return { barIndex, minutes: mins };
+        })
+        .filter((x): x is SleepDay => x !== null);
 
       if (!cancelled) {
-        if (results.length > 0) {
-          setSleepDays(results);
-          // Mark complete when we have more than today; otherwise allow controlled retries.
-          if (results.length >= 2 || retryCountRef.current >= 2) {
-            hasCompletedLiveFetchRef.current = true;
-          } else if (retryCountRef.current < 2) {
-            retryCountRef.current += 1;
-            retryTimerRef.current = setTimeout(() => {
-              setRetryNonce(prev => prev + 1);
-            }, 8000);
-          }
-        } else {
-          // Final fallback: context data for today
-          const contextMinutes = toMinutes(homeData.lastNightSleep as any);
-          if (contextMinutes > 0) {
-            setSleepDays([{ barIndex: today.getDay(), minutes: contextMinutes }]);
-          }
-          if (retryCountRef.current < 2) {
-            retryCountRef.current += 1;
-            retryTimerRef.current = setTimeout(() => {
-              setRetryNonce(prev => prev + 1);
-            }, 8000);
-          } else {
-            hasCompletedLiveFetchRef.current = true;
-          }
-        }
+        setSleepDays(results);
       }
     };
 
     fetchSleep().catch(e => {
       reportError(e, { op: 'sleepTrend.fetch' }, 'warning');
-      if (!cancelled) setSleepDays([]);
     });
 
-    return () => {
-      cancelled = true;
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-    };
-  }, [
-    homeData.isRingConnected,
-    homeData.isSyncing,
-    homeData.lastNightSleep,
-    homeData.lastNightSleep?.timeAsleepMinutes,
-    (homeData.lastNightSleep as any)?.deep,
-    (homeData.lastNightSleep as any)?.light,
-    (homeData.lastNightSleep as any)?.rem,
-    retryNonce,
-  ]);
+    return () => { cancelled = true; };
+  }, [homeData.lastNightSleep?.timeAsleepMinutes]);
 
   const hasEnoughForAverage = sleepDays.length >= 2;
 

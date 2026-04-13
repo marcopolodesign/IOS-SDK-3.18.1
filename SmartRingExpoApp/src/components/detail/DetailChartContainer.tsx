@@ -40,7 +40,7 @@ export function DetailChartContainer({
 const styles = StyleSheet.create({
   wrapper: {
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
+    borderRadius: 8,
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
     overflow: 'hidden',

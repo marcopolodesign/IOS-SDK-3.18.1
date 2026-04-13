@@ -435,6 +435,7 @@ class DataSyncService {
         const block = matching.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a), matching[0]);
 
         const startTime = new Date(block.start);
+        const startTimeIso = startTime.toISOString();
         const endTime = new Date(block.end);
 
         // Duration gate — ring sometimes reports 20-25h cumulative sessions
@@ -458,17 +459,35 @@ class DataSyncService {
         const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
         const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
 
-        // Overlap guard — skip if a session of the same type already covers this time window
-        const overlapsExisting = nightSessions.some(night => {
+        // Overlap guard — skip only if the existing session already has >= sleep minutes.
+        // If the new block has more data (e.g. full night vs. partial mid-sleep sync), replace it.
+        const overlappingSession = nightSessions.find(night => {
           if (night.session_type !== classification.sessionType) return false;
           const nightStart = new Date(night.start_time).getTime();
           const nightEnd = new Date(night.end_time).getTime();
           const overlapMs = Math.min(endTime.getTime(), nightEnd) - Math.max(startTime.getTime(), nightStart);
           return overlapMs > 30 * 60 * 1000;
         });
-        if (overlapsExisting) {
-          console.log(`[Sync] Sleep day ${dayIndex}: skipping ${classification.sessionType} ${startTime.toISOString()} — overlaps existing`);
-          continue;
+
+        if (overlappingSession) {
+          const existingTotalMin =
+            (overlappingSession.deep_min || 0) +
+            (overlappingSession.light_min || 0) +
+            (overlappingSession.rem_min || 0);
+
+          if (existingTotalMin >= totalSleepMin) {
+            console.log(`[Sync] Sleep day ${dayIndex}: skipping ${classification.sessionType} — existing has ${existingTotalMin}min >= new ${totalSleepMin}min`);
+            continue;
+          }
+
+          // New data is more complete — replace the stale session
+          console.log(`[Sync] Sleep day ${dayIndex}: replacing existing (${existingTotalMin}min) with new (${totalSleepMin}min)`);
+          if (overlappingSession.start_time !== startTimeIso) {
+            await supabaseService.deleteSleepSession(userId, overlappingSession.start_time);
+          }
+          // Remove from in-memory list so subsequent loop iterations don't re-match it
+          const idx = nightSessions.indexOf(overlappingSession);
+          if (idx !== -1) nightSessions.splice(idx, 1);
         }
 
         // Build rawQualityRecords for hypnogram rendering
@@ -489,7 +508,7 @@ class DataSyncService {
 
         const sessionPayload = {
           user_id: userId,
-          start_time: startTime.toISOString(),
+          start_time: startTimeIso,
           end_time: endTime.toISOString(),
           deep_min: deep,
           light_min: light,

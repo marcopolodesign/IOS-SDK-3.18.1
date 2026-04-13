@@ -3,16 +3,14 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
-import { BackArrow } from '../../src/components/detail/BackArrow';
-import { HRVTrendChart } from '../../src/components/detail/HRVTrendChart';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
+import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DayHRVData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
@@ -36,7 +34,8 @@ function hrvInsight(d: DayHRVData | undefined): string {
 
 function buildTodayHRVFromContext(hrvSdnn: number): DayHRVData | null {
   if (!hrvSdnn || hrvSdnn === 0) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const d0 = new Date();
+  const today = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
   const sdnn = Math.round(hrvSdnn);
   return {
     date: today,
@@ -53,7 +52,6 @@ function buildTodayHRVFromContext(hrvSdnn: number): DayHRVData | null {
 }
 
 export default function HRVDetailScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { data, isLoading } = useMetricHistory<DayHRVData>('hrv', { initialDays: 7, fullDays: 30 });
   const homeData = useHomeDataContext();
@@ -91,19 +89,21 @@ export default function HRVDetailScreen() {
           <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad)" />
         </Svg>
 
-        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <BackArrow />
-          </TouchableOpacity>
-          <Text style={styles.title}>HRV & Stress</Text>
-          <View style={styles.headerRight} />
-        </View>
+        <DetailPageHeader title="HRV & Stress" marginBottom={spacing.md} />
 
-        <HRVTrendChart
+        <TrendBarChart
           dayEntries={DAY_ENTRIES}
-          values={allValues}
+          values={allValues.map(v => ({ dateKey: v.dateKey, value: v.sdnn }))}
           selectedIndex={selectedIndex}
           onSelectDay={setSelectedIndex}
+          colorFn={sdnnColor}
+          maxValue={80}
+          roundedBars={false}
+          showValueLabels={false}
+          colWidth={32}
+          barWidth={22}
+          chartHeight={100}
+          padV={8}
         />
       </View>
 
@@ -133,32 +133,32 @@ export default function HRVDetailScreen() {
               </View>
             </View>
 
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow title="SDNN" value={dayData.sdnn !== null ? `${dayData.sdnn}` : '--'} unit="ms" accent="#8B5CF6" />
-              <DetailStatRow title="RMSSD" value={dayData.rmssd !== null ? `${dayData.rmssd}` : '--'} unit="ms" />
-              <DetailStatRow title="pNN50" value={dayData.pnn50 !== null ? `${dayData.pnn50}` : '--'} unit="%" />
-              <DetailStatRow
-                title="Stress Level"
-                value={dayData.stressLabel}
-                badge={dayData.stressLabel === 'Low' ? { label: 'Low', color: '#4ADE80' }
-                  : dayData.stressLabel === 'Moderate' ? { label: 'Moderate', color: '#FBBF24' }
-                  : { label: 'High', color: '#EF4444' }}
-              />
-              <DetailStatRow
-                title="Recovery"
-                value={dayData.recoveryLabel}
-                badge={dayData.recoveryLabel === 'Optimal' ? { label: 'Optimal', color: '#4ADE80' }
-                  : dayData.recoveryLabel === 'Fair' ? { label: 'Fair', color: '#FBBF24' }
-                  : { label: 'Poor', color: '#EF4444' }}
-              />
-              {dayData.lfHfRatio !== null && (
-                <DetailStatRow title="LF/HF Ratio" value={dayData.lfHfRatio.toFixed(2)} />
-              )}
-              {dayData.heartRate !== null && (
-                <DetailStatRow title="Heart Rate" value={`${dayData.heartRate}`} unit="bpm" />
-              )}
-            </View>
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: 'SDNN', value: dayData.sdnn !== null ? `${dayData.sdnn}` : '--', unit: dayData.sdnn !== null ? 'ms' : undefined },
+              { label: 'RMSSD', value: dayData.rmssd !== null ? `${dayData.rmssd}` : '--', unit: dayData.rmssd !== null ? 'ms' : undefined },
+              { label: 'pNN50', value: dayData.pnn50 !== null ? `${dayData.pnn50}` : '--', unit: dayData.pnn50 !== null ? '%' : undefined },
+              { label: 'Stress Level', value: dayData.stressLabel, accent: dayData.stressLabel === 'Low' ? '#4ADE80' : dayData.stressLabel === 'Moderate' ? '#FBBF24' : '#EF4444' },
+            ]} />
+
+            {/* Additional stats */}
+            {(dayData.lfHfRatio !== null || dayData.heartRate !== null) && (
+              <View style={styles.statsContainer}>
+                <DetailStatRow
+                  title="Recovery"
+                  value={dayData.recoveryLabel}
+                  badge={dayData.recoveryLabel === 'Optimal' ? { label: 'Optimal', color: '#4ADE80' }
+                    : dayData.recoveryLabel === 'Fair' ? { label: 'Fair', color: '#FBBF24' }
+                    : { label: 'Poor', color: '#EF4444' }}
+                />
+                {dayData.lfHfRatio !== null && (
+                  <DetailStatRow title="LF/HF Ratio" value={dayData.lfHfRatio.toFixed(2)} />
+                )}
+                {dayData.heartRate !== null && (
+                  <DetailStatRow title="Heart Rate" value={`${dayData.heartRate}`} unit="bpm" />
+                )}
+              </View>
+            )}
 
             {/* Insight */}
             <View style={styles.insightBlock}>
@@ -174,17 +174,6 @@ export default function HRVDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
   gradientZone: { overflow: 'hidden', paddingBottom: spacing.md },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   loadingContainer: { alignItems: 'center', paddingTop: 80, gap: spacing.sm },

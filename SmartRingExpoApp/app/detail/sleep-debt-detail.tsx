@@ -7,11 +7,10 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
-import { BackArrow } from '../../src/components/detail/BackArrow';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { SleepDebtGauge } from '../../src/components/home/SleepDebtGauge';
 import { useSleepDebt } from '../../src/hooks/useSleepDebt';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
@@ -75,14 +74,7 @@ export default function SleepDebtDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <BackArrow />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('sleep_debt.detail_title')}</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <DetailPageHeader title={t('sleep_debt.detail_title')} useSafeArea={false} />
 
       {/* Period label */}
       <View style={styles.periodRow}>
@@ -237,17 +229,6 @@ export default function SleepDebtDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backBtn: { padding: spacing.xs },
-  backArrow: { color: '#FFFFFF', fontSize: 28, fontFamily: fontFamily.regular },
-  title: { color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.demiBold },
-  headerRight: { width: 40 },
   periodRow: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,

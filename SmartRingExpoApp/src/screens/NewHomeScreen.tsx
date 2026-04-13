@@ -400,6 +400,7 @@ function NewHomeScreenContent() {
         connectedDevice={connectedDevice}
         battery={homeData.ringBattery}
         isConnected={isConnected}
+        lastSyncedAt={homeData.lastSyncedAt}
       />
     </AnimatedGradientBackground>
   );
