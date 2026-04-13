@@ -236,11 +236,11 @@ export default function HeartRateDetailScreen() {
   const hrValues = useMemo(() =>
     DAY_ENTRIES.map(d => ({
       dateKey: d.dateKey,
-      restingHR: d.dateKey === todayKey && todayFallback
-        ? todayFallback.restingHR
+      restingHR: d.dateKey === todayKey && todayLive
+        ? todayLive.restingHR
         : (data.get(d.dateKey)?.restingHR ?? 0),
     })),
-    [data, todayFallback]
+    [data, todayLive]
   );
 
   const hasData = !!dayData && (dayData.restingHR > 0 || dayData.hourlyPoints.length > 0);
