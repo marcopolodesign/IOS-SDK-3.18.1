@@ -4,6 +4,42 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-12: HR Detail Page Redesign + Activity Markers on Home Card
+
+**Changes:**
+
+1. **`src/components/detail/HRTrendChart.tsx`** (new): Scrollable 30-day resting HR trend bar chart for the HR detail header. Same pattern as Sleep/Readiness trend charts. Bar height = raw resting HR / 120bpm. Color: green ≤55, yellow ≤65, orange ≤75, red >75. Dotted guides at 30/60/90 bpm.
+
+2. **`app/detail/heart-rate-detail.tsx`** (full rewrite): Now mirrors sleep-detail layout:
+   - Gradient zone header (red `#AB0D0D` + deep red `#7B0000` radial gradients) with back button, title, and `HRTrendChart`
+   - Headline: resting HR big number (72px) + "Resting BPM" label + quality chip (EXCELLENT/GOOD/FAIR/ELEVATED) — same badge pattern as sleep/recovery
+   - Main chart: **line chart** (SVG monotone cubic path) connecting hourly HR readings with area fill, data-point dots, and hour axis labels
+   - Border-only stats card + insight block (no background fills)
+   - Extended to 30-day history (`buildDayNavigatorLabels(30)`)
+
+3. **`src/components/home/DailyHeartRateCard.tsx`**: Added Strava activity markers.
+   - `useHomeDataContext()` to read today's `stravaActivities`
+   - Maps each activity to its start hour (local time)
+   - Renders a small orange pin (`#FC4C02` dot + stem) at the top of each bar column that has an activity
+   - Tapping the pin navigates to `/detail/heart-rate-detail`
+
+**Files modified/created:**
+- `src/components/detail/HRTrendChart.tsx` (new)
+- `app/detail/heart-rate-detail.tsx`
+- `src/components/home/DailyHeartRateCard.tsx`
+
+---
+
+## 2026-04-12: Fix HR Chart Bar Positioning (Inverted Top Calculation)
+
+**Bug:** Bars in the daily HR chart were positioned upside-down. The `top` offset was calculated from `barMin` (low HR = top of chart), so a 5am reading of 44–92 appeared as one of the highest bars despite having a lower peak than a 12pm reading of 66–128.
+
+**Fix:** Changed `topPct` from `(barMin - hrMin) / hrRange` to `(hrMax - barMax) / hrRange`. Now the bar's top edge correctly maps to its peak value — higher HR peak = bar starts closer to the top of the chart.
+
+**File:** `src/components/home/DailyHeartRateCard.tsx` line 222
+
+---
+
 ## 2026-04-12: Detail Pages — Border-Only Cards + Recovery Headline Sync
 
 **Changes:**
