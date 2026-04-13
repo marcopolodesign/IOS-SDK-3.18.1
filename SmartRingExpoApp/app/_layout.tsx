@@ -15,7 +15,7 @@ Sentry.init({
   enableAutoSessionTracking: true,
   attachScreenshot: true,
   debug: __DEV__,
-  enabled: !__DEV__,
+  enabled: true,
   beforeSend(event) {
     // Strip any auth tokens or sensitive strings from breadcrumb data
     if (event.breadcrumbs?.values) {
@@ -56,49 +56,47 @@ import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
 import { BaselineModeProvider } from '../src/context/BaselineModeContext';
 import { FocusDataProvider } from '../src/context/FocusDataContext';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import * as Notifications from 'expo-notifications';
+
+// Must be at module scope so notifications display correctly when the app is backgrounded
+// or before the React tree fully mounts. Using shouldShowBanner/shouldShowList (not the
+// deprecated shouldShowAlert) to avoid the Expo warning.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 function RootLayout() {
   // Handle notification taps → deeplink into the app
   useEffect(() => {
-
-    let sub: { remove: () => void } | null = null;
-
-    import('expo-notifications').catch(() => null).then(Notifications => {
-      if (!Notifications) return;
-      // Show alert + play sound even when app is in foreground
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
-
-      // Tapped while app was running
-      sub = Notifications.addNotificationResponseReceivedListener(response => {
-        const url = response.notification.request.content.data?.url as string | undefined;
-        if (!url) return;
-        try {
-          const parsed = new URL(url);
-          const tab = parsed.searchParams.get('tab');
-          if (tab) router.navigate({ pathname: '/', params: { tab } });
-        } catch {}
-      });
-
-      // Tapped when app was killed — check last response on launch
-      Notifications.getLastNotificationResponseAsync().then(response => {
-        if (!response) return;
-        const url = response.notification.request.content.data?.url as string | undefined;
-        if (!url) return;
-        try {
-          const parsed = new URL(url);
-          const tab = parsed.searchParams.get('tab');
-          if (tab) router.navigate({ pathname: '/', params: { tab } });
-        } catch {}
-      });
+    // Tapped while app was running
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const url = response.notification.request.content.data?.url as string | undefined;
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        const tab = parsed.searchParams.get('tab');
+        if (tab) router.navigate({ pathname: '/', params: { tab } });
+      } catch {}
     });
 
-    return () => { sub?.remove(); };
+    // Tapped when app was killed — check last response on launch
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (!response) return;
+      const url = response.notification.request.content.data?.url as string | undefined;
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        const tab = parsed.searchParams.get('tab');
+        if (tab) router.navigate({ pathname: '/', params: { tab } });
+      } catch {}
+    });
+
+    return () => { sub.remove(); };
   }, []);
 
   const [fontsLoaded, fontError] = useFonts({
