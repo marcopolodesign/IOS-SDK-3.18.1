@@ -102,7 +102,18 @@ function monotoneCubicPath(pts: Array<{ x: number; y: number }>): string {
 
 // ─── Hourly HR line chart ─────────────────────────────────────────────────────
 function HourlyHRLine({ points, restingHR, peakHR }: { points: DayHRData['hourlyPoints']; restingHR: number; peakHR: number }) {
-  const sorted = [...points].filter(p => p.heartRate > 0).sort((a, b) => a.hour - b.hour);
+  // Aggregate multiple readings per hour → one avg point per hour, then sort ascending.
+  // Raw hrChartData has per-minute readings; duplicate x values cause NaN in cubic spline.
+  const hourMap = new Map<number, number[]>();
+  points.forEach(p => {
+    if (p.heartRate <= 0) return;
+    if (!hourMap.has(p.hour)) hourMap.set(p.hour, []);
+    hourMap.get(p.hour)!.push(p.heartRate);
+  });
+  const sorted = Array.from(hourMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([hour, hrs]) => ({ hour, heartRate: Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) }));
+
   if (sorted.length < 2) return null;
 
   const minY = Math.max(30, restingHR - 10);
