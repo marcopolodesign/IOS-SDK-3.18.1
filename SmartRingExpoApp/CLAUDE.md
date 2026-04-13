@@ -3,6 +3,8 @@
 This document provides context for Claude Code when working on this Expo/React Native project.
 
 > **📝 MANDATORY:** After completing ANY implementation (feature, fix, refactor — anything that changes code), you MUST automatically update `catchup.md` with a concise entry of what was implemented. Do NOT ask the user — just do it. Also add a summary to the "Recent Changes" section below. This is non-negotiable and applies to every task, including plans that were executed.
+>
+> **Source tagging & pull rule:** Every catchup entry MUST include a `**Source:**` line (e.g. `Claude Code — Macbook Pro`, `Claude App — iPhone`, `Claude.ai — web`). Before writing the entry, read the most recent entry's `**Source:**` field. If it differs from the current session's source, run `git pull origin main` first to avoid overwriting changes made from another device.
 
 > **🔍 MANDATORY — Code Quality Gate:** After completing a code-changing task, review for reuse, quality, and efficiency before updating catchup.md.
 > - **Small changes (1-2 files):** Do a quick inline review yourself — check for duplicated utilities, unused imports, missing cleanup. No agent needed.

@@ -4,6 +4,16 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-12: Fix HR Detail Page Crash (undefined `todayFallback`)
+
+**Bug:** HR detail page crashed immediately on open. Root cause: `hrValues` useMemo referenced `todayFallback` (undefined) instead of `todayLive` (the correct variable name used earlier in the component). This caused a `ReferenceError` at render time.
+
+**Fix:** Renamed `todayFallback` → `todayLive` in both the condition and dependency array of the `hrValues` useMemo in `app/detail/heart-rate-detail.tsx`.
+
+**EAS Update:** `40966c71-62b0-48b3-a0f6-12373d38056f` (production, iOS + Android)
+
+---
+
 ## 2026-04-12: HR Detail Page Redesign + Activity Markers on Home Card
 
 **Changes:**
