@@ -13,3 +13,17 @@
 | 7406750511 | EXC_BAD_ACCESS via RCTExceptionsManager KERN_INVALID_ADDRESS | fatal | 2026-04-13T00:37:43Z | Needs manual review — native crash in React JS thread |
 | 7406743701 | TypeError: undefined is not a function (Sentry beforeSend hook) | error | 2026-04-13T00:32:01Z | Needs manual review — minified bundle, source maps needed to pinpoint |
 | 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08 (last seen 2026-04-12T23:56:02Z) | Needs manual review — V8Bridge is out-of-scope per constraints |
+
+## 2026-04-14
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7408046962 | TypeError: event.breadcrumbs.values.map is not a function (it is undefined) | error | 2026-04-13T13:51Z | 2026-04-13T20:52Z | Already fixed in `main` — `beforeSend` handler (crash site `app/_layout.tsx:22`) was removed in a prior commit. Errors originate from older deployed build (`com.focusring.app@1.0.3+25`). Will self-resolve when users update. No PR needed. |
+| 7406743701 | TypeError: undefined is not a function (in beforeSend) | error | 2026-04-13T00:32Z | 2026-04-14T11:17Z | Same root cause as 7408046962 — `beforeSend` no longer exists in `main`. Errors persist from old production build. No code change needed. |
+| 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08T01:52Z | 2026-04-14T03:52Z | **Needs manual review.** Crash in CoreBluetooth disconnect callback — a `V8Bridge` instance receives `Disconnect:` which it does not implement. Stack frames are redacted. V8Bridge files off-limits per constraints. Investigate whether V8Bridge is being instantiated when only Jstyle/X3 is active. |
+
+### 2026-04-14 Notes
+- Project slug discovered as `focus-app` (not `focus-app-1` as configured in monitor).
+- `gh` CLI not available — PR creation skipped.
+- The two JS `beforeSend` errors are already fixed in `main`; will ship with next TestFlight build.
+- V8Bridge fatal (7394530406) requires a native developer to audit bridge initialisation.
