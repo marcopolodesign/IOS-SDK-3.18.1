@@ -237,7 +237,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         <GradientInfoCard
           icon={<BrainIcon />}
           title={t('sleep.hrv_stress')}
-          titleCaption={lastSyncLabel ?? undefined}
+          titleCaption={lastSyncLabel}
           headerValue={sdnn > 0 ? String(sdnn) : '--'}
           headerSubtitle={sdnn > 0 ? 'SDNN · ms' : t('sleep.hrv_no_data')}
           gradientStops={[
@@ -287,7 +287,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         <GradientInfoCard
           icon={<DropIcon />}
           title={t('sleep.blood_oxygen')}
-          titleCaption={lastSyncLabel ?? undefined}
+          titleCaption={lastSyncLabel}
           headerValue={lastSpO2 ? `${lastSpO2}%` : '--'}
           headerSubtitle={spo2Status ?? t('sleep.no_overnight_data')}
           gradientStops={[

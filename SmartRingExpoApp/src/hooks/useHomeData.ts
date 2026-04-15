@@ -22,7 +22,7 @@ import { Platform } from 'react-native';
 import HealthKitService from '../services/HealthKitService';
 import { stravaService } from '../services/StravaService';
 import { mergeActivities } from '../services/ActivityDeduplicator';
-import { formatSleepDuration, calculateSleepScore } from '../utils/ringData/sleep';
+import { formatSleepDuration, calculateSleepScore, extractSleepVitalsFromRaw } from '../utils/ringData/sleep';
 
 type AuthUser = { user_metadata?: Record<string, any>; email?: string | null } | null | undefined;
 
@@ -692,76 +692,6 @@ function parseStart(str?: string): number | undefined {
   return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
 }
 
-function extractSleepVitalsFromRaw(rawRecords: any[]): { restingHR: number; respiratoryRate: number } {
-  if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
-    return { restingHR: 0, respiratoryRate: 0 };
-  }
-
-  const hrCandidates: number[] = [];
-  const respCandidates: number[] = [];
-  const visited = new Set<any>();
-
-  const pushIfValid = (target: number[], value: unknown, min: number, max: number) => {
-    const n = Number(value);
-    if (Number.isFinite(n) && n >= min && n <= max) {
-      target.push(n);
-    }
-  };
-
-  const visit = (node: any) => {
-    if (!node || typeof node !== 'object' || visited.has(node)) return;
-    visited.add(node);
-
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
-    }
-
-    for (const [rawKey, value] of Object.entries(node as Record<string, unknown>)) {
-      const key = String(rawKey);
-      const lowerKey = key.toLowerCase();
-
-      if (
-        lowerKey === 'restinghr' ||
-        lowerKey === 'resthr' ||
-        lowerKey === 'restingheartrate' ||
-        lowerKey === 'sleeprestinghr' ||
-        lowerKey === 'minhr' ||
-        lowerKey === 'minheartrate' ||
-        lowerKey === 'lowestheartrate' ||
-        /rest.*hr/.test(lowerKey) ||
-        /resting.*heart/.test(lowerKey) ||
-        /lowest.*heart/.test(lowerKey)
-      ) {
-        pushIfValid(hrCandidates, value, 30, 130);
-      }
-
-      if (
-        lowerKey === 'respiratoryrate' ||
-        lowerKey === 'respiratory_rate' ||
-        lowerKey === 'resprate' ||
-        lowerKey === 'respr' ||
-        lowerKey === 'breathrate' ||
-        lowerKey === 'breathingrate' ||
-        /resp/.test(lowerKey) ||
-        /breath/.test(lowerKey)
-      ) {
-        pushIfValid(respCandidates, value, 8, 40);
-      }
-
-      if (typeof value === 'object' && value !== null) {
-        visit(value);
-      }
-    }
-  };
-
-  visit(rawRecords);
-
-  return {
-    restingHR: hrCandidates.length > 0 ? Math.round(hrCandidates[hrCandidates.length - 1]) : 0,
-    respiratoryRate: respCandidates.length > 0 ? Math.round(respCandidates[respCandidates.length - 1]) : 0,
-  };
-}
 
 /**
  * Build SleepData from raw JstyleService.getSleepData() records.
@@ -2176,12 +2106,16 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         void UnifiedSmartRingService.getBattery()
           .then(batt => {
             console.log(`✅ [useHomeData] battery (deferred): ${batt.battery}% charging=${batt.isCharging} ${Date.now() - battStart}ms`);
-            setData(prev => ({
-              ...prev,
-              ringBattery: batt.battery,
-              isRingCharging: batt.isCharging ?? false,
-              syncProgress: updateMetric(prev.syncProgress, 'battery', 'done'),
-            }));
+            setData(prev => {
+              const updated = {
+                ...prev,
+                ringBattery: batt.battery,
+                isRingCharging: batt.isCharging ?? false,
+                syncProgress: updateMetric(prev.syncProgress, 'battery', 'done'),
+              };
+              saveToCache(updated);
+              return updated;
+            });
           })
           .catch(e => {
             console.log(`⚠️ [useHomeData] battery (deferred) failed: ${e?.message} ${Date.now() - battStart}ms`);

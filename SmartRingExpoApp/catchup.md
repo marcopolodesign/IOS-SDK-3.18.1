@@ -4,6 +4,57 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-15: Ring Sync UX Follow-up — Battery Deferral, Last Sync Labels, Sleep Empty Warning
+
+**Branch:** `feat/ring-sync-ux-followup`
+
+**Source:** Claude Code — Macbook Pro
+
+### 1. Battery deferred off critical path
+`getBattery()` was awaited inline in `fetchData`, timing out every sync (~5s lost). Moved to fire-and-forget after the main `setData` (alongside cloud sync). On success, patches `ringBattery`/`isRingCharging` via a second `setData` and re-saves the cache. On timeout, previous cached battery remains displayed — no flash to 0.
+
+### 2. "Last sync" caption on all 5 ring-data GradientInfoCards
+Added `formatRelativeTime(ts)` helper (`src/utils/time.ts`) and `useRelativeTime(ts)` hook (`src/hooks/useRelativeTime.ts`). Hook runs a 60s self-refreshing interval so the label ages without a re-sync. Caption shows `"Now"` → `"Xm ago"` → `"Xh ago"` → `"Xd ago"`. Applied to:
+- Overview: Sleep Score
+- Sleep: HRV & Stress, Blood Oxygen
+- Activity: Temperature, Min SpO2
+
+`GradientInfoCard` extended with `titleCaption?: string | null` — renders a subtle muted line below the title. `titleColumn` wrapper applies `flexShrink: 1` so the side-by-side vitals row (Temperature + Min SpO2) doesn't overflow.
+
+### 3. Sleep zero-records warning
+When all 3 ring retries return 0 sleep records, logs `console.warn('[sync] sleep ring returned 0 records…')` and files a Sentry `warning` event with tag `op: sync.sleep.empty`. Supabase fallback still runs — no UI regression.
+
+**Files created:**
+- `src/utils/time.ts`
+- `src/hooks/useRelativeTime.ts`
+
+**Files modified:**
+- `src/hooks/useHomeData.ts`
+- `src/components/common/GradientInfoCard.tsx`
+- `src/screens/home/OverviewTab.tsx`
+- `src/screens/home/SleepTab.tsx`
+- `src/screens/home/ActivityTab.tsx`
+
+---
+
+## 2026-04-15: Recovery Detail — Resting HR Root Cause Fix + Respiratory Rate
+
+**Root cause of past-day resting HR = 0 (confirmed via SQL):**
+`heart_rate_readings` stores ALL data ~4 months in the future (July-August 2026) with HR values of 82-131 bpm — these are daytime activity readings with broken timestamps. This table is completely useless for computing resting HR. The only valid source is the ring's sleep payload (`extractSleepVitalsFromRaw`), which produces `homeData.lastNightSleep.restingHR = 40` but was never persisted to Supabase.
+
+**Fix (3 parts):**
+1. **`DataSyncService`**: now saves `resting_hr` to `sleep_sessions` during every sync. Extracts it by calling `extractSleepVitalsFromRaw` on the raw records for each sleep block. Also back-fills `resting_hr` on already-saved sessions during the skip/overlap guard path. Going forward, every ring sync populates `resting_hr` for the past 7 days.
+2. **`extractSleepVitalsFromRaw` moved to shared utility** (`src/utils/ringData/sleep.ts`). Removed duplicate from `useHomeData.ts`. Updated `useHomeData` and `DataSyncService` imports. Max HR cap tightened from 130 to 90 bpm to reject daytime readings.
+3. **Recovery Detail — Respiratory Rate added**: `homeData.lastNightSleep.respiratoryRate` now shown in the MetricsGrid (today only; `--` for past days until persisted). Matches the Oura readiness screen layout.
+
+**What happens next sync:** when the user syncs their ring, `DataSyncService` will back-fill `resting_hr` on the past 7 sleep sessions. `fetchSleepHistory` already reads `resting_hr || detail_json?.restingHR`. The client-side patch in `recovery-detail.tsx` will then find it via `getSleep(dateKey)?.restingHR` and display the correct value.
+
+**Files modified:** `src/services/DataSyncService.ts`, `src/utils/ringData/sleep.ts`, `src/hooks/useHomeData.ts`, `app/detail/recovery-detail.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ## 2026-04-15: Recovery Detail — Past-Day Resting HR Fix
 
 **Problem:** Past days in Recovery Detail showed Resting HR = 0, causing underscored readiness scores.

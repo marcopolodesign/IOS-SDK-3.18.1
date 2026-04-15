@@ -229,3 +229,49 @@ export function getSleepStageColor(type: number): string {
   }
 }
 
+/**
+ * Extracts resting HR and respiratory rate from raw SDK sleep records.
+ * Recursively visits the payload looking for keys like restingHR, minHR,
+ * respiratoryRate, etc. Returns the last valid candidate found in each category.
+ */
+export function extractSleepVitalsFromRaw(rawRecords: any[]): { restingHR: number; respiratoryRate: number } {
+  if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
+    return { restingHR: 0, respiratoryRate: 0 };
+  }
+
+  const hrCandidates: number[] = [];
+  const respCandidates: number[] = [];
+  const visited = new Set<any>();
+
+  const pushIfValid = (target: number[], value: unknown, min: number, max: number) => {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= min && n <= max) target.push(n);
+  };
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object' || visited.has(node)) return;
+    visited.add(node);
+    if (Array.isArray(node)) { for (const item of node) visit(item); return; }
+    for (const [rawKey, value] of Object.entries(node as Record<string, unknown>)) {
+      const lk = String(rawKey).toLowerCase();
+      if (lk === 'restinghr' || lk === 'resthr' || lk === 'restingheartrate' ||
+          lk === 'sleeprestinghr' || lk === 'minhr' || lk === 'minheartrate' ||
+          lk === 'lowestheartrate' || /rest.*hr/.test(lk) ||
+          /resting.*heart/.test(lk) || /lowest.*heart/.test(lk)) {
+        pushIfValid(hrCandidates, value, 30, 90);
+      }
+      if (lk === 'respiratoryrate' || lk === 'respiratory_rate' || lk === 'resprate' ||
+          lk === 'respr' || lk === 'breathrate' || lk === 'breathingrate' ||
+          /resp/.test(lk) || /breath/.test(lk)) {
+        pushIfValid(respCandidates, value, 8, 40);
+      }
+      if (typeof value === 'object' && value !== null) visit(value);
+    }
+  };
+
+  visit(rawRecords);
+  return {
+    restingHR: hrCandidates.length > 0 ? Math.round(hrCandidates[hrCandidates.length - 1]) : 0,
+    respiratoryRate: respCandidates.length > 0 ? Math.round(respCandidates[respCandidates.length - 1]) : 0,
+  };
+}

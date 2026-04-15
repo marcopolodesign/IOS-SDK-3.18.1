@@ -13,7 +13,7 @@ import {
   BatteryData,
 } from '../types/sdk.types';
 import { classifySleepSession, calculateNapScore } from './NapClassifierService';
-import { calculateSleepScoreFromStages } from '../utils/ringData/sleep';
+import { calculateSleepScoreFromStages, extractSleepVitalsFromRaw } from '../utils/ringData/sleep';
 
 interface SyncStatus {
   lastSyncAt: Date | null;
@@ -459,8 +459,26 @@ class DataSyncService {
         const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
         const classification = classifySleepSession(startTime, endTime, totalSleepMin, priorNightEnd);
 
+        // Extract resting HR from the raw records belonging to this sleep block.
+        // Done early so it's available for both new inserts and back-fill of existing sessions.
+        const blockRawRecords = rawRecords.filter((r: any) => {
+          const ts = r.startTimestamp || (() => {
+            const s = r.startTime_SleepData;
+            if (!s) return undefined;
+            const [d, t] = String(s).split(' ');
+            if (!d || !t) return undefined;
+            const [y, m, day] = d.split('.').map(Number);
+            const [hh, mm, ss] = t.split(':').map(Number);
+            if ([y, m, day, hh, mm, ss].some(n => Number.isNaN(n))) return undefined;
+            return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
+          })();
+          return typeof ts === 'number' && ts >= block.start && ts <= block.end;
+        });
+        const { restingHR } = extractSleepVitalsFromRaw(blockRawRecords.length > 0 ? blockRawRecords : rawRecords);
+
         // Overlap guard — skip only if the existing session already has >= sleep minutes.
         // If the new block has more data (e.g. full night vs. partial mid-sleep sync), replace it.
+        // Exception: always back-fill resting_hr if the existing session is missing it.
         const overlappingSession = nightSessions.find(night => {
           if (night.session_type !== classification.sessionType) return false;
           const nightStart = new Date(night.start_time).getTime();
@@ -476,6 +494,14 @@ class DataSyncService {
             (overlappingSession.rem_min || 0);
 
           if (existingTotalMin >= totalSleepMin) {
+            // Back-fill resting_hr on the existing session if it's missing
+            if (restingHR > 0 && !(overlappingSession as any).resting_hr) {
+              await supabase.from('sleep_sessions')
+                .update({ resting_hr: restingHR })
+                .eq('user_id', userId)
+                .eq('start_time', overlappingSession.start_time);
+              console.log(`[Sync] Sleep day ${dayIndex}: back-filled resting_hr=${restingHR} on existing session`);
+            }
             console.log(`[Sync] Sleep day ${dayIndex}: skipping ${classification.sessionType} — existing has ${existingTotalMin}min >= new ${totalSleepMin}min`);
             continue;
           }
@@ -518,6 +544,7 @@ class DataSyncService {
           detail_json: detailJson,
           session_type: classification.sessionType,
           nap_score: napScore,
+          resting_hr: restingHR > 0 ? restingHR : null,
         };
         await supabaseService.insertSleepSession(sessionPayload);
         // Track in-memory so subsequent loop iterations can detect overlap with this session

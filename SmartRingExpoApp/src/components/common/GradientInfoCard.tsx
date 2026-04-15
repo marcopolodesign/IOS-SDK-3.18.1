@@ -27,7 +27,7 @@ type GradientInfoCardProps = {
   /** Optional node placed on the right side of the header (e.g. InfoButton) */
   headerRight?: React.ReactNode;
   /** Optional small caption shown below the title (e.g. "3m ago" last-sync label) */
-  titleCaption?: string;
+  titleCaption?: string | null;
   children: React.ReactNode;
 };
 
@@ -178,7 +178,6 @@ const styles = StyleSheet.create({
   },
   titleColumn: {
     flexShrink: 1,
-    flexDirection: 'column',
   },
   title: {
     color: 'rgba(255, 255, 255, 0.9)',

@@ -637,12 +637,19 @@ export default function RecoveryDetailScreen() {
             )}
 
             {/* Metrics grid */}
-            <MetricsGrid metrics={[
-              { label: 'Readiness', value: `${readiness.score}`, unit: '/100' },
-              { label: 'Sleep Score', value: readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--', unit: readiness.sleepScore > 0 ? '/100' : undefined },
-              { label: 'Resting HR', value: readiness.restingHR > 0 ? `${readiness.restingHR}` : '--', unit: readiness.restingHR > 0 ? 'bpm' : undefined },
-              { label: 'Recommended', value: readiness.score >= 80 ? 'High Intensity' : readiness.score >= 60 ? 'Moderate' : 'Rest' },
-            ]} />
+            {(() => {
+              const respRate = selectedDateKey === todayKey
+                ? (homeData.lastNightSleep?.respiratoryRate ?? 0)
+                : 0;
+              return (
+                <MetricsGrid metrics={[
+                  { label: 'Readiness', value: `${readiness.score}`, unit: '/100' },
+                  { label: 'Sleep Score', value: readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--', unit: readiness.sleepScore > 0 ? '/100' : undefined },
+                  { label: 'Resting HR', value: readiness.restingHR > 0 ? `${readiness.restingHR}` : '--', unit: readiness.restingHR > 0 ? 'bpm' : undefined },
+                  { label: 'Resp. Rate', value: respRate > 0 ? `${respRate}` : '--', unit: respRate > 0 ? '/min' : undefined },
+                ]} />
+              );
+            })()}
 
             {/* Additional stats */}
             {(getHRV(selectedDateKey ?? '') || (selectedIndex === 0 && homeData.strain > 0)) && (

@@ -284,7 +284,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           <GradientInfoCard
             icon={<ThermometerIcon />}
             title={t('activity.temperature')}
-            titleCaption={lastSyncLabel ?? undefined}
+            titleCaption={lastSyncLabel}
             headerValue={tempC > 0 ? `${tempC.toFixed(1)}°` : '--'}
             headerSubtitle={tempStatus ?? t('activity.no_data')}
             gradientStops={[
@@ -318,7 +318,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           <GradientInfoCard
             icon={<OxygenIcon />}
             title={t('activity.min_spo2')}
-            titleCaption={lastSyncLabel ?? undefined}
+            titleCaption={lastSyncLabel}
             headerValue={minSpo2 ? `${minSpo2}%` : '--'}
             headerSubtitle={spo2Status ?? t('activity.no_data')}
             gradientStops={[

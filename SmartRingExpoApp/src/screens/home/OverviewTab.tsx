@@ -146,7 +146,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
             <GradientInfoCard
               icon={<SleepScoreIcon />}
               title={t('overview.sleep_score')}
-              titleCaption={lastSyncLabel ?? undefined}
+              titleCaption={lastSyncLabel}
               headerValue={sleep.score || 0}
               headerSubtitle={sleepMessage}
               showArrow
