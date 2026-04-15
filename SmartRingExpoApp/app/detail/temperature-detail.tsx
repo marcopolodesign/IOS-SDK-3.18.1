@@ -253,7 +253,7 @@ export default function TemperatureDetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }

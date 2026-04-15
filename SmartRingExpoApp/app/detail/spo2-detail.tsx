@@ -205,7 +205,7 @@ export default function SpO2DetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }

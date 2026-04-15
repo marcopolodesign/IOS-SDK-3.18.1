@@ -257,7 +257,7 @@ export default function SleepDebtDetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }
