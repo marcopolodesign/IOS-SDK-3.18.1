@@ -1,4 +1,13 @@
 /**
+ * Formats a duration in minutes as "Xh Ym" (e.g. "7h 32m") or "Ym" when < 1 hour.
+ */
+export function formatDurationHm(totalMin: number): string {
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
  * Returns a human-readable relative time label for a timestamp.
  * Returns null when ts is null (no cache yet — callers should hide the label).
  */

@@ -731,6 +731,14 @@
     "sleep_debt_range_2": "2h – 5h → Moderate: prioritize sleep",
     "sleep_debt_range_3": "> 5h → High: recovery sleep needed",
 
+    "score_breakdown_title": "Score Breakdown",
+    "score_breakdown_subtitle": "Baseline-relative scores, not fixed thresholds",
+    "score_breakdown_body": "Each bar shows a component score (0–100) calibrated to your personal 14-day rolling baseline. A score of 50 means you're exactly at your norm — above 50 is better than usual, below 50 is lower than usual.\n\nHRV carries the most weight (35%) because it's the most sensitive signal of autonomic recovery. Sleep quality (25%) and resting HR (20%) follow. When Strava is connected, training load (20%) is added and the remaining weights are re-normalized around it.\n\n40ms HRV isn't bad in isolation — what matters is whether it's above or below your personal average. Population norms vary widely by age and fitness level.",
+    "score_breakdown_range_0": "HRV (35%) — overnight SDNN in ms vs your 14-day median",
+    "score_breakdown_range_1": "Sleep Quality (25%) — ring score + hours vs your norm",
+    "score_breakdown_range_2": "Resting HR (20%) — overnight HR vs your personal average",
+    "score_breakdown_range_3": "Training Load (20%) — Strava 7-day acute vs 28-day chronic ratio",
+
     "contributor_hrv_title": "HRV Balance",
     "contributor_hrv_subtitle": "Recent HRV trend vs. your baseline",
     "contributor_hrv_body": "HRV Balance compares your recent (3-day) HRV to your longer-term baseline. A positive balance means your HRV is trending above average — a sign of good recovery accumulation. Negative balance indicates recent stress or under-recovery.",

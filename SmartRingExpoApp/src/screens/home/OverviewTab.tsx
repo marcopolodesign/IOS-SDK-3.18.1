@@ -13,6 +13,7 @@ import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
 import DailyTimelineCard from '../../components/home/DailyTimelineCard';
 import LogEntrySheet from '../../components/home/LogEntrySheet';
 import { useHomeDataContext } from '../../context/HomeDataContext';
+import { useFocusDataContext } from '../../context/FocusDataContext';
 import { getScoreMessage, getSleepMessage } from '../../hooks/useHomeData';
 import { useTimelineEntries } from '../../hooks/useTimelineEntries';
 import { useAddOverlay } from '../../context/AddOverlayContext';
@@ -44,6 +45,7 @@ type OverviewTabProps = {
 export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSleepPress, isActive = false }: OverviewTabProps) {
   const { t } = useTranslation();
   const homeData = useHomeDataContext();
+  const focusData = useFocusDataContext();
   const { setActionHandler, showOverlay } = useAddOverlay();
   const { entries: timelineEntries, addEntry } = useTimelineEntries();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -128,7 +130,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
             <MetricInsightCard
               metrics={[
                 { label: t('overview.strain'), value: homeData.strain },
-                { label: t('overview.readiness'), value: homeData.readiness },
+                { label: t('overview.readiness'), value: focusData.readiness?.score ?? homeData.readiness },
                 { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
               ]}
               insight={[

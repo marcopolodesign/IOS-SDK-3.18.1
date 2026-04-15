@@ -23,7 +23,8 @@ export type MetricKey =
   | 'contributor_hrv_balance'
   | 'contributor_resting_hr_delta'
   | 'contributor_sleep_quality'
-  | 'contributor_temperature';
+  | 'contributor_temperature'
+  | 'score_breakdown';
 
 export type ChartType = 'score_arc' | 'range_bar' | 'sleep_stages' | 'waveform' | 'none';
 
@@ -433,6 +434,20 @@ export function getMetricExplanations(t: TFunc): Record<MetricKey, MetricExplana
       body: t('explainer.contributor_sleep_body'),
       chart: { type: 'sleep_stages' },
       accentColor: '#7B5EE0',
+    },
+
+    score_breakdown: {
+      title: t('explainer.score_breakdown_title'),
+      subtitle: t('explainer.score_breakdown_subtitle'),
+      body: t('explainer.score_breakdown_body'),
+      ranges: [
+        t('explainer.score_breakdown_range_0'),
+        t('explainer.score_breakdown_range_1'),
+        t('explainer.score_breakdown_range_2'),
+        t('explainer.score_breakdown_range_3'),
+      ],
+      chart: { type: 'none' },
+      accentColor: '#6B8EFF',
     },
 
     contributor_temperature: {

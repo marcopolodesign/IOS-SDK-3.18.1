@@ -225,6 +225,21 @@ Each tab uses a distinct radial/bloom overlay over the black background:
 
 ---
 
+## Bottom Sheet / Explainer Sheet Color Rule
+
+> **NO COLOR inside explainer, formula, or score-detail bottom sheets.**
+>
+> Explainer sheets (score breakdowns, formula explanations, metric education) must be **monochrome only**: white, grey, and semi-transparent white variants. No accent colors (green/amber/red/blue/teal/coral) inside any bottom sheet that explains how a score or metric was calculated.
+>
+> - Progress bars inside sheets: `rgba(255,255,255,0.35)` fill, `rgba(255,255,255,0.08)` track
+> - Chart bars: white with opacity fade (oldest dim → newest bright)
+> - Baseline lines: `rgba(255,255,255,0.45)` dashed
+> - Labels and text: white opacity hierarchy (see above)
+>
+> **Why:** Accent colors signal current state/health status on main screens. Using them inside an educational explainer creates false urgency and conflicts with the neutral "here's how the math works" tone the sheet is meant to have.
+
+---
+
 ## Opacity Hierarchy (Dark Theme)
 
 | Role | Opacity | Hex approx |

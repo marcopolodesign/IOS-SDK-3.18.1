@@ -1526,12 +1526,16 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const hrStart = Date.now();
       updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
-      const hrRaw = await UnifiedSmartRingService.getContinuousHeartRateRaw();
-      console.log('📊 [useHomeData] HR raw records:', hrRaw.records?.length, hrRaw.records?.map((r: any) => ({
-        date: r.date,
-        ts: r.startTimestamp,
-        dynLen: r.arrayDynamicHR?.length,
-      })));
+      // Try single/static HR first — reliably returns data on this device
+      // Continuous HR is fetched only when single is empty (rarely)
+      const singleHRFirst = await UnifiedSmartRingService.getSingleHeartRateRaw();
+      console.log('📊 [useHomeData] Single HR records (primary):', singleHRFirst.records?.length);
+      // Use single HR records as the primary source; fall through to continuous if empty
+      const hasSingleData = (singleHRFirst.records?.length ?? 0) > 0;
+      const hrRaw = hasSingleData
+        ? { records: [] }  // skip continuous when single has data
+        : await UnifiedSmartRingService.getContinuousHeartRateRaw();
+      if (!hasSingleData) console.log('📊 [useHomeData] Continuous HR records (fallback):', hrRaw.records?.length);
       const samples: number[] = [];
       const now = new Date();
       const todayDateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
@@ -1625,16 +1629,10 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         }
       };
 
-      // If continuous HR is empty, try single/static HR as secondary source
+      // Single HR was fetched first; merge it now (using already-fetched data — no second native call)
       if (samples.length === 0) {
-        try {
-          const singleHR = await UnifiedSmartRingService.getSingleHeartRateRaw();
-          console.log('📊 [useHomeData] Single HR records:', singleHR.records?.length);
-          const covered = new Set(hrChartData.map(p => p.timeMinutes));
-          mergeHRRecords(singleHR.records || [], covered);
-        } catch (e2) {
-          console.log('⚠️ [useHomeData] Single HR fetch failed:', e2);
-        }
+        const covered = new Set(hrChartData.map(p => p.timeMinutes));
+        mergeHRRecords(singleHRFirst.records || [], covered);
       } else {
         // Continuous HR has data — detect interior gaps and retry once if any exist
         const coveredHours = new Set(hrChartData.map(p => Math.floor(p.timeMinutes / 60)));
@@ -1802,21 +1800,8 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
       };
 
-      const vitalsStart = Date.now();
-      updateSP(prev => updateMetric(prev, 'vitals', 'loading'));
-      if (!sleep.respiratoryRate || sleep.respiratoryRate <= 0) {
-        try {
-          const respiratoryRate = await UnifiedSmartRingService.getRespiratoryRateNightly(0);
-          if (respiratoryRate && respiratoryRate >= 8 && respiratoryRate <= 40) {
-            sleep.respiratoryRate = respiratoryRate;
-            console.log(`✅ [useHomeData] respiratoryRate from breathing data: ${respiratoryRate}`);
-          }
-        } catch (e) {
-          console.log('⚠️ [useHomeData] respiratory rate fetch failed:', e);
-        }
-      }
+      // Respiratory rate — deferred off critical path (~3.5s savings); cached value preserved in setData below
       updateSP(prev => updateMetric(prev, 'vitals', 'done'));
-      logStage('vitals', vitalsStart);
 
       updateSP({ phase: 'complete' });
       updateSP(prev => updateMetric(prev, 'cloud', 'loading'));
@@ -2043,7 +2028,13 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         const newData: HomeData = {
           overallScore, strain, strainBreakdown, readiness,
           sleepScore: sleep.score,
-          lastNightSleep: sleep,
+          lastNightSleep: {
+            ...sleep,
+            // Preserve cached respiratory rate until the deferred fetch resolves
+            respiratoryRate: sleep.respiratoryRate > 0
+              ? sleep.respiratoryRate
+              : (prev.lastNightSleep?.respiratoryRate ?? 0),
+          },
           activity,
           ringBattery: prev.ringBattery,
           isRingCharging: prev.isRingCharging,
@@ -2121,6 +2112,23 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
             console.log(`⚠️ [useHomeData] battery (deferred) failed: ${e?.message} ${Date.now() - battStart}ms`);
             setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'battery', 'error') }));
           });
+        // Respiratory rate — deferred off critical path (~3.5s savings)
+        const respStart = Date.now();
+        void UnifiedSmartRingService.getRespiratoryRateNightly(0)
+          .then(rate => {
+            if (rate && rate >= 8 && rate <= 40) {
+              console.log(`✅ [useHomeData] respiratoryRate (deferred): ${rate} ${Date.now() - respStart}ms`);
+              setData(prev => {
+                const updated = {
+                  ...prev,
+                  lastNightSleep: { ...prev.lastNightSleep, respiratoryRate: rate },
+                };
+                saveToCache(updated);
+                return updated;
+              });
+            }
+          })
+          .catch(e => console.log(`⚠️ [useHomeData] respiratoryRate (deferred) failed: ${e?.message} ${Date.now() - respStart}ms`));
         return newData;
       });
       void refreshMissingCardData(hydrationReason);

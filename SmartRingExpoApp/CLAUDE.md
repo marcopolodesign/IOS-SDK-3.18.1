@@ -53,6 +53,7 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 - **Cards:** Glass-morphism style — `rgba(255,255,255,0.07)` bg, `rgba(255,255,255,0.12)` border, `borderRadius.xl` (16px)
 - **Collapsible cards:** Use the same expand/collapse pattern as ReadinessCard, IllnessWatchCard
 - **No green accents:** Do NOT use `#00D4AA` / `colors.primary` (teal/green) for UI accents, highlights, chips, or progress elements. Use `colors.tertiary` (`#6B8EFF`, blue) instead. The teal/green tone was rejected by the user.
+- **No color inside explainer/formula bottom sheets:** Score breakdowns, formula explanations, metric education sheets must be monochrome only (white + grey opacity variants). No accent colors (green/amber/red/blue) inside any sheet that explains how a score was calculated. See `design-system.md` → "Bottom Sheet / Explainer Sheet Color Rule".
 - **Component consistency:** Always reuse existing components before creating new ones. Extend existing components with special props (e.g. `accentColor`, `variant`, `gradientColors`) rather than duplicating similar UI. When a new screen needs a card, check `src/components/home/` first. Consistency across screens is a hard requirement.
 - **Component reference:** `components.md` documents every component — props, behavior, data sources, invariants. Read it before touching any existing component. **After modifying, creating, or deleting a component, update `components.md` in the same task, before writing the `catchup.md` entry.**
 

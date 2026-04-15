@@ -2,6 +2,31 @@
 
 export type ReadinessRecommendation = 'GO' | 'EASY' | 'REST';
 
+// ─── Unified per-day metric value ─────────────────────────────────────────────
+
+/** A single metric's raw reading, 0-100 score, baseline context, and deviation label. */
+export interface DayMetricValue {
+  raw: number | null;              // bpm, ms, minutes, /min, etc. — null when ring didn't provide it
+  score: number | null;            // 0-100 component score (null when raw is null)
+  baselineMedian: number | null;   // personal baseline median (null < 3 days of history)
+  deviationLabel: string | null;   // e.g. "+3 bpm vs norm", "Within norm"
+}
+
+/** All metrics for a single day — single source of truth consumed by every screen. */
+export interface DayMetrics {
+  dateKey: string;                   // YYYY-MM-DD
+  readiness: ReadinessScore | null;  // includes score, components, recommendation, confidence
+  restingHR: DayMetricValue;
+  hrv: DayMetricValue;
+  sleepScore: DayMetricValue;
+  sleepMinutes: DayMetricValue;
+  respiratoryRate: DayMetricValue;
+  temperature: DayMetricValue;
+  spo2Min: DayMetricValue;
+  isToday: boolean;
+  source: 'ring' | 'supabase' | 'mixed';
+}
+
 export interface ReadinessComponents {
   hrv: number | null;      // 0-100 component score
   sleep: number | null;

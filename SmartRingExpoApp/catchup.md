@@ -4,6 +4,238 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-15: Morning Sleep Sync — Targeted BLE Reconnect Trigger + Enriched Notifications
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added a fast-path for pushing last night's sleep into Supabase shortly after wake-up — so the 9:03 AM WhatsApp cron and local "Sleep Ready" notification have real data. Two triggers now handle this: (1) the existing `BackgroundSleepTask` background-fetch fires a sleep-only Supabase sync once per day when it detects today's wake time, and (2) a new `MorningSleepReconnectTrigger` fires the same sync immediately when the ring reconnects between 05:00–10:00 (often seconds after the user puts the ring back on — beating iOS's fetch cadence). The local notification body now includes actual sleep duration and score (e.g. "Slept 7h 12m · Score 84") instead of the static placeholder text.
+
+**Files created:**
+- `src/services/MorningSleepReconnectTrigger.ts` — Subscribes to `onConnectionStateChanged`; on morning reconnect, debounces 30s then calls `syncSleepOnly()` + `maybeSendSleepNotificationFromForeground()`; guarded by per-day AsyncStorage dedupe flag and 05:00–10:00 window
+
+**Files modified:**
+- `src/services/DataSyncService.ts` — Added public `syncSleepOnly()`: auth + connection check, calls private `syncSleepData()` + `updateDailySummary()`, reads back latest night session from Supabase and returns `{ totalMin, sleepScore, wakeTime }` for notification enrichment
+- `src/services/BackgroundSleepTask.ts` — Removed local `extractWakeTime` (moved to sleep utils); added `sleepSyncedKey()` helper + `@focus_sleep_synced_for_<YYYY-MM-DD>` dedupe flag; task now calls `syncSleepOnly()` before scheduling notification and skips the 2h full-sync when a sleep-only sync was just done; `scheduleSleepNotification` + `maybeSendSleepNotificationFromForeground` both accept optional session for enriched body
+- `src/utils/ringData/sleep.ts` — Extracted `extractWakeTime(rawRecords)` as a shared export (was private to BackgroundSleepTask); added `MIN_NIGHT_DURATION_MS` + `MIN_WAKE_HOUR` module constants
+- `src/utils/time.ts` — Added `formatDurationHm(totalMin)` utility ("Xh Ym" format); reused in BackgroundSleepTask
+- `src/services/NotificationService.ts` — Calls `initMorningSleepReconnectTrigger()` at app startup alongside bg task registration
+
+**Key notes:**
+- `syncSleepOnly()` calls `updateDailySummary()` which reads all Supabase columns (HR/steps/etc.) in parallel — safe because it reads from Supabase (not ring), and already-stored data for other metrics won't be zeroed out
+- The `@focus_sleep_synced_for_<date>` and `@focus_sleep_notif_scheduled_v2` keys are intentionally separate — sync dedupe is per-day; notification dedupe is per-day via `.toDateString()`. Both BackgroundSleepTask and MorningSleepReconnectTrigger share the sync dedupe key via the exported `sleepSyncedKey()` helper
+- MorningSleepReconnectTrigger debounces 30s to let the BLE stack settle after reconnect before issuing BLE reads
+- Double ring fetch eliminated: trigger no longer pre-fetches raw records to check wake time — it delegates entirely to `syncSleepOnly()` and checks `latestSession` on the result
+
+---
+
+## 2026-04-15: Detail Pages — Chip Above Title, Bigger Number, Borderless Insight Block
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Visual polish across all three detail pages (Sleep, Heart Rate, Recovery). The quality chip (e.g. "Excellent", "Fair") now appears **above** the main number when expanded, then transitions to the right of the collapsed header on scroll — same animation as before but repositioned in the layout. The main score number grew from 72 → 88px. The insight text block at the bottom lost its border/padding box and became plain flowing text with bigger font (16px / 24 lineHeight), flush with the card margins.
+
+**Files modified:**
+- `app/detail/sleep-detail.tsx` — Moved `badgeRow` above `headlineRow` in JSX; updated `numberAnimStyle` [72→88, 28], `labelAnimStyle` translateY [24→32, 0], `headlineHeightStyle` [100→120, 44]; `badgeRow` margin changed from `marginTop` to `marginBottom: 4`; `insightBlock` border/padding removed, `marginHorizontal` lg→md; `insightText` fontSize sm→16, lineHeight 22→24
+- `app/detail/heart-rate-detail.tsx` — Same chip repositioning, animation, and insight block changes as sleep-detail
+- `app/detail/recovery-detail.tsx` — Same chip repositioning, animation, and insight block changes as sleep-detail
+
+**Key notes:**
+- Chip element order in JSX: badge (fades out on scroll) is now first child of `headlineLeft`, above the number row — achieves the "chip above title" expanded layout without any absolute positioning
+- The right-side chip (`chipSlideStyle`) is unchanged — it still slides up from below on scroll for the collapsed header state
+- `headlineHeightStyle` expanded height bumped to 120 (was 100) to accommodate chip + larger number fitting within the animated container
+
+---
+
+## 2026-04-15: Recovery Detail — Explainer Sheet Overhaul (Charts, No Handle, Monochrome Rule)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Three improvements to the Recovery Detail explainer bottom sheet: (1) removed the handle pill that was rendering above the sheet title, (2) added 14-day monochrome bar charts with dashed personal-baseline lines for HRV, Sleep Score, and Resting HR inside the sheet, (3) moved the explainer ⓘ trigger to the main "Recovery" page header (right side) and wired the Score Breakdown ⓘ to `MetricExplainerContext` instead. Also documented the no-color rule for explainer sheets in `design-system.md` and `CLAUDE.md`.
+
+**Files modified:**
+- `app/detail/recovery-detail.tsx` — Removed handle pill (`<View style={eStyles.handle} />`) and its style; added `MiniBarChart` SVG component (monochrome bars, opacity fade oldest→newest, dashed `rgba(255,255,255,0.45)` baseline line); updated `ScoreExplainerSheetContent` to accept `sleepData`, `hrData`, `hrvData` Maps and render a chart + caption after each `ExplainerComponent`; hoisted `CHART_DAYS` (14-day key array, oldest→newest) to module level; moved explainer ⓘ to `DetailPageHeader` `rightElement`; Score Breakdown ⓘ now uses `<InfoButton metricKey="score_breakdown" />`; added `sheetBackground` style; added `paddingTop` to sheet content
+- `design-system.md` — Added "Bottom Sheet / Explainer Sheet Color Rule" section: monochrome-only inside explainer/formula sheets, no accent colors
+- `CLAUDE.md` — Added no-color rule to Design Conventions section referencing `design-system.md`
+
+**Key notes:**
+- `MiniBarChart` uses `useWindowDimensions()` so chart fills the sheet width minus padding (`screenWidth - spacing.lg * 2`)
+- `invertY` prop on RHR chart: bars fill from top (high RHR = tall bar) since high HR is worse — visual direction matches the "lower is better" mental model
+- Charts only render when the history array has at least one non-zero value (guard: `values.some(v => v > 0)`)
+- `CHART_DAYS` is derived once at module init from the same `DAY_ENTRIES` constant used for the trend chart
+- Handle pill was `handleComponent={null}` on the `BottomSheetModal` but a manual pill `<View>` was still rendered in JSX — now fully gone
+
+## 2026-04-15: Recovery Detail — Score Explainer BottomSheet with ⓘ Trigger
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced the always-visible "How this score was calculated" card at the bottom of the Recovery Detail screen with a `BottomSheetModal` triggered by a new ⓘ info icon in the Score Breakdown header. Sheet opens with haptic feedback, shows each component at large scale (weight in 28px, pts earned/available, formula), and uses the baseline-relative ReadinessService formula (HRV 35% / Sleep 25% / RHR 20% / Load 20%).
+
+**Files modified:**
+- `app/detail/recovery-detail.tsx` — Full redesign: removed `ScoreExplainerCard` static render; added `ExplainerComponent` + `ScoreExplainerSheetContent` for the sheet; wired `BottomSheetModal` ref + `openExplainer` callback with `Haptics.impactAsync(Light)`; added ⓘ `TouchableOpacity` button in Score Breakdown title row; upgraded all `eStyles` to larger font sizes (title 22px, subtitle 15px, weight value 28px `fontSize.xxl`, pts earned 20px `fontSize.xl`); shows `earnedPts / maxPts` per component and `totalScore / totalAvail` at bottom
+
+**Key notes:**
+- Sheet uses `enableDynamicSizing` + `maxDynamicContentSize={680}` — no fixed snap points
+- `totalAvail` is 80 when Training Load absent (35+25+20), 100 when present
+- `componentPts` outer Text wrapper style removed — dead code in RN (nested Text fontSizes always override parent)
+- Memory rule saved: always make UI text/elements bigger by default — titles ≥18px, key values ≥28px, labels ≥14px
+
+---
+
+## 2026-04-15: Score Breakdown — InfoButton SVG + title style upgrade
+
+**Source:** Claude Code — Macbook Pro
+
+- **Info icon**: Replaced the Unicode `ⓘ` character in the Score Breakdown header with the proper SVG info icon (same circle + dot + stem as `InfoButton`). Tapping it opens the `ScoreExplainerSheetContent` bottom sheet already wired in the screen.
+- **Title style**: Both "Score Breakdown" and "Strain Accumulation" section titles changed from `fontSize.md / fontFamily.demiBold` to `fontSize.lg / fontFamily.regular` — bigger, not semi-bold.
+- **MetricKey `score_breakdown`** added to `metricExplanations.ts` with explanation covering HRV 35% / Sleep 25% / RHR 20% / Training Load 20% weights, baseline-relative scoring, and HRV population context. Added i18n strings to `en.json` and `es.json`.
+
+**Files modified:** `app/detail/recovery-detail.tsx`, `src/data/metricExplanations.ts`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+## 2026-04-15: Fix readiness score mismatch + contribution bar raw values
+
+**Source:** Claude Code — Macbook Pro
+
+Two bugs fixed after centralizing metrics:
+
+**Bug 1 — Readiness score mismatch (overview 92 vs Recovery Detail 70):**
+`homeData.readiness` (computed in `useHomeData.ts`) used the old flat formula (`sleep×0.50 + rhr×0.30 + strain×0.20` with a fixed `(90-rhr)/50` scorer) — consistently giving ~92. Recovery Detail now uses `focusData.readiness` (baseline-relative ReadinessService formula) — giving 70. Both numbers were simultaneously visible on screen.
+
+Fix: `OverviewTab.tsx` now reads `focusData.readiness?.score ?? homeData.readiness` (falls back to homeData only while FocusDataContext is still loading).
+
+**Bug 2 — Contribution bars showed component scores as raw values:**
+The Score Breakdown bars for HRV and Resting HR were showing `readiness.hrvScore` / `readiness.restingHRScore` (0-100 component scores) as the value text. Since HRV SDNN was 38ms and the component score happened to also be ~38 (coincidence from baseline formula), it looked like the bar was showing "38ms as 38% of 100ms". Same confusion for Resting HR.
+
+Fix: bars now show raw metric in the label (`38 ms`, `57 bpm`) while `pct` still reflects the component score (baseline-relative fill). Sleep bar unchanged (score is already the natural unit).
+
+**Files modified:**
+- `src/screens/home/OverviewTab.tsx` — import `useFocusDataContext`, use `focusData.readiness?.score` for readiness metric
+- `app/detail/recovery-detail.tsx` — ContributionBars: HRV shows `hrv.raw ms`, Resting HR shows `restingHR bpm`
+
+---
+
+## 2026-04-15: Centralized Metrics — Unified `DayMetrics` / `useDayMetrics` (ReadinessService as app-wide single source of truth)
+
+**Branch:** `feat/ring-sync-ux-followup`
+
+**Source:** Claude Code — Macbook Pro
+
+### What changed
+
+Eliminated three independent readiness implementations. The Coach tab's `ReadinessService` (baseline-relative formula) is now the single source of truth for every screen.
+
+**New types** (`src/types/focus.types.ts`):
+- `DayMetricValue` — raw reading + 0-100 score + baseline median + deviation label
+- `DayMetrics` — unified per-day record (readiness, HRV, RHR, sleep, resp rate, etc.)
+
+**New service function** (`src/services/ReadinessService.ts`):
+- `buildDayMetrics()` — pure, testable; reuses existing `scoreHRVComponent` / `scoreSleepComponent` / `scoreRestingHRComponent` scorers; computes deviation labels (e.g. "+3 bpm vs norm") consistently
+
+**New hook** (`src/hooks/useDayMetrics.ts`):
+- `useDayMetrics({ sleepData, hrData, hrvData, todayKey })` — returns `resolve(dateKey) → DayMetrics | null`
+- Today: raw values from `homeData` (ring BLE), ReadinessScore from `FocusDataContext` (includes training load, matches Coach tab exactly)
+- Past days: raw values from Supabase via `useMetricHistory` maps, ReadinessScore computed synchronously without training load
+
+**Recovery Detail refactored** (`app/detail/recovery-detail.tsx`):
+- Deleted local `computeReadiness` (flat formula with fixed thresholds)
+- Deleted all fallback construction (`todaySleepFallback`, `todayHRFallback`, `getActivity`, `getSleep` calls)
+- Added `toDisplayReadiness(m: DayMetrics | null): DayReadiness` mapper
+- `allScores` trend chart now resolves from `useDayMetrics` for all 30 days
+- `ScoreExplainerCard` now takes `dayMetrics: DayMetrics | null` instead of `steps`/`sleepMinutes`; shows baseline-relative formula note, conditional Training Load row when Strava data is present
+- Contribution bars: HRV 35% + Sleep Quality 25% + Resting HR 20% (aligned to ReadinessService weights)
+
+**MetricsGrid generalized** (`src/components/detail/MetricsGrid.tsx`):
+- `metrics` prop changed from fixed 4-tuple `[MetricCell, MetricCell, MetricCell, MetricCell]` to `MetricCell[]`; rows rendered dynamically (pairs of 2)
+
+**Supporting changes**:
+- `src/hooks/useMetricHistory.ts`: added `respiratoryRate` to `DaySleepData`, populated from `detail_json`
+- `src/services/DataSyncService.ts`: destructures `respiratoryRate` from `extractSleepVitalsFromRaw`, saves it in `detail_json`
+
+### Result
+
+Coach tab readiness score and Recovery Detail readiness score now use the same formula. RHR is baseline-relative everywhere. Respiratory rate shows actual ring data or `--` honestly (X3 ring does not reliably report it in sleep payload).
+
+---
+
+## 2026-04-15: Sync Speed — Defer Respiratory Rate + Single-First HR
+
+**Branch:** `feat/ring-sync-ux-followup`
+
+**Source:** Claude Code — Macbook Pro
+
+Two critical-path native calls moved off the main sync, targeting ~4s total savings:
+
+1. **Respiratory rate deferred** (`getRespiratoryRateNightly`): was 3.6s blocking. Now fires as fire-and-forget after `setData`, patches `lastNightSleep.respiratoryRate` + re-saves cache on resolve. Cached previous value preserved in `newData.lastNightSleep` (via `prev.lastNightSleep?.respiratoryRate`).
+
+2. **Single HR is now the primary HR source**: `getSingleHeartRateRaw` called first; `getContinuousHeartRateRaw` skipped entirely when single HR has records (which it always does on this device). One native call removed from the 6s HR stage, saving ~300-500ms.
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+---
+
+## 2026-04-15: Recovery Detail — Score Explainer Card + "Activity Load" → "Recovery" Rename
+
+**Branch:** `feat/ring-sync-ux-followup`
+
+**Source:** Claude Code — Macbook Pro
+
+### What changed
+Added a "How this score was calculated" card at the bottom of the Recovery Detail screen that shows the exact formula, each component's raw input, derived subscore, weight, and contribution points — totalling to the headline readiness number. Also renamed the "Activity Load" Score Breakdown bar to "Recovery" (its inverse-steps meaning is now self-explanatory in context).
+
+### Key finding
+The readiness formula on this screen is **fixed-threshold** (not baseline-driven): Sleep 50% (ring score), Resting HR 30% (anchored 40–90 bpm), Recovery 20% (inverse of steps vs 10k target). It differs from `ReadinessService.computeReadiness` which uses 14-day dynamic baselines — documented as known gap for future unification.
+
+### Changes
+
+**`app/detail/recovery-detail.tsx`**
+- Added `ExplainerRow` inline component: label + weight chip + raw-input text + mini progress bar + optional italic formula note + contribution pts
+- Added `ScoreExplainerCard` inline component: uses `sStyles.card` shell (matches StrainAccumulationCard), renders three `ExplainerRow`s (Sleep/RHR/Recovery) + weighted-total row + two footnotes clarifying the Strain Accumulation separation and fixed-threshold nature
+- Added `eStyles` StyleSheet for explainer-specific styles
+- Renamed `ContributionBar label="Activity Load"` → `label="Recovery"` in the Score Breakdown section
+- `ScoreExplainerCard` is placed after the insight block, passes `readiness`, `steps` (from `getActivity`), and `sleepMinutes` (from `getSleep`) from existing in-scope data — no new hooks or fetches
+
+**Key notes:**
+- Math shown matches the headline exactly: `sleepScore × 0.5 + restingHRScore × 0.3 + strainScore × 0.2 = readiness.score`
+- Contribution values rounded to 1 decimal (e.g. `45.0 pts`) via `Math.round(x * 10) / 10`
+- Card renders for all days (today and past) — uses same `getActivity/getSleep` Map lookups as the rest of the screen
+- `StrainAccumulationCard` footnote clarifies it's a separate 7-day Strava EWMA, not an input to the readiness score
+
+---
+
+## 2026-04-15: Recovery Detail — Respiratory Rate Restored + MetricsGrid Flexible
+
+**Branch:** `feat/ring-sync-ux-followup`
+
+**Source:** Claude Code — Macbook Pro
+
+### What changed
+Respiratory rate was previously removed from the Recovery Detail MetricsGrid because it was showing `--` for today. The coach app (StyledHealthScreen) shows it regardless, so it was added back.
+
+### Changes
+
+**`src/components/detail/MetricsGrid.tsx`**
+- Changed `metrics` prop type from fixed 4-tuple to `MetricCell[]`
+- Renders rows of 2 dynamically, so any even/odd number of metrics works
+
+**`src/hooks/useMetricHistory.ts`**
+- Added `respiratoryRate: number` to `DaySleepData` interface
+- `fetchSleepHistory`: reads `row.detail_json?.respiratoryRate || 0`
+- `fetchSleepFromRing`: populates `respiratoryRate: 0` (ring fallback path)
+
+**`src/services/DataSyncService.ts`**
+- Now destructures `respiratoryRate` alongside `restingHR` from `extractSleepVitalsFromRaw`
+- Saves it into `detail_json` at sync time (persists for future reads)
+
+**`app/detail/recovery-detail.tsx`**
+- `todaySleepFallback`: added `respiratoryRate: homeData.lastNightSleep.respiratoryRate ?? 0`
+- MetricsGrid now shows 5 metrics: Readiness, Sleep Score, Resting HR, Resp Rate, Recommended
+- Resp Rate sourced from `getSleep(selectedDateKey)?.respiratoryRate` (shows `--` when unavailable)
+
+**EAS Update:** `dec7e1ae-7b87-4132-a6a7-c609039f8044` — iOS + Android, channel: production
+
+---
+
 ## 2026-04-15: Ring Sync UX Follow-up — Battery Deferral, Last Sync Labels, Sleep Empty Warning
 
 **Branch:** `feat/ring-sync-ux-followup`

@@ -1,10 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import {
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,7 +22,8 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import { InfoButton } from '../../src/components/common/InfoButton';
 
 const COLLAPSE_END = 80;
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
@@ -21,21 +31,27 @@ import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
-import type { DaySleepData, DayHRData, DayHRVData, DayActivityData, DayReadinessData } from '../../src/hooks/useMetricHistory';
+import type { DaySleepData, DayHRData, DayHRVData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
+import { useFocusDataContext } from '../../src/context/FocusDataContext';
+import { useDayMetrics } from '../../src/hooks/useDayMetrics';
+import type { DayMetrics } from '../../src/types/focus.types';
 import type { StrainDayBreakdown } from '../../src/hooks/useHomeData';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
 
 const DAY_ENTRIES = buildDayNavigatorLabels(30);
+// Oldest→newest date keys for the 14-day trend charts in the explainer sheet
+const CHART_DAYS = DAY_ENTRIES.slice(0, 14).map(d => d.dateKey).reverse();
 
-// ─── Readiness formula (mirrors useHomeData.ts) ────────────────────────────────
+// ─── Display type — flattened from DayMetrics for rendering ───────────────────
 
 interface DayReadiness {
   score: number;
-  sleepScore: number;
-  restingHRScore: number;
-  strainScore: number; // inverse of activity (used inside readiness formula only)
-  restingHR: number;
+  sleepScore: number;        // 0-100 component score (ReadinessService formula)
+  restingHRScore: number;    // 0-100 component score (baseline-relative)
+  hrvScore: number;          // 0-100 component score
+  restingHR: number;         // raw bpm (0 = unavailable)
+  respiratoryRate: number;   // raw /min (0 = unavailable)
   sleepLabel: string;
   hrLabel: string;
 }
@@ -48,49 +64,20 @@ function restingHRLabel(rhr: number): string {
   return rhr > 0 ? (rhr < 55 ? 'Excellent' : rhr < 65 ? 'Good' : rhr < 75 ? 'Fair' : 'Elevated') : '--';
 }
 
-function computeReadiness(
-  sleep: DaySleepData | undefined,
-  hr: DayHRData | undefined,
-  activity: DayActivityData | undefined,
-  _hrv: DayHRVData | undefined,
-): DayReadiness {
-  const sleepScore = sleep?.score ?? 0;
-  // Priority: ring overnight HR (overridden in getHR for today) → daily_summaries hr_min → sleep detail
-  const restingHR = hr?.restingHR || (activity?.hrMin ?? 0) || sleep?.restingHR || 0;
-
-  // Resting HR score: 90bpm = 0, 40bpm = 100
-  const restingHRScore = restingHR > 0
-    ? Math.max(0, Math.min(100, Math.round(((90 - restingHR) / 50) * 100)))
-    : 50;
-
-  // Steps-based activity load (inverse — high activity yesterday means less fresh today)
-  const steps = activity?.steps ?? 0;
-  const activityScore = Math.min(100, Math.round((steps / 10000) * 100));
-  const strainScore = Math.max(0, 100 - activityScore);
-
-  const score = sleepScore > 0 || restingHR > 0
-    ? Math.max(0, Math.min(100, Math.round(
-        sleepScore * 0.50 +
-        restingHRScore * 0.30 +
-        strainScore * 0.20
-      )))
-    : 0;
-
-  const sleepLabel = sleepQualityLabel(sleepScore);
-  const hrLabel = restingHRLabel(restingHR);
-
-  return { score, sleepScore, restingHRScore, strainScore, restingHR, sleepLabel, hrLabel };
-}
-
-function fromPersisted(d: DayReadinessData): DayReadiness {
-  const rhr = d.restingHR ?? 0;
+/** Map DayMetrics (single source of truth) → flat display type for this screen's render logic. */
+function toDisplayReadiness(m: DayMetrics | null): DayReadiness {
+  const rhr = m?.restingHR.raw ?? 0;
+  const sleepComp = m?.readiness?.components.sleep ?? 0;
+  const hrComp = m?.readiness?.components.restingHR ?? 0;
+  const hrvComp = m?.readiness?.components.hrv ?? 0;
   return {
-    score: d.score,
-    sleepScore: d.sleepScore,
-    restingHRScore: d.restingHRScore,
-    strainScore: d.strainScore,
+    score: m?.readiness?.score ?? 0,
+    sleepScore: Math.round(sleepComp ?? 0),
+    restingHRScore: Math.round(hrComp ?? 0),
+    hrvScore: Math.round(hrvComp ?? 0),
     restingHR: rhr,
-    sleepLabel: sleepQualityLabel(d.sleepScore),
+    respiratoryRate: m?.respiratoryRate.raw ?? 0,
+    sleepLabel: sleepQualityLabel(Math.round(sleepComp ?? 0)),
     hrLabel: restingHRLabel(rhr),
   };
 }
@@ -128,7 +115,7 @@ const cStyles = StyleSheet.create({
   contribLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontFamily: fontFamily.regular, width: 90 },
   contribBarWrap: { flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
   contribBarFill: { height: '100%', borderRadius: 3, backgroundColor: '#FFFFFF' },
-  contribValue: { color: '#FFFFFF', fontSize: 12, fontFamily: fontFamily.demiBold, width: 32, textAlign: 'right' },
+  contribValue: { color: '#FFFFFF', fontSize: 12, fontFamily: fontFamily.demiBold, minWidth: 52, textAlign: 'right', flexShrink: 0 },
 });
 
 // ─── Strain accumulation explainer ────────────────────────────────────────────
@@ -270,8 +257,8 @@ const sStyles = StyleSheet.create({
   },
   title: {
     color: '#FFFFFF',
-    fontSize: fontSize.md,
-    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.lg,
+    fontFamily: fontFamily.regular,
   },
   subtitle: {
     color: 'rgba(255,255,255,0.45)',
@@ -395,13 +382,291 @@ const sStyles = StyleSheet.create({
   },
 });
 
+// ─── Score explainer bottom sheet ─────────────────────────────────────────────
+
+interface ExplainerComponentProps {
+  label: string;
+  weightLabel: string;   // e.g. "35%"
+  maxPts: number;        // e.g. 35
+  subscore: number;      // 0-100 component score
+  rawValue: string;      // e.g. "52 ms  ·  norm 49 ms"
+  formula?: string;
+}
+
+function ExplainerComponent({ label, weightLabel, maxPts, subscore, rawValue, formula }: ExplainerComponentProps) {
+  const earnedPts = Math.round(subscore * (maxPts / 100));
+  return (
+    <View style={eStyles.component}>
+      {/* Label row */}
+      <View style={eStyles.componentHeader}>
+        <Text style={eStyles.componentLabel}>{label}</Text>
+        <View style={eStyles.componentWeightRow}>
+          <Text style={eStyles.componentWeight}>{weightLabel}</Text>
+          <Text style={eStyles.componentWeightSuffix}> of total</Text>
+        </View>
+      </View>
+
+      {/* Raw value */}
+      <Text style={eStyles.componentRaw}>{rawValue}</Text>
+
+      {/* Progress bar */}
+      <View style={eStyles.componentBar}>
+        <View style={[eStyles.componentBarFill, { width: `${Math.max(2, Math.round(subscore))}%` }]} />
+      </View>
+
+      {/* Points row */}
+      <View style={eStyles.componentPtsRow}>
+        <Text>
+          <Text style={eStyles.componentPtsEarned}>{earnedPts}</Text>
+          <Text style={eStyles.componentPtsDivider}> / {maxPts} pts</Text>
+        </Text>
+        <Text style={eStyles.componentSubscore}>{subscore}/100</Text>
+      </View>
+
+      {formula && <Text style={eStyles.componentFormula}>{formula}</Text>}
+    </View>
+  );
+}
+
+// ─── Mini bar chart for explainer sheet (monochrome, 14-day, dashed baseline) ─────
+
+interface MiniBarChartProps {
+  /** Ordered oldest→newest, up to 14 entries */
+  values: number[];
+  /** Baseline median to draw as dashed line (0 = don't draw) */
+  baseline?: number;
+  /** Maximum value for the y-axis scale */
+  maxValue: number;
+  /** When true, lower values are better (e.g. resting HR) — bar fills from bottom,
+   *  and baseline line logic stays identical */
+  invertY?: boolean;
+}
+
+function MiniBarChart({ values, baseline, maxValue, invertY = false }: MiniBarChartProps) {
+  const { width: screenWidth } = useWindowDimensions();
+  const chartWidth = screenWidth - spacing.lg * 2; // matches sheet paddingHorizontal
+  const chartH = 48;
+  const barGap = 3;
+  const n = Math.min(values.length, 14);
+  const barW = Math.floor((chartWidth - barGap * (n - 1)) / n);
+
+  // Baseline y-position (0 at top, chartH at bottom)
+  const baselineY = baseline != null && baseline > 0
+    ? chartH - Math.round(Math.min(baseline, maxValue) / maxValue * chartH)
+    : null;
+
+  return (
+    <Svg width={chartWidth} height={chartH} style={mcStyles.chart}>
+      {values.slice(-n).map((v, i) => {
+        const clampedV = Math.min(v, maxValue);
+        const barH = Math.max(2, Math.round((clampedV / maxValue) * chartH));
+        const x = i * (barW + barGap);
+        const opacity = 0.3 + (i / Math.max(n - 1, 1)) * 0.7; // fade oldest → newest
+        const y = invertY ? 0 : chartH - barH;
+        return (
+          <Rect
+            key={i}
+            x={x}
+            y={y}
+            width={barW}
+            height={barH}
+            rx={2}
+            fill={`rgba(255,255,255,${opacity.toFixed(2)})`}
+          />
+        );
+      })}
+      {baselineY != null && (
+        <Line
+          x1={0}
+          y1={baselineY}
+          x2={chartWidth}
+          y2={baselineY}
+          stroke="rgba(255,255,255,0.45)"
+          strokeWidth={1}
+          strokeDasharray="4,3"
+        />
+      )}
+    </Svg>
+  );
+}
+
+const mcStyles = StyleSheet.create({
+  chart: { marginTop: spacing.md },
+  chartCaption: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 11,
+    fontFamily: fontFamily.regular,
+    fontStyle: 'italic',
+    marginTop: 5,
+    marginBottom: spacing.sm,
+  },
+});
+
+// ─── Score explainer bottom sheet ─────────────────────────────────────────────
+
+function ScoreExplainerSheetContent({
+  readiness,
+  dayMetrics,
+  sleepData,
+  hrData,
+  hrvData,
+}: {
+  readiness: DayReadiness;
+  dayMetrics: DayMetrics | null;
+  sleepData: Map<string, DaySleepData>;
+  hrData: Map<string, DayHRData>;
+  hrvData: Map<string, DayHRVData>;
+}) {
+  const components = dayMetrics?.readiness?.components;
+  const sleepMinutes = dayMetrics?.sleepMinutes.raw ?? 0;
+  const trainingLoad = components?.trainingLoad;
+
+  const hrvRaw = dayMetrics?.hrv.raw;
+  const hrvBaseline = dayMetrics?.hrv.baselineMedian;
+  const hrvDevLabel = dayMetrics?.hrv.deviationLabel;
+  const hrvRawStr = hrvRaw != null
+    ? `${Math.round(hrvRaw)} ms${hrvBaseline ? `  ·  norm ${Math.round(hrvBaseline)} ms` : ''}${hrvDevLabel ? `  (${hrvDevLabel})` : ''}`
+    : hrvBaseline ? `No data  ·  norm ${Math.round(hrvBaseline)} ms` : 'No data';
+
+  const rhrBaseline = dayMetrics?.restingHR.baselineMedian;
+  const rhrDevLabel = dayMetrics?.restingHR.deviationLabel;
+  const rhrRawStr = readiness.restingHR > 0
+    ? `${readiness.restingHR} bpm${rhrBaseline ? `  ·  norm ${Math.round(rhrBaseline)} bpm` : ''}${rhrDevLabel ? `  (${rhrDevLabel})` : ''}`
+    : rhrBaseline ? `No data  ·  norm ${Math.round(rhrBaseline)} bpm` : 'No data';
+
+  const sleepRawStr = sleepMinutes > 0
+    ? `Score ${readiness.sleepScore}/100  ·  ${(sleepMinutes / 60).toFixed(1)}h sleep`
+    : `Score ${readiness.sleepScore > 0 ? readiness.sleepScore : '--'}/100`;
+
+  const totalEarned = readiness.score;
+  const totalAvail = trainingLoad != null ? 100 : 80;
+
+  const hrvHistory = CHART_DAYS.map(k => Math.round(hrvData.get(k)?.sdnn ?? 0));
+  const sleepHistory = CHART_DAYS.map(k => Math.round(sleepData.get(k)?.score ?? 0));
+  const rhrHistory = CHART_DAYS.map(k => Math.round(hrData.get(k)?.restingHR ?? 0));
+
+  return (
+    <BottomSheetScrollView contentContainerStyle={eStyles.sheetContent} showsVerticalScrollIndicator={false}>
+      {/* Header */}
+      <Text style={eStyles.sheetTitle}>How this score was calculated</Text>
+      <Text style={eStyles.sheetSubtitle}>Baseline-relative · calibrated to your personal trends, not fixed population thresholds</Text>
+
+      <ExplainerComponent
+        label="HRV"
+        weightLabel="35%"
+        maxPts={35}
+        subscore={readiness.hrvScore}
+        rawValue={hrvRawStr}
+        formula="50 + (sdnn − baseline) / baseline × 75"
+      />
+      {hrvHistory.some(v => v > 0) && (
+        <>
+          <MiniBarChart values={hrvHistory} baseline={hrvBaseline ?? undefined} maxValue={120} />
+          <Text style={mcStyles.chartCaption}>14-day HRV trend · dashed line = your personal baseline</Text>
+        </>
+      )}
+
+      <ExplainerComponent
+        label="Sleep Quality"
+        weightLabel="25%"
+        maxPts={25}
+        subscore={readiness.sleepScore}
+        rawValue={sleepRawStr}
+      />
+      {sleepHistory.some(v => v > 0) && (
+        <>
+          <MiniBarChart values={sleepHistory} maxValue={100} />
+          <Text style={mcStyles.chartCaption}>14-day sleep score trend</Text>
+        </>
+      )}
+
+      <ExplainerComponent
+        label="Resting HR"
+        weightLabel="20%"
+        maxPts={20}
+        subscore={readiness.restingHRScore}
+        rawValue={rhrRawStr}
+        formula="50 − (hr − baseline) / baseline × 100  ·  lower than norm = higher score"
+      />
+      {rhrHistory.some(v => v > 0) && (
+        <>
+          <MiniBarChart values={rhrHistory} baseline={rhrBaseline ?? undefined} maxValue={120} invertY />
+          <Text style={mcStyles.chartCaption}>14-day resting HR trend · dashed line = your personal baseline</Text>
+        </>
+      )}
+
+      {trainingLoad != null && (
+        <ExplainerComponent
+          label="Training Load"
+          weightLabel="20%"
+          maxPts={20}
+          subscore={trainingLoad}
+          rawValue="7-day acute vs 28-day chronic ratio (Strava)"
+        />
+      )}
+
+      {/* Total */}
+      <View style={eStyles.totalBlock}>
+        <Text style={eStyles.totalCaption}>WEIGHTED TOTAL</Text>
+        <View style={eStyles.totalValueRow}>
+          <Text style={eStyles.totalScore}>{totalEarned}</Text>
+          <Text style={eStyles.totalAvail}> / {totalAvail} pts</Text>
+        </View>
+      </View>
+
+      {/* Footnote */}
+      <Text style={eStyles.sheetFootnote}>
+        Scores compare today's readings to your rolling 14-day personal median — the same metric you scored 80 yesterday might score 60 today if your baseline shifted. Strain Accumulation is a separate 7-day Strava EWMA; it informs context but isn't an input here.
+      </Text>
+    </BottomSheetScrollView>
+  );
+}
+
+const eStyles = StyleSheet.create({
+  // Sheet layout
+  sheetContent: { paddingHorizontal: spacing.lg, paddingBottom: 48, paddingTop: spacing.lg },
+  sheetTitle: { color: '#FFFFFF', fontSize: 22, fontFamily: fontFamily.demiBold, marginBottom: spacing.sm },
+  sheetSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontFamily: fontFamily.regular, lineHeight: 22, marginBottom: spacing.xl },
+
+  // Per-component tile
+  component: {
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  componentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  componentWeightRow: { flexDirection: 'row', alignItems: 'baseline' },
+  componentWeightSuffix: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: fontFamily.regular },
+  componentLabel: { color: 'rgba(255,255,255,0.45)', fontSize: fontSize.xxl, fontFamily: fontFamily.demiBold },
+  componentWeight: { color: '#FFFFFF', fontSize: fontSize.xxl, fontFamily: fontFamily.demiBold },
+  componentRaw: { color: 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: fontFamily.regular, marginBottom: spacing.md },
+  componentBar: { height: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden', marginBottom: spacing.sm },
+  componentBarFill: { height: '100%', borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.35)' },
+  componentPtsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  componentPtsEarned: { color: '#FFFFFF', fontSize: fontSize.xl, fontFamily: fontFamily.demiBold },
+  componentPtsDivider: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.md, fontFamily: fontFamily.regular },
+  componentSubscore: { color: 'rgba(255,255,255,0.35)', fontSize: 13, fontFamily: fontFamily.regular },
+  componentFormula: { color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: fontFamily.regular, fontStyle: 'italic', marginTop: spacing.sm, lineHeight: 18 },
+
+  // Total
+  totalBlock: { paddingTop: spacing.xl, paddingBottom: spacing.md },
+  totalCaption: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: fontFamily.regular, textTransform: 'uppercase', letterSpacing: 1, marginBottom: spacing.sm },
+  totalValueRow: { flexDirection: 'row', alignItems: 'baseline' },
+  totalScore: { color: '#FFFFFF', fontSize: fontSize.xxxl, fontFamily: fontFamily.demiBold },
+  totalAvail: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.xl, fontFamily: fontFamily.regular },
+
+  // Footnote
+  sheetFootnote: { color: 'rgba(255,255,255,0.3)', fontSize: 13, fontFamily: fontFamily.regular, lineHeight: 20, fontStyle: 'italic' },
+});
+
 // ─── Insight ───────────────────────────────────────────────────────────────────
 
 function recoveryInsight(r: DayReadiness): string {
   if (r.score === 0) return 'Sync your ring to see your readiness score.';
-  if (r.score >= 80) return `Readiness ${r.score} — your body is primed for performance. Sleep quality was ${r.sleepLabel.toLowerCase()} and resting HR of ${r.restingHR}bpm signals solid recovery. Great day to push hard.`;
+  const hrNote = r.restingHR > 0 ? ` Resting HR ${r.restingHR}bpm.` : '';
+  if (r.score >= 80) return `Readiness ${r.score} — your body is primed for performance. Sleep quality was ${r.sleepLabel.toLowerCase()}.${hrNote} Great day to push hard.`;
   if (r.score >= 60) return `Readiness ${r.score} — moderate recovery. Consider training at 70–80% intensity. Focus on quality sleep tonight to rebuild.`;
-  return `Readiness ${r.score} — your body is asking for rest. Resting HR (${r.restingHR > 0 ? `${r.restingHR}bpm` : 'unknown'}) and sleep score (${r.sleepScore || 'N/A'}) indicate limited recovery. Prioritize sleep and low-intensity movement today.`;
+  return `Readiness ${r.score} — your body is asking for rest.${hrNote} Sleep score (${r.sleepScore || 'N/A'}) indicates limited recovery. Prioritize sleep and low-intensity movement today.`;
 }
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
@@ -409,122 +674,60 @@ function recoveryInsight(r: DayReadiness): string {
 export default function RecoveryDetailScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const homeData = useHomeDataContext();
+  const explainerRef = useRef<BottomSheetModal>(null);
+
+  const openExplainer = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    explainerRef.current?.present();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.65} pressBehavior="close" />
+    ),
+    [],
+  );
+  useFocusDataContext(); // ensure FocusDataProvider is present and baselines are loaded
 
   // Progressive: 7 days instant, extend to 30 silently in background
   const { data: sleepData, isLoading: sleepLoading } = useMetricHistory<DaySleepData>('sleep', { initialDays: 7, fullDays: 30 });
   const { data: hrData, isLoading: hrLoading } = useMetricHistory<DayHRData>('heartRate', { initialDays: 7, fullDays: 30 });
   const { data: hrvData, isLoading: hrvLoading } = useMetricHistory<DayHRVData>('hrv', { initialDays: 7, fullDays: 30 });
-  const { data: activityData, isLoading: actLoading } = useMetricHistory<DayActivityData>('activity', { initialDays: 7, fullDays: 30 });
-  // Persisted readiness scores (server-computed nightly by compute_daily_readiness pg_cron)
-  const { data: readinessData, isLoading: readinessLoading } = useMetricHistory<DayReadinessData>('readiness', { initialDays: 7, fullDays: 30 });
 
-  const isLoading = sleepLoading || hrLoading || hrvLoading || actLoading || readinessLoading;
+  const isLoading = sleepLoading || hrLoading || hrvLoading;
 
   const todayKey = DAY_ENTRIES[0]?.dateKey;
 
-  // Build context-based today entries as fallback when Supabase is empty
-  const todaySleepFallback: DaySleepData | undefined = !sleepData.get(todayKey) && homeData.lastNightSleep?.score > 0
-    ? { date: todayKey, score: homeData.lastNightSleep.score, timeAsleep: homeData.lastNightSleep.timeAsleep,
-        timeAsleepMinutes: homeData.lastNightSleep.timeAsleepMinutes, bedTime: homeData.lastNightSleep.bedTime ?? null,
-        wakeTime: homeData.lastNightSleep.wakeTime ?? null, deepMin: 0, lightMin: 0, remMin: 0, awakeMin: 0,
-        segments: [], restingHR: homeData.lastNightSleep.restingHR ?? 0,
-        respiratoryRate: homeData.lastNightSleep.respiratoryRate ?? 0 }
-    : undefined;
+  // Single source of truth: all per-day metric resolution goes through this hook,
+  // which uses ReadinessService (baseline-relative formula) and matches the Coach tab.
+  const { resolve: resolveDay } = useDayMetrics({ sleepData, hrData, hrvData, todayKey });
 
-  const todayHRFallback: DayHRData | undefined = !hrData.get(todayKey)
-    ? (() => {
-        // Tier 1: from hrChartData
-        const pts = homeData.hrChartData.filter(p => p.heartRate > 0);
-        const vals = pts.map(p => p.heartRate);
-        if (vals.length > 0) {
-          return {
-            date: todayKey,
-            hourlyPoints: pts.map(p => ({ hour: Math.floor(p.timeMinutes / 60) % 24, heartRate: p.heartRate })),
-            restingHR: Math.min(...vals), peakHR: Math.max(...vals),
-            avgHR: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
-          };
-        }
-        // Tier 2: from ring's overnight restingHR in lastNightSleep
-        const sleepRHR = homeData.lastNightSleep?.restingHR;
-        if (sleepRHR && sleepRHR > 0) {
-          return { date: todayKey, hourlyPoints: [], restingHR: sleepRHR, peakHR: 0, avgHR: 0 };
-        }
-        return undefined;
-      })()
-    : undefined;
-
-  const todayActivityFallback: DayActivityData | undefined = !activityData.get(todayKey) && homeData.activity.steps > 0
-    ? { date: todayKey, steps: homeData.activity.steps, distanceM: homeData.activity.distance,
-        calories: homeData.activity.calories, sleepTotalMin: null, hrAvg: null, hrMin: null }
-    : undefined;
-
-  // Helper to get data for a day, using context fallback for today
-  const getSleep = (key: string) => sleepData.get(key) ?? (key === todayKey ? todaySleepFallback : undefined);
-  const getHR = (key: string) => {
-    const hr = hrData.get(key) ?? (key === todayKey ? todayHRFallback : undefined);
-    if (!hr) return undefined;
-    // For today, always prefer the ring's overnight restingHR over the
-    // daytime-minimum from heart_rate_readings (which can be 80-110bpm during activity).
-    if (key === todayKey) {
-      const overnightRHR = homeData.lastNightSleep?.restingHR;
-      if (overnightRHR && overnightRHR > 0) return { ...hr, restingHR: overnightRHR };
-    }
-    return hr;
-  };
-  const getActivity = (key: string) => activityData.get(key) ?? (key === todayKey ? todayActivityFallback : undefined);
-  const getHRV = (key: string) => hrvData.get(key);
-
-  // Trend chart scores: use persisted for past days, compute client-side for today.
-  // Today's persisted row is always stale (cron runs at midnight before ring sync).
+  // Trend chart: compute baseline-relative readiness for all 30 days.
   const allScores = useMemo(() =>
-    DAY_ENTRIES.map(d => {
-      if (d.dateKey !== todayKey) {
-        const persisted = readinessData.get(d.dateKey);
-        if (persisted) return { dateKey: d.dateKey, score: persisted.score };
-      }
-      return {
-        dateKey: d.dateKey,
-        score: computeReadiness(getSleep(d.dateKey), getHR(d.dateKey), getActivity(d.dateKey), getHRV(d.dateKey)).score,
-      };
-    }),
-    [sleepData, hrData, activityData, hrvData, homeData, readinessData]
+    DAY_ENTRIES.map(d => ({
+      dateKey: d.dateKey,
+      score: resolveDay(d.dateKey)?.readiness?.score ?? 0,
+    })),
+    // resolveDay identity is stable when its dependencies (baselines, homeData, sleepData, hrData, hrvData) change
+    [resolveDay]
   );
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
 
-  // Selected day detail: prefer server-persisted for past days only.
-  // Today's persisted row is always stale — the cron runs at midnight before the ring syncs,
-  // so it captures wrong data (no sleep score, daytime HR as "resting"). Always compute today
-  // client-side from the actual synced ring data.
-  const readiness = useMemo((): DayReadiness => {
-    const isToday = selectedDateKey === todayKey;
+  // Selected day: DayMetrics from the single source of truth
+  const dayMetrics: DayMetrics | null = useMemo(
+    () => resolveDay(selectedDateKey ?? ''),
+    [selectedDateKey, resolveDay]
+  );
 
-    if (!isToday) {
-      const persisted = readinessData.get(selectedDateKey ?? '');
-      if (persisted) {
-        const base = fromPersisted(persisted);
-        // Patch: cron may store null/bad restingHR if overnight HR wasn't synced yet.
-        // Try sources in priority order: heart_rate_readings → sleep_sessions.resting_hr
-        if (base.restingHR === 0 || base.restingHR > 90) {
-          const hrRHR = getHR(selectedDateKey ?? '')?.restingHR ?? 0;
-          const sleepRHR = getSleep(selectedDateKey ?? '')?.restingHR ?? 0;
-          const rhr = (hrRHR > 0 && hrRHR <= 90) ? hrRHR : (sleepRHR > 0 && sleepRHR <= 90 ? sleepRHR : 0);
-          if (rhr > 0) {
-            const patchedHRScore = Math.max(0, Math.min(100, Math.round(((90 - rhr) / 50) * 100)));
-            return { ...base, restingHR: rhr, restingHRScore: patchedHRScore };
-          }
-        }
-        return base;
-      }
-    }
+  // Flatten DayMetrics → display type for rendering
+  const readiness: DayReadiness = useMemo(
+    () => toDisplayReadiness(dayMetrics),
+    [dayMetrics]
+  );
 
-    return computeReadiness(
-      getSleep(selectedDateKey ?? ''),
-      getHR(selectedDateKey ?? ''),
-      getActivity(selectedDateKey ?? ''),
-      getHRV(selectedDateKey ?? ''),
-    );
-  }, [selectedDateKey, sleepData, hrData, activityData, hrvData, homeData, readinessData]);
+  // HRV sdnn for the additional stats row (taken directly from DayMetrics)
+  const selectedHrvSdnn = dayMetrics?.hrv.raw ?? null;
 
   const hasData = readiness.score > 0;
   const color = readinessColor(readiness.score);
@@ -533,17 +736,18 @@ export default function RecoveryDetailScreen() {
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
   const numberAnimStyle = useAnimatedStyle(() => ({
-    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
-    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
     color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [color, '#FFFFFF']),
   }));
   const labelAnimStyle = useAnimatedStyle(() => ({
     fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
     lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
-    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 0], Extrapolation.CLAMP) }],
   }));
   const badgeExpandedStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.4], [1, 0], Extrapolation.CLAMP),
+    height: interpolate(scrollY.value, [0, COLLAPSE_END * 0.5], [22, 0], Extrapolation.CLAMP),
+    overflow: 'hidden',
   }));
   const chipSlideStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
@@ -572,7 +776,19 @@ export default function RecoveryDetailScreen() {
           <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad2)" />
         </Svg>
 
-        <DetailPageHeader title="Recovery" marginBottom={spacing.md} />
+        <DetailPageHeader
+          title="Recovery"
+          marginBottom={spacing.md}
+          rightElement={
+            <TouchableOpacity onPress={openExplainer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Svg width={22} height={22} viewBox="0 0 20 20">
+                <Circle cx={10} cy={10} r={9} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} fill="none" />
+                <Circle cx={10} cy={6.5} r={1.2} fill="rgba(255,255,255,0.55)" />
+                <SvgText x={10} y={15.5} fontSize={8} fontWeight="700" fill="rgba(255,255,255,0.55)" textAnchor="middle">i</SvgText>
+              </Svg>
+            </TouchableOpacity>
+          }
+        />
 
         <TrendBarChart
           dayEntries={DAY_ENTRIES}
@@ -592,15 +808,17 @@ export default function RecoveryDetailScreen() {
               <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
                 {readiness.score}
               </Reanimated.Text>
-              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
-                Readiness Score
-              </Reanimated.Text>
-            </View>
-            <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
-              <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
-                <Text style={[styles.badgeText, { color }]}>{label}</Text>
+              <View style={styles.labelColumn}>
+                <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                  Readiness Score
+                </Reanimated.Text>
+                <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
+                  <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+                    <Text style={[styles.badgeText, { color }]}>{label}</Text>
+                  </View>
+                </Reanimated.View>
               </View>
-            </Reanimated.View>
+            </View>
           </View>
           <View style={styles.chipRight}>
             <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
@@ -621,12 +839,32 @@ export default function RecoveryDetailScreen() {
         ) : (
           <>
 
+            {/* Insight */}
+            <View style={styles.insightBlock}>
+              <Text style={styles.insightText}>{recoveryInsight(readiness)}</Text>
+            </View>
+
             {/* Score Breakdown */}
             <View style={styles.contribContainer}>
-              <Text style={styles.contribTitle}>Score Breakdown</Text>
-              <ContributionBar label="Sleep Quality" value={`${readiness.sleepScore || '--'}`} pct={readiness.sleepScore} />
-              <ContributionBar label="Resting HR" value={`${readiness.restingHRScore}`} pct={readiness.restingHRScore} />
-              <ContributionBar label="Activity Load" value={`${readiness.strainScore}`} pct={readiness.strainScore} />
+              <View style={styles.contribTitleRow}>
+                <Text style={styles.contribTitle}>Score Breakdown</Text>
+                <InfoButton metricKey="score_breakdown" />
+              </View>
+              <ContributionBar
+                label="HRV"
+                value={dayMetrics?.hrv.raw != null ? `${Math.round(dayMetrics.hrv.raw)} ms` : '--'}
+                pct={readiness.hrvScore}
+              />
+              <ContributionBar
+                label="Sleep"
+                value={readiness.sleepScore > 0 ? `${readiness.sleepScore}/100` : '--'}
+                pct={readiness.sleepScore}
+              />
+              <ContributionBar
+                label="Resting HR"
+                value={readiness.restingHR > 0 ? `${readiness.restingHR} bpm` : '--'}
+                pct={readiness.restingHRScore}
+              />
             </View>
 
             {/* Strain Accumulation (today only — shows live EWMA breakdown) */}
@@ -642,17 +880,17 @@ export default function RecoveryDetailScreen() {
               { label: 'Readiness', value: `${readiness.score}`, unit: '/100' },
               { label: 'Sleep Score', value: readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--', unit: readiness.sleepScore > 0 ? '/100' : undefined },
               { label: 'Resting HR', value: readiness.restingHR > 0 ? `${readiness.restingHR}` : '--', unit: readiness.restingHR > 0 ? 'bpm' : undefined },
-              { label: 'Resp Rate', value: (() => { const rr = getSleep(selectedDateKey ?? '')?.respiratoryRate ?? 0; return rr > 0 ? `${rr}` : '--'; })(), unit: (() => { const rr = getSleep(selectedDateKey ?? '')?.respiratoryRate ?? 0; return rr > 0 ? '/min' : undefined; })() },
+              { label: 'Resp Rate', value: readiness.respiratoryRate > 0 ? `${readiness.respiratoryRate}` : '--', unit: readiness.respiratoryRate > 0 ? '/min' : undefined },
               { label: 'Recommended', value: readiness.score >= 80 ? 'High Intensity' : readiness.score >= 60 ? 'Moderate' : 'Rest' },
             ]} />
 
             {/* Additional stats */}
-            {(getHRV(selectedDateKey ?? '') || (selectedIndex === 0 && homeData.strain > 0)) && (
+            {(selectedHrvSdnn != null || (selectedIndex === 0 && homeData.strain > 0)) && (
               <View style={styles.statsContainer}>
-                {getHRV(selectedDateKey ?? '') && (
+                {selectedHrvSdnn != null && (
                   <DetailStatRow
                     title="HRV (SDNN)"
-                    value={`${getHRV(selectedDateKey ?? '')?.sdnn ?? '--'}`}
+                    value={`${selectedHrvSdnn}`}
                     unit="ms"
                   />
                 )}
@@ -666,12 +904,27 @@ export default function RecoveryDetailScreen() {
               </View>
             )}
 
-            <View style={styles.insightBlock}>
-              <Text style={styles.insightText}>{recoveryInsight(readiness)}</Text>
-            </View>
           </>
         )}
       </Reanimated.ScrollView>
+
+      <BottomSheetModal
+        ref={explainerRef}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={styles.sheetBackground}
+        handleComponent={null}
+        maxDynamicContentSize={680}
+      >
+        <ScoreExplainerSheetContent
+          readiness={readiness}
+          dayMetrics={dayMetrics}
+          sleepData={sleepData}
+          hrData={hrData}
+          hrvData={hrvData}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -699,9 +952,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular },
+  labelColumn: { flexDirection: 'column', alignItems: 'flex-start' },
+  headlineScore: { fontSize: 88, fontFamily: fontFamily.regular },
   headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold },
-  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: spacing.xs },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: 4 },
   badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -714,15 +968,14 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
   chipText: { fontSize: 10, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
   contribContainer: { marginHorizontal: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 16, paddingVertical: spacing.sm, marginBottom: spacing.md },
-  contribTitle: { color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: fontFamily.regular, textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 8 },
+  contribTitleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: spacing.sm },
+  contribTitle: { flex: 1, color: '#FFFFFF', fontSize: fontSize.lg, fontFamily: fontFamily.regular },
+  sheetBackground: { backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   statsContainer: { marginHorizontal: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 16, overflow: 'hidden', marginBottom: spacing.md },
   insightBlock: {
-    marginHorizontal: spacing.lg,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
-    padding: spacing.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.3)',
+    paddingHorizontal: spacing.xs,
   },
-  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, lineHeight: 22 },
+  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: fontFamily.regular, lineHeight: 24 },
 });

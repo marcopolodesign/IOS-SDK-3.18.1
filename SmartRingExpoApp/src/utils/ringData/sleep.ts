@@ -229,6 +229,50 @@ export function getSleepStageColor(type: number): string {
   }
 }
 
+const MIN_NIGHT_DURATION_MS = 180 * 60 * 1000; // 3 hours
+const MIN_WAKE_HOUR = 7; // Don't treat wakes before 7 AM as a full night
+
+/**
+ * Extracts the latest wake time (end of night) from raw SDK sleep records.
+ * Only considers blocks ≥180 min that ended at or after 7 AM today.
+ * Returns null if no qualifying record is found.
+ */
+export function extractWakeTime(rawRecords: any[]): Date | null {
+  if (!rawRecords || rawRecords.length === 0) return null;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  // Look back to 6 PM yesterday to capture sleep that started the evening before
+  const windowStart = todayStart - 6 * 60 * 60 * 1000;
+
+  let latestEnd: number | null = null;
+
+  for (const record of rawRecords) {
+    const startMs = (() => {
+      const candidates = [record.startTimestamp, record.startTime]
+        .filter((v: any) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+      return candidates.length ? candidates[0] : undefined;
+    })();
+
+    if (typeof startMs !== 'number') continue;
+    if (startMs < windowStart) continue;
+
+    const qualityArray: number[] = record.arraySleepQuality || [];
+    const unitLength = Number(record.sleepUnitLength || 1);
+    const durationMin = Number(record.totalSleepTime) || qualityArray.length * unitLength;
+    const durationMs = durationMin * 60 * 1000;
+
+    if (durationMs < MIN_NIGHT_DURATION_MS) continue;
+
+    const endMs = startMs + durationMs;
+    if (new Date(endMs).getHours() < MIN_WAKE_HOUR) continue;
+
+    if (!latestEnd || endMs > latestEnd) latestEnd = endMs;
+  }
+
+  return latestEnd ? new Date(latestEnd) : null;
+}
+
 /**
  * Extracts resting HR and respiratory rate from raw SDK sleep records.
  * Recursively visits the payload looking for keys like restingHR, minHR,

@@ -745,6 +745,14 @@
     "sleep_debt_range_2": "2h – 5h → Moderada: prioriza el sueño",
     "sleep_debt_range_3": "> 5h → Alta: necesitas sueño de recuperación",
 
+    "score_breakdown_title": "Desglose de Puntuación",
+    "score_breakdown_subtitle": "Puntuaciones relativas a tu línea base personal",
+    "score_breakdown_body": "Cada barra muestra una puntuación de componente (0–100) calibrada con tu línea base personal de los últimos 14 días. Una puntuación de 50 significa que estás exactamente en tu norma — por encima de 50 es mejor de lo habitual, por debajo es menor.\n\nLa VFC tiene el mayor peso (35%) porque es la señal más sensible de recuperación autonómica. La calidad del sueño (25%) y la FC en reposo (20%) siguen. Cuando Strava está conectado, la carga de entrenamiento (20%) se añade y los pesos restantes se renormalizan.\n\n40ms de VFC no es malo por sí solo — lo que importa es si está por encima o por debajo de tu promedio personal.",
+    "score_breakdown_range_0": "VFC (35%) — SDNN nocturno en ms vs tu mediana de 14 días",
+    "score_breakdown_range_1": "Calidad de Sueño (25%) — puntuación + horas vs tu norma",
+    "score_breakdown_range_2": "FC en Reposo (20%) — FC nocturna vs tu promedio personal",
+    "score_breakdown_range_3": "Carga de Entrenamiento (20%) — ratio agudo 7 días vs crónico 28 días en Strava",
+
     "contributor_hrv_title": "Equilibrio de VFC",
     "contributor_hrv_subtitle": "Tendencia reciente de VFC vs. tu línea base",
     "contributor_hrv_body": "El equilibrio de VFC compara tu VFC reciente (3 días) con tu línea base a largo plazo. Un equilibrio positivo significa que tu VFC está por encima del promedio — señal de buena acumulación de recuperación. Un equilibrio negativo indica estrés reciente o sub-recuperación.",

@@ -317,22 +317,20 @@ export default function HeartRateDetailScreen() {
   });
 
   const numberAnimStyle = useAnimatedStyle(() => ({
-    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
-    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
     color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [color, '#FFFFFF']),
   }));
 
   const labelAnimStyle = useAnimatedStyle(() => ({
     fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
-    // lineHeight matches fontSize to eliminate default 1.2× leading gap at collapsed state
     lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
-    // translateY offsets label down when expanded so it appears baseline-aligned with the big
-    // number. Returns to 0 at collapse so both items center-align naturally in the row.
-    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 0], Extrapolation.CLAMP) }],
   }));
 
   const badgeExpandedStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.4], [1, 0], Extrapolation.CLAMP),
+    height: interpolate(scrollY.value, [0, COLLAPSE_END * 0.5], [22, 0], Extrapolation.CLAMP),
+    overflow: 'hidden',
   }));
 
   const chipSlideStyle = useAnimatedStyle(() => ({
@@ -384,15 +382,17 @@ export default function HeartRateDetailScreen() {
               <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
                 {dayData!.restingHR || '--'}
               </Reanimated.Text>
-              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
-                Resting BPM
-              </Reanimated.Text>
-            </View>
-            <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
-              <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
-                <Text style={[styles.badgeText, { color }]}>{label}</Text>
+              <View style={styles.labelColumn}>
+                <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                  Resting BPM
+                </Reanimated.Text>
+                <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
+                  <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+                    <Text style={[styles.badgeText, { color }]}>{label}</Text>
+                  </View>
+                </Reanimated.View>
               </View>
-            </Reanimated.View>
+            </View>
           </View>
           {/* Chip slides up from below on scroll (overflow hidden clips it) */}
           <View style={styles.chipRight}>
@@ -421,6 +421,11 @@ export default function HeartRateDetailScreen() {
           </View>
         ) : (
           <>
+            {/* Insight */}
+            <View style={styles.insightBlock}>
+              <Text style={styles.insightText}>{hrInsight(dayData)}</Text>
+            </View>
+
             {/* Line chart */}
             {dayData!.hourlyPoints.length >= 2 && (
               <View style={styles.chartContainer}>
@@ -445,11 +450,6 @@ export default function HeartRateDetailScreen() {
             {/* Live measurement */}
             <View style={styles.liveCardWrapper}>
               <LiveHeartRateCard />
-            </View>
-
-            {/* Insight */}
-            <View style={styles.insightBlock}>
-              <Text style={styles.insightText}>{hrInsight(dayData)}</Text>
             </View>
           </>
         )}
@@ -485,8 +485,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  labelColumn: { flexDirection: 'column', alignItems: 'flex-start' },
   headlineScore: {
-    fontSize: 72,
+    fontSize: 88,
     fontFamily: fontFamily.regular,
   },
   headlineLabel: {
@@ -494,7 +495,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: fontFamily.demiBold,
   },
-  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: spacing.xs },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: 4 },
   chipRight: {
     overflow: 'hidden',
   },
@@ -528,12 +529,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   insightBlock: {
-    marginHorizontal: spacing.lg,
+    marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
-    padding: spacing.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(171,13,13,0.4)',
+    paddingHorizontal: spacing.xs,
   },
-  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, lineHeight: 22 },
+  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: fontFamily.regular, lineHeight: 24 },
 });

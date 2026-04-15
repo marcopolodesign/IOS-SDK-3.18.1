@@ -173,6 +173,52 @@ class DataSyncService {
     }
   }
 
+  /**
+   * Sync only sleep data from the ring to Supabase, then update today's daily_summary
+   * sleep fields. Much lighter than syncAllData — only pulls sleep records + one
+   * Supabase read/write. Intended for use in the morning background fetch and BLE
+   * reconnect trigger so today's wake time lands in Supabase before the 9 AM cron.
+   *
+   * Returns the latest night session after writing (for notification enrichment).
+   */
+  async syncSleepOnly(): Promise<{
+    success: boolean;
+    latestSession?: { totalMin: number; sleepScore: number | null; wakeTime: Date } | null;
+    error?: string;
+  }> {
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
+    const connectionStatus = await UnifiedSmartRingService.isConnected();
+    if (!connectionStatus.connected) {
+      return { success: false, error: 'NOT_CONNECTED' };
+    }
+
+    try {
+      await this.syncSleepData(userId, UnifiedSmartRingService);
+      await this.updateDailySummary(userId, new Date());
+
+      // Fetch the just-written session for notification body enrichment
+      const since = new Date();
+      since.setDate(since.getDate() - 2);
+      const sessions = await supabaseService.getSleepSessions(userId, since, new Date());
+      const latest = sessions.find(s => s.session_type === 'night') ?? sessions[0] ?? null;
+      const latestSession = latest
+        ? {
+            totalMin: (latest.deep_min || 0) + (latest.light_min || 0) + (latest.rem_min || 0),
+            sleepScore: latest.sleep_score,
+            wakeTime: new Date(latest.end_time),
+          }
+        : null;
+
+      return { success: true, latestSession };
+    } catch (e: any) {
+      reportError(e, { op: 'syncSleepOnly' });
+      return { success: false, error: e?.message };
+    }
+  }
+
   // ============================================
   // INDIVIDUAL SYNC FUNCTIONS
   // ============================================

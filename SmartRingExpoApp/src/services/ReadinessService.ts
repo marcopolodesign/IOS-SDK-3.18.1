@@ -16,6 +16,8 @@ import type {
   IllnessStatus,
   LastRunContext,
   EffortVerdict,
+  DayMetrics,
+  DayMetricValue,
 } from '../types/focus.types';
 import type { SleepBaselineTier, SleepBaselineState } from '../types/sleepBaseline.types';
 
@@ -593,6 +595,83 @@ export async function computeLastRunContext(
   } catch {
     return null;
   }
+}
+
+// ─── Unified per-day metrics (app-wide single source of truth) ───────────────
+
+export interface BuildDayMetricsInput {
+  dateKey: string;
+  isToday: boolean;
+  raw: {
+    restingHR: number | null;
+    hrv: number | null;
+    sleepScore: number | null;
+    sleepMinutes: number | null;
+    respiratoryRate: number | null;
+    temperature: number | null;
+    spo2Min: number | null;
+  };
+  /** Pass a pre-computed ReadinessScore (e.g. from FocusDataContext for today — includes training load).
+   *  If null, components are scored synchronously without training load. */
+  readiness: ReadinessScore | null;
+  baselines: FocusBaselines;
+}
+
+/**
+ * Build a DayMetrics object synchronously from raw inputs + baselines.
+ * When `readiness` is provided (pre-computed for today via FocusDataContext), it is used as-is
+ * so that the training-load component is preserved. For past days, `readiness` is null and
+ * components are scored locally without training load.
+ */
+export function buildDayMetrics(input: BuildDayMetricsInput): DayMetrics {
+  const { dateKey, isToday, raw, baselines } = input;
+
+  // Compute ReadinessScore if not supplied
+  let readiness = input.readiness;
+  if (!readiness) {
+    const components: ReadinessComponents = {
+      hrv: scoreHRVComponent(raw.hrv, baselines.hrv),
+      sleep: scoreSleepComponent(raw.sleepScore, raw.sleepMinutes, baselines.sleepScore, baselines.sleepMinutes ?? []),
+      restingHR: scoreRestingHRComponent(raw.restingHR, baselines.restingHR),
+      trainingLoad: null,
+    };
+    const score = computeWeightedScore(components);
+    readiness = {
+      score,
+      recommendation: scoreToRecommendation(score),
+      components,
+      confidence: confidenceFromDays(baselines.daysLogged),
+      computedAt: new Date().toISOString(),
+    };
+  }
+
+  const makeMetric = (
+    rawVal: number | null,
+    scoreVal: number | null,
+    baselineArr: number[]
+  ): DayMetricValue => {
+    const med = median(baselineArr);
+    let deviationLabel: string | null = null;
+    if (rawVal != null && med != null) {
+      const diff = Math.round(rawVal - med);
+      deviationLabel = diff === 0 ? 'Within norm' : `${diff > 0 ? '+' : ''}${diff} vs norm`;
+    }
+    return { raw: rawVal, score: scoreVal, baselineMedian: med, deviationLabel };
+  };
+
+  return {
+    dateKey,
+    isToday,
+    source: isToday ? 'ring' : 'supabase',
+    readiness,
+    restingHR: makeMetric(raw.restingHR, readiness.components.restingHR, baselines.restingHR),
+    hrv: makeMetric(raw.hrv, readiness.components.hrv, baselines.hrv),
+    sleepScore: makeMetric(raw.sleepScore, readiness.components.sleep, baselines.sleepScore),
+    sleepMinutes: makeMetric(raw.sleepMinutes, null, baselines.sleepMinutes ?? []),
+    respiratoryRate: makeMetric(raw.respiratoryRate, null, baselines.respiratoryRate),
+    temperature: makeMetric(raw.temperature, null, baselines.temperature),
+    spo2Min: makeMetric(raw.spo2Min, null, baselines.spo2Min),
+  };
 }
 
 // ─── Sleep Baseline Tier ──────────────────────────────────────────────────────

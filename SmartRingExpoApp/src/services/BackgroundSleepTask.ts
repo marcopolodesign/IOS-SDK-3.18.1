@@ -16,13 +16,21 @@ import smartRingService from './UnifiedSmartRingService';
 import { reportError } from '../utils/sentry';
 import { supabase } from './SupabaseService';
 import dataSyncService from './DataSyncService';
+import { extractWakeTime } from '../utils/ringData/sleep';
+import { formatDurationHm } from '../utils/time';
 
 const TASK_NAME = 'BACKGROUND_SLEEP_CHECK';
 const SCHEDULED_KEY = '@focus_sleep_notif_scheduled_v2';
 const BG_SYNC_KEY = '@focus_bg_sync_last_at';
-const MIN_NIGHT_DURATION_MS = 180 * 60 * 1000; // 3 hours — minimum to count as a night
+/** Per-day dedupe key for sleep-only sync — format: @focus_sleep_synced_for_YYYY-MM-DD */
+const SLEEP_SYNCED_PREFIX = '@focus_sleep_synced_for_';
 const NOTIFICATION_DELAY_MS = 30 * 60 * 1000; // 30 minutes after wake
 const MIN_HOUR = 7; // Don't process wake times before 7 AM (fragmented sleep guard)
+
+/** Returns the AsyncStorage key for the sleep-sync dedupe flag for a given date string (YYYY-MM-DD). */
+export function sleepSyncedKey(dateStr: string): string {
+  return `${SLEEP_SYNCED_PREFIX}${dateStr}`;
+}
 
 /**
  * Log an event to the background_logs table in Supabase.
@@ -43,59 +51,15 @@ async function bgLog(event: string, details: Record<string, any> = {}): Promise<
 }
 
 /**
- * Extract the latest wake time from raw sleep records.
- * Only considers night-length blocks (≥180 min) that ended after 7 AM today.
- */
-function extractWakeTime(rawRecords: any[]): Date | null {
-  if (!rawRecords || rawRecords.length === 0) return null;
-
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  // Night sleep could start yesterday evening — look back to 6 PM yesterday
-  const windowStart = todayStart - 6 * 60 * 60 * 1000;
-
-  let latestEnd: number | null = null;
-
-  for (const record of rawRecords) {
-    // Extract start timestamp
-    const startMs = (() => {
-      const candidates = [
-        record.startTimestamp,
-        record.startTime,
-      ].filter((v: any) => typeof v === 'number' && Number.isFinite(v) && v > 0);
-      return candidates.length ? candidates[0] : undefined;
-    })();
-
-    if (typeof startMs !== 'number') continue;
-    if (startMs < windowStart) continue; // Too old
-
-    // Compute duration and end time
-    const qualityArray: number[] = record.arraySleepQuality || [];
-    const unitLength = Number(record.sleepUnitLength || 1);
-    const durationMinutes = Number(record.totalSleepTime) || (qualityArray.length * unitLength);
-    const durationMs = durationMinutes * 60 * 1000;
-
-    if (durationMs < MIN_NIGHT_DURATION_MS) continue; // Too short — nap, not night
-
-    const endMs = startMs + durationMs;
-    const endHour = new Date(endMs).getHours();
-
-    if (endHour < MIN_HOUR) continue; // Wake before 7 AM — likely fragmented, skip
-
-    if (!latestEnd || endMs > latestEnd) {
-      latestEnd = endMs;
-    }
-  }
-
-  return latestEnd ? new Date(latestEnd) : null;
-}
-
-/**
  * Schedule a local notification for wakeTime + 30 min.
  * Cancels any previously scheduled sleep notification first.
  * Skips if the fire time is already in the past.
+ * If session data is provided, the body includes real sleep numbers.
  */
-async function scheduleSleepNotification(wakeTime: Date): Promise<boolean> {
+async function scheduleSleepNotification(
+  wakeTime: Date,
+  session?: { totalMin: number; sleepScore: number | null } | null,
+): Promise<boolean> {
   const fireAt = new Date(wakeTime.getTime() + NOTIFICATION_DELAY_MS);
   const now = new Date();
 
@@ -113,10 +77,18 @@ async function scheduleSleepNotification(wakeTime: Date): Promise<boolean> {
 
   const secondsFromNow = Math.max(1, Math.round((fireAt.getTime() - now.getTime()) / 1000));
 
+  let body = "Last night's sleep has been analyzed. Tap to see your insights.";
+  if (session && session.totalMin > 0) {
+    const duration = formatDurationHm(session.totalMin);
+    body = session.sleepScore != null
+      ? `Slept ${duration} · Score ${session.sleepScore} · Tap for details`
+      : `Slept ${duration} · Tap for your sleep insights`;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Your Sleep Analysis is Ready 🌙',
-      body: "Last night's sleep has been analyzed. Tap to see your insights.",
+      body,
       sound: 'default' as any,
       data: { type: 'sleep_ready', url: 'smartring:///?tab=sleep' },
     },
@@ -145,6 +117,7 @@ TaskManager.defineTask(TASK_NAME, async () => {
 
     // Check if we already scheduled today
     const today = now.toDateString();
+    const todayDateStr = now.toISOString().split('T')[0];
     const lastScheduled = await AsyncStorage.getItem(SCHEDULED_KEY);
     if (lastScheduled === today) {
       await bgLog('skipped_already_scheduled');
@@ -185,33 +158,60 @@ TaskManager.defineTask(TASK_NAME, async () => {
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
-    // Schedule notification for wakeTime + 30 min
-    const didSchedule = await scheduleSleepNotification(wakeTime);
+    // Sleep-only Supabase sync — once per day, ahead of the 9 AM WhatsApp cron
+    const alreadySynced = await AsyncStorage.getItem(sleepSyncedKey(todayDateStr));
+    let sessionForNotif: { totalMin: number; sleepScore: number | null } | null = null;
+    let didSleepSync = false;
+
+    if (!alreadySynced) {
+      try {
+        const syncResult = await dataSyncService.syncSleepOnly();
+        if (syncResult.success) {
+          await AsyncStorage.setItem(sleepSyncedKey(todayDateStr), '1');
+          didSleepSync = true;
+          sessionForNotif = syncResult.latestSession ?? null;
+          await bgLog('sleep_only_sync_complete', {
+            totalMin: sessionForNotif?.totalMin,
+            score: sessionForNotif?.sleepScore,
+          });
+        } else {
+          await bgLog('sleep_only_sync_failed', { error: syncResult.error });
+        }
+      } catch (e: any) {
+        await bgLog('sleep_only_sync_error', { error: e?.message });
+      }
+    }
+
+    // Schedule notification for wakeTime + 30 min (enriched with real numbers if available)
+    const didSchedule = await scheduleSleepNotification(wakeTime, sessionForNotif);
 
     await bgLog(didSchedule ? 'notification_scheduled' : 'notification_skipped_past', {
       wakeTime: wakeTime.toISOString(),
       fireAt: new Date(wakeTime.getTime() + NOTIFICATION_DELAY_MS).toISOString(),
       recordCount: rawRecords.length,
+      enriched: !!sessionForNotif,
     });
 
     if (didSchedule) {
       await AsyncStorage.setItem(SCHEDULED_KEY, today);
     }
 
-    // Background full data sync — at most once every 2 hours
-    const lastBgSync = await AsyncStorage.getItem(BG_SYNC_KEY);
-    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-    if (!lastBgSync || Number(lastBgSync) < twoHoursAgo) {
-      try {
-        const syncResult = await dataSyncService.syncAllData();
-        await AsyncStorage.setItem(BG_SYNC_KEY, String(Date.now()));
-        await bgLog('bg_sync_complete', { success: syncResult.success, error: syncResult.error });
-      } catch (e: any) {
-        await bgLog('bg_sync_error', { error: e?.message });
+    // Background full data sync — at most once every 2 hours, skipped if we just did sleep-only
+    if (!didSleepSync) {
+      const lastBgSync = await AsyncStorage.getItem(BG_SYNC_KEY);
+      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+      if (!lastBgSync || Number(lastBgSync) < twoHoursAgo) {
+        try {
+          const syncResult = await dataSyncService.syncAllData();
+          await AsyncStorage.setItem(BG_SYNC_KEY, String(Date.now()));
+          await bgLog('bg_sync_complete', { success: syncResult.success, error: syncResult.error });
+        } catch (e: any) {
+          await bgLog('bg_sync_error', { error: e?.message });
+        }
       }
     }
 
-    return didSchedule
+    return didSchedule || didSleepSync
       ? BackgroundFetch.BackgroundFetchResult.NewData
       : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error: any) {
@@ -249,6 +249,7 @@ export async function registerBackgroundSleepTask(): Promise<void> {
  */
 export async function maybeSendSleepNotificationFromForeground(
   sleepEndTime: Date | undefined,
+  session?: { totalMin: number; sleepScore: number | null } | null,
 ): Promise<void> {
   if (Platform.OS !== 'ios') return;
   if (!sleepEndTime) return;
@@ -261,12 +262,13 @@ export async function maybeSendSleepNotificationFromForeground(
   // Same 7 AM guard
   if (sleepEndTime.getHours() < MIN_HOUR) return;
 
-  const didSchedule = await scheduleSleepNotification(sleepEndTime);
+  const didSchedule = await scheduleSleepNotification(sleepEndTime, session);
   if (didSchedule) {
     await AsyncStorage.setItem(SCHEDULED_KEY, today);
     await bgLog('notification_scheduled_foreground', {
       wakeTime: sleepEndTime.toISOString(),
       fireAt: new Date(sleepEndTime.getTime() + NOTIFICATION_DELAY_MS).toISOString(),
+      enriched: !!session,
     });
   }
 }

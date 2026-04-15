@@ -2,6 +2,7 @@ import { Platform, NativeModules, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './SupabaseService';
 import { registerBackgroundSleepTask } from './BackgroundSleepTask';
+import { initMorningSleepReconnectTrigger } from './MorningSleepReconnectTrigger';
 import { reportError } from '../utils/sentry';
 
 async function saveTokenToSupabase(token: string): Promise<boolean> {
@@ -60,6 +61,9 @@ async function setup(): Promise<void> {
     console.warn('[BackgroundSleep] Registration failed:', e);
     reportError(e, { op: 'notification.registerBackgroundTask' });
   });
+
+  // Subscribe to morning BLE reconnect → immediate sleep-only sync
+  initMorningSleepReconnectTrigger();
 
   const saved = await saveTokenToSupabase(token);
   if (saved) return;
