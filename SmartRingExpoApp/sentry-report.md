@@ -27,3 +27,17 @@
 - `gh` CLI not available — PR creation skipped.
 - The two JS `beforeSend` errors are already fixed in `main`; will ship with next TestFlight build.
 - V8Bridge fatal (7394530406) requires a native developer to audit bridge initialisation.
+
+## 2026-04-15
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7406743701 | TypeError: undefined is not a function (in `beforeSend`) | error | 2026-04-13T00:32:01Z | 2026-04-15T02:56:12Z | Needs manual review — publish latest build to App Store |
+| 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08T01:52:47Z | 2026-04-14T03:52:59Z | Needs manual review — V8Bridge off-limits per constraints |
+
+### 2026-04-15 Notes
+- 7 unresolved issues total; 2 seen within the last 24 h.
+- **7406743701** (`beforeSend` TypeError): The `beforeSend` hook is absent from the current codebase (`app/_layout.tsx`, local v1.0.21 build 22). The crash originates from the older App Store release `com.focusring.app@1.0.3+25`. **No code change needed — publish the latest build to the App Store to resolve.**
+- **7394530406** (V8Bridge Disconnect): Ongoing fatal. CoreBluetooth's `handlePeripheralDisconnectionCompleted:` path tries to call `Disconnect:` on a `V8Bridge` instance, which does not implement that selector. Stack frames are redacted. V8Bridge is off-limits per project constraints; requires native iOS engineer to find and remove the residual V8Bridge delegate registration.
+- `gh` CLI not available — PR creation skipped.
+- No auto-fixable issues found today.
