@@ -2,11 +2,20 @@ import React from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   Alert,
   StyleSheet,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
+
+const COLLAPSE_END = 80;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
@@ -57,6 +66,25 @@ export default function SleepDebtDetailScreen() {
 
   const catColor = CATEGORY_COLORS[sleepDebt.category];
 
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [56, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [56, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [catColor, '#FFFFFF']),
+  }));
+  const labelAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [11, 11], Extrapolation.CLAMP),
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.5], [1, 0], Extrapolation.CLAMP),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [90, 44], Extrapolation.CLAMP),
+  }));
+
   const handleEditTarget = () => {
     const options = TARGET_PRESETS.map((m) => `${m / 60}h`);
     Alert.alert(
@@ -81,10 +109,31 @@ export default function SleepDebtDetailScreen() {
         <Text style={styles.periodLabel}>{t('sleep_debt.period_label')}</Text>
       </View>
 
-      <ScrollView
+      {sleepDebt.isReady && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
+                {formatDebtTime(sleepDebt.totalDebtMin)}
+              </Reanimated.Text>
+              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                {t('sleep_debt.card_title').toUpperCase()}
+              </Reanimated.Text>
+            </View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${catColor}22`, borderColor: `${catColor}55` }]}>
+              <Text style={[styles.chipText, { color: catColor }]}>{t(`sleep_debt.category_${sleepDebt.category}`)}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
       >
         {!sleepDebt.isReady ? (
           <View style={styles.emptyContainer}>
@@ -92,20 +141,6 @@ export default function SleepDebtDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline */}
-            <View style={styles.headlineRow}>
-              <Text style={[styles.headlineScore, { color: catColor }]}>
-                {formatDebtTime(sleepDebt.totalDebtMin)}
-              </Text>
-              <View style={styles.headlineRight}>
-                <Text style={styles.headlineLabel}>{t('sleep_debt.card_title').toUpperCase()}</Text>
-                <View style={[styles.badge, { backgroundColor: `${catColor}22`, borderColor: `${catColor}55` }]}>
-                  <Text style={[styles.badgeText, { color: catColor }]}>
-                    {t(`sleep_debt.category_${sleepDebt.category}`)}
-                  </Text>
-                </View>
-              </View>
-            </View>
 
             {/* Gauge */}
             <View style={styles.gaugeWrapper}>

@@ -2,11 +2,20 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
+
+const COLLAPSE_END = 80;
 import Svg, { Line, Path, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
@@ -137,6 +146,21 @@ export default function TemperatureDetailScreen() {
     : dayData.avg < NORMAL_LOW ? 'Low'
     : 'Normal';
 
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [44, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [44, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [statusColor, '#FFFFFF']),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [80, 44], Extrapolation.CLAMP),
+  }));
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <DetailPageHeader title="Body Temperature" useSafeArea={false} />
@@ -147,7 +171,25 @@ export default function TemperatureDetailScreen() {
         onSelectDay={setSelectedIndex}
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {!isLoading && dayData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineValue, numberAnimStyle]}>
+                {dayData.current > 0 ? `${dayData.current.toFixed(1)}` : '--'}
+              </Reanimated.Text>
+              <Text style={styles.headlineUnit}>°C CURRENT</Text>
+            </View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${statusColor}22`, borderColor: `${statusColor}55` }]}>
+              <Text style={[styles.chipText, { color: statusColor }]}>{statusLabel}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={scrollHandler}>
         {isLoading ? (
           <View style={styles.centered}><ActivityIndicator color="rgba(255,255,255,0.6)" /></View>
         ) : !dayData ? (
@@ -156,24 +198,6 @@ export default function TemperatureDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline */}
-            <View style={styles.headlineRow}>
-              <View style={styles.headlineStat}>
-                <Text style={[styles.headlineValue, { color: statusColor }]}>
-                  {dayData.current > 0 ? `${dayData.current.toFixed(1)}` : '--'}
-                </Text>
-                <Text style={styles.headlineUnit}>°C CURRENT</Text>
-              </View>
-              <View style={styles.headlineDivider} />
-              <View style={styles.headlineStat}>
-                <Text style={[styles.headlineValue, { color: statusColor, fontSize: 32 }]}>{statusLabel}</Text>
-                {deviation !== null && (
-                  <Text style={[styles.headlineUnit, { color: Math.abs(deviation) > 0.3 ? statusColor : 'rgba(255,255,255,0.4)' }]}>
-                    {deviation > 0 ? '+' : ''}{deviation}° from baseline
-                  </Text>
-                )}
-              </View>
-            </View>
 
             {/* Chart */}
             <DetailChartContainer

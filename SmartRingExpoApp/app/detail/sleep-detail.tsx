@@ -2,11 +2,20 @@ import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+
+const COLLAPSE_END = 80;
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
@@ -215,6 +224,30 @@ export default function SleepDetailScreen() {
     : null;
 
   const scoreColor = sleepScoreColor(dayData?.score ?? 0);
+  const qualityLabel = !dayData ? '' : dayData.score >= 80 ? 'Excellent' : dayData.score >= 60 ? 'Fair' : 'Poor';
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [scoreColor, '#FFFFFF']),
+  }));
+  const labelAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 0], Extrapolation.CLAMP) }],
+  }));
+  const badgeExpandedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.4], [1, 0], Extrapolation.CLAMP),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [100, 44], Extrapolation.CLAMP),
+  }));
 
   return (
     <View style={styles.container}>
@@ -255,10 +288,36 @@ export default function SleepDetailScreen() {
         />
       </View>
 
-      <ScrollView
+      {!isLoading && dayData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
+                {dayData.score}
+              </Reanimated.Text>
+              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                Sleep Score
+              </Reanimated.Text>
+            </View>
+            <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
+              <View style={[styles.badge, { backgroundColor: `${scoreColor}22`, borderColor: `${scoreColor}55` }]}>
+                <Text style={[styles.badgeText, { color: scoreColor }]}>{qualityLabel}</Text>
+              </View>
+            </Reanimated.View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${scoreColor}22`, borderColor: `${scoreColor}55` }]}>
+              <Text style={[styles.chipText, { color: scoreColor }]}>{qualityLabel}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
       >
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -272,20 +331,6 @@ export default function SleepDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline score */}
-            <View style={styles.headlineOuter}>
-              <View style={styles.headlineRow}>
-                <Text style={[styles.headlineScore, { color: scoreColor }]}>{dayData.score}</Text>
-                <Text style={styles.headlineLabel}>Sleep Score</Text>
-              </View>
-              <View style={styles.badgeRow}>
-                <View style={[styles.badge, { backgroundColor: `${scoreColor}22`, borderColor: `${scoreColor}55` }]}>
-                  <Text style={[styles.badgeText, { color: scoreColor }]}>
-                    {dayData.score >= 80 ? 'Excellent' : dayData.score >= 60 ? 'Fair' : 'Poor'}
-                  </Text>
-                </View>
-              </View>
-            </View>
 
             {/* Hypnogram (unified with naps for today) */}
             {dayData.segments.length > 0 && dayData.bedTime && dayData.wakeTime && (() => {
@@ -342,7 +387,7 @@ export default function SleepDetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }
@@ -359,21 +404,23 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.sm },
   emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.md, fontFamily: fontFamily.demiBold },
   emptySubtext: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, textAlign: 'center', paddingHorizontal: spacing.xl },
-  headlineOuter: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
+  headlineSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    overflow: 'hidden',
   },
+  headlineLeft: { flexDirection: 'column', alignItems: 'flex-start' },
   headlineRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular, lineHeight: 0 },
-  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold, marginBottom: 12 },
-  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start' },
+  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular },
+  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: spacing.xs },
   badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -382,6 +429,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
+  chipRight: { overflow: 'hidden' },
+  chip: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
+  chipText: { fontSize: 10, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
   hypnogramWrapper: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,

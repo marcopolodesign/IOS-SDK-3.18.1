@@ -624,12 +624,50 @@ Auth: `Authorization: Bearer focus-notify-2026`
 
 **To test immediately (skip the cron):**
 ```bash
-# Use the /push skill or call the edge function directly:
 curl -X POST https://pxuemdkxdjuwxtupeqoa.supabase.co/functions/v1/daily-summary-push \
   -H "Authorization: Bearer focus-notify-2026" \
   -H "Content-Type: application/json" \
   -d '{"type": "morning"}'
 ```
+
+### WhatsApp Daily Check-In (Twilio + Claude AI)
+Edge function: `supabase/functions/whatsapp-checkin/index.ts`
+Accepts `{ "type": "morning" | "evening" | "night" }` — 3 messages per day.
+
+| Cron job | UTC | ART | Message type |
+|----------|-----|-----|-------------|
+| `whatsapp-morning` | 12:03 | 9:03 AM | Sleep recap + HRV + coaching tip |
+| `whatsapp-evening` | 23:03 | 8:03 PM | Activity recap (steps, HR, trends) |
+| `whatsapp-night` | 01:33 | 10:33 PM | Wind-down nudge + sleep deficit |
+
+Each message ends with a tappable link from `app_config.whatsapp_app_link`.
+
+**app_config keys:**
+- `whatsapp_recipient` — e.g. `whatsapp:+5491169742032`
+- `whatsapp_user_id` — (optional) override user_id; falls back to most recent daily_summaries user
+- `whatsapp_app_link` — tappable link appended to each message (e.g. App Store URL)
+
+**Required Supabase secrets (set once):**
+```bash
+npx supabase secrets set \
+  TWILIO_ACCOUNT_SID=ACxxxxxxxx \
+  TWILIO_AUTH_TOKEN=xxxxxxxx \
+  TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+```
+ANTHROPIC_API_KEY already set.
+
+**Twilio sandbox note:** Recipient must opt in by sending `join <keyword>` to the sandbox number. Session expires after 72h of inactivity — re-send to reactivate.
+
+**To test:**
+```bash
+# Test each type:
+curl -X POST https://pxuemdkxdjuwxtupeqoa.supabase.co/functions/v1/whatsapp-checkin \
+  -H "Authorization: Bearer focus-notify-2026" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"morning"}'   # or "evening" or "night"
+```
+
+**Scaling path:** Add `whatsapp_numbers` table (user_id, phone, opted_in) + Settings toggle, then update edge function to loop over opted-in users.
 
 ## Development Commands
 

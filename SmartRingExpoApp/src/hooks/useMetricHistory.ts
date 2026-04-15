@@ -25,7 +25,8 @@ export type MetricType =
   | 'hrv'
   | 'spo2'
   | 'temperature'
-  | 'activity';
+  | 'activity'
+  | 'readiness';
 
 export interface DaySleepData {
   date: string;
@@ -89,6 +90,15 @@ export interface DayActivityData {
   sleepTotalMin: number | null;
   hrAvg: number | null;
   hrMin: number | null;
+}
+
+export interface DayReadinessData {
+  date: string;
+  score: number;
+  sleepScore: number;
+  restingHRScore: number;
+  strainScore: number;
+  restingHR: number | null;
 }
 
 export type MetricDataMap = {
@@ -417,6 +427,34 @@ async function fetchActivityHistory(userId: string, days: number = 7): Promise<M
       sleepTotalMin: row.sleep_total_min,
       hrAvg: row.hr_avg,
       hrMin: row.hr_min,
+    });
+  }
+  return map;
+}
+
+// ─── Readiness history (from daily_summaries) ────────────────────────────────
+
+async function fetchReadinessHistory(userId: string, days: number = 30): Promise<Map<string, DayReadinessData>> {
+  const since = nDaysAgo(days);
+  const { data, error } = await supabase
+    .from('daily_summaries')
+    .select('date, readiness_score, readiness_sleep_score, readiness_hr_score, readiness_strain_score, readiness_resting_hr')
+    .eq('user_id', userId)
+    .gte('date', toDateStr(since))
+    .not('readiness_score', 'is', null)
+    .order('date', { ascending: false });
+
+  if (error || !data || data.length === 0) return new Map();
+
+  const map = new Map<string, DayReadinessData>();
+  for (const row of data) {
+    map.set(row.date, {
+      date: row.date,
+      score: row.readiness_score ?? 0,
+      sleepScore: row.readiness_sleep_score ?? 0,
+      restingHRScore: row.readiness_hr_score ?? 50,
+      strainScore: row.readiness_strain_score ?? 0,
+      restingHR: row.readiness_resting_hr ?? null,
     });
   }
   return map;
@@ -753,6 +791,9 @@ export function useMetricHistory<T>(
             if (!hasRealData) result = await fetchActivityFromRing();
             break;
           }
+          case 'readiness':
+            result = await fetchReadinessHistory(user.id, fullDays);
+            break;
           default:
             result = new Map();
         }

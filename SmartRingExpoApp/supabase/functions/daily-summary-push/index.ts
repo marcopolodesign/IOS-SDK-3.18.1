@@ -9,18 +9,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
  *
  * Body: { type: "morning" | "evening" | "wind-down" }
  *
- * morning  (12:00 UTC = 9 AM ART):
- *   Rich:    "You slept 7h 32m · Score: 85. Tap to see your full analysis."
- *   Fallback:"Your sleep summary is ready — view now."  (no Supabase data yet)
+ * morning  (12:00 UTC = 9 AM ART, fixed):
+ *   Rich:    "You slept 7h 32m · Score: 85."
+ *   Fallback:"Your sleep summary is ready — view now."
  *
- * evening  (23:00 UTC = 8 PM ART):
- *   "8,234 steps · avg HR 72 bpm. Tap to see your full day."
+ * evening  (23:00 UTC = 8 PM ART, fixed):
+ *   "8,234 steps · avg HR 72 bpm."
  *   Skipped if no activity data.
  *
- * wind-down (01:00 UTC = 10 PM ART):
+ * wind-down (every hour UTC — per-user delivery time):
+ *   Cron runs hourly. Each user's delivery hour is computed from their
+ *   7-day average wake time: wind_down_hour = avg_wake_utc - 8.5h.
+ *   Only users whose wind-down UTC hour matches the current UTC hour receive it.
  *   "Time to wind down 🌙 To wake at 6:45 AM rested, aim to be asleep by 10:45 PM."
- *   Based on most recent wake time from sleep_sessions.
- *   Skipped if no sleep history.
  */
 serve(async (req: Request) => {
   try {
@@ -58,13 +59,12 @@ serve(async (req: Request) => {
     }
 
     const now = new Date();
+    const currentUtcHour = now.getUTCHours();
     const todayUtc = now.toISOString().slice(0, 10);
-    // 24h lookback for sleep end_time — covers ART users whose sleep ends 2-6 AM UTC
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-    // 7-day lookback for wind-down wake-time baseline
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Bulk-fetch all data upfront to avoid N+1 queries
+    // Bulk-fetch all data upfront — no N+1 queries
     const [{ data: allSessions }, { data: allSummaries }, { data: allWindDownSessions }] = await Promise.all([
       type === 'morning'
         ? supabase
@@ -90,7 +90,7 @@ serve(async (req: Request) => {
         : Promise.resolve({ data: null }),
     ]);
 
-    // Index most-recent session per user (already ordered desc)
+    // Most-recent session per user for morning (already ordered desc)
     const sessionByUser: Record<string, { start_time: string; end_time: string; sleep_score: number | null }> = {};
     for (const s of allSessions ?? []) {
       if (!sessionByUser[s.user_id]) sessionByUser[s.user_id] = s;
@@ -101,10 +101,15 @@ serve(async (req: Request) => {
       summaryByUser[s.user_id] = s;
     }
 
-    // Most recent wake time per user (end_time of latest session)
-    const lastWakeByUser: Record<string, string> = {};
+    // 7-day average wake time per user (UTC minutes of day)
+    // Used to compute each user's personal wind-down delivery hour
+    const wakeUtcMinSumByUser: Record<string, { sum: number; count: number }> = {};
     for (const s of allWindDownSessions ?? []) {
-      if (!lastWakeByUser[s.user_id]) lastWakeByUser[s.user_id] = s.end_time;
+      const d = new Date(s.end_time);
+      const utcMin = d.getUTCHours() * 60 + d.getUTCMinutes();
+      if (!wakeUtcMinSumByUser[s.user_id]) wakeUtcMinSumByUser[s.user_id] = { sum: 0, count: 0 };
+      wakeUtcMinSumByUser[s.user_id].sum += utcMin;
+      wakeUtcMinSumByUser[s.user_id].count += 1;
     }
 
     const messages: object[] = [];
@@ -117,7 +122,7 @@ serve(async (req: Request) => {
         const session = sessionByUser[user_id];
 
         if (!session) {
-          // Fallback: user hasn't synced yet but may have slept — invite them to open the app
+          // Fallback: no synced data yet — nudge user to open the app
           title = 'Your sleep summary is ready 🌙';
           body = 'See how you slept last night. Tap to view your analysis.';
         } else {
@@ -147,28 +152,31 @@ serve(async (req: Request) => {
         body = `${parts.join(' · ')}. Tap to see your full day.`;
 
       } else {
-        // wind-down
-        const lastWake = lastWakeByUser[user_id];
-        if (!lastWake) continue; // No sleep history — skip
+        // wind-down: only send if this UTC hour matches the user's computed wind-down hour
+        const userData = wakeUtcMinSumByUser[user_id];
+        if (!userData) continue;
 
-        // Extract just the time-of-day from the last wake time
-        const wakeDate = new Date(lastWake);
-        const wakeHour = wakeDate.getUTCHours();
-        const wakeMin = wakeDate.getUTCMinutes();
+        const avgWakeUtcMin = Math.round(userData.sum / userData.count);
 
-        // Ideal bedtime = wake time - 8h (to get 8h of sleep)
-        const bedtimeTotalMin = (wakeHour * 60 + wakeMin) - 8 * 60;
-        // Normalize to 0-1440 range (handles midnight crossover)
-        const bedtimeNorm = ((bedtimeTotalMin % 1440) + 1440) % 1440;
-        const bedH = Math.floor(bedtimeNorm / 60);
-        const bedM = bedtimeNorm % 60;
+        // Wind-down = 30 min before bedtime; bedtime = wake - 8h
+        // So wind-down = wake - 8h 30min = wake - 510 min
+        const windDownUtcMin = ((avgWakeUtcMin - 510) + 1440 * 2) % 1440;
+        const windDownUtcHour = Math.floor(windDownUtcMin / 60);
 
-        // Format wake time for display (12h format)
-        const wakeH12 = wakeHour % 12 || 12;
-        const wakeAmPm = wakeHour < 12 ? 'AM' : 'PM';
-        const wakeStr = `${wakeH12}:${String(wakeMin).padStart(2, '0')} ${wakeAmPm}`;
+        // Skip users whose wind-down hour doesn't match the current UTC hour
+        if (windDownUtcHour !== currentUtcHour) continue;
 
-        // Format bedtime (12h)
+        // Format average wake time for display (12h, UTC)
+        const wakeH = Math.floor(avgWakeUtcMin / 60);
+        const wakeM = avgWakeUtcMin % 60;
+        const wakeH12 = wakeH % 12 || 12;
+        const wakeAmPm = wakeH < 12 ? 'AM' : 'PM';
+        const wakeStr = `${wakeH12}:${String(wakeM).padStart(2, '0')} ${wakeAmPm}`;
+
+        // Format bedtime (wake - 8h, 12h)
+        const bedUtcMin = ((avgWakeUtcMin - 480) + 1440) % 1440;
+        const bedH = Math.floor(bedUtcMin / 60);
+        const bedM = bedUtcMin % 60;
         const bedH12 = bedH % 12 || 12;
         const bedAmPm = bedH < 12 ? 'AM' : 'PM';
         const bedStr = `${bedH12}:${String(bedM).padStart(2, '0')} ${bedAmPm}`;
@@ -183,17 +191,13 @@ serve(async (req: Request) => {
         body,
         sound: 'default',
         data: {
-          url: type === 'wind-down'
-            ? 'smartring:///?tab=sleep'
-            : type === 'morning'
-              ? 'smartring:///?tab=sleep'
-              : 'smartring:///?tab=activity',
+          url: type === 'evening' ? 'smartring:///?tab=activity' : 'smartring:///?tab=sleep',
         },
       });
     }
 
     if (messages.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'no data for any user' }), {
+      return new Response(JSON.stringify({ sent: 0, reason: 'no matching users for this hour' }), {
         headers: { 'Content-Type': 'application/json' },
       });
     }
@@ -210,7 +214,7 @@ serve(async (req: Request) => {
       if (res.ok) totalSent += Math.min(BATCH, messages.length - i);
     }
 
-    return new Response(JSON.stringify({ sent: totalSent, type }), {
+    return new Response(JSON.stringify({ sent: totalSent, type, utcHour: currentUtcHour }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {

@@ -4,6 +4,103 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-14: WhatsApp Check-In — 3× Daily + App Link + i18n
+
+Upgraded `whatsapp-checkin` from 1 message/day to 3, each with a distinct Claude prompt and data focus. Messages are generated in the user's language (`app_config.whatsapp_language`, supports `en`/`es`):
+
+| Type | Time (ART) | Content |
+|------|-----------|---------|
+| morning | 9:03 AM | Sleep recap (score, deep sleep, 7-day avg) + HRV + coaching tip |
+| evening | 8:03 PM | Activity recap (steps, HR, trends) |
+| night | 10:33 PM | Wind-down nudge, sleep deficit vs 8h target |
+
+Each message appends a tappable `📲 https://apps.apple.com/app/com.focusring.app` link from `app_config.whatsapp_app_link` (swap to real App Store URL when published).
+
+**Migration** `20260420_whatsapp_3x_daily_cron.sql`: unscheduled old single cron, created `trigger_whatsapp_checkin(msg_type TEXT)` with `jsonb_build_object('type', msg_type)` body, scheduled 3 new cron jobs.
+
+Also fixed wrong user_id bug (push_tokens returned stale user with no data) and sleep fallback (now uses `.find()` across all 7 daily_summaries rows, matching coach-chat).
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-14: Recovery Metric — Server-Persisted Readiness Score
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Recovery/readiness was computed on-the-fly in the component with restingHR always being 0 for past days (never persisted), causing every past day to show a distorted score. Moved computation to a server-side pg_cron SQL function that writes into `daily_summaries`, and updated the UI to consume persisted scores with a client-side fallback for today-not-yet-rolled-up.
+
+**Files created:**
+- `supabase/migrations/20260419_persist_resting_hr_and_readiness.sql` — Adds `resting_hr` to `sleep_sessions`; adds `readiness_score/sleep_score/hr_score/strain_score/resting_hr/computed_at` to `daily_summaries`; creates `compute_daily_readiness(user UUID, date DATE)` PL/pgSQL function; schedules `daily-readiness-rollup` pg_cron at 03:15 UTC for last 3 days
+
+**Files modified:**
+- `src/hooks/useMetricHistory.ts` — Added `'readiness'` MetricType, `DayReadinessData` interface, `fetchReadinessHistory()` querying `daily_summaries.readiness_*` columns, and `case 'readiness'` in hook switch
+- `app/detail/recovery-detail.tsx` — Added `fromPersisted()` adapter, `sleepQualityLabel()`/`restingHRLabel()` pure helpers (extracted from inline ternaries), `useMetricHistory('readiness')` hook call, updated `allScores` memo to prefer persisted scores with client-side fallback for today
+
+**Key notes:**
+- Formula: `sleep_score × 0.50 + restingHRScore × 0.30 + strainScore × 0.20` — identical to the old client-side `computeReadiness()`
+- Server function queries `heart_rate_readings` for midnight–8am min HR (overnight resting HR), with full-day min as fallback
+- Production backfill run immediately after migration for last 30 days — all April dates now have real `readiness_resting_hr` values
+- Three readiness implementations (`recovery-detail`, `useHomeData`, `ReadinessService`) not consolidated yet — deferred for a dedicated refactor
+
+---
+
+## 2026-04-14: WhatsApp Check-In — Wrong User ID + Sleep Fallback
+
+**Root cause 1 (wrong user):** `push_tokens.limit(1)` returned user `28da220c` (stale/test account with 0 health data). The real user with all health data is `4128d5f7`. Fix: resolve user_id from `app_config.whatsapp_user_id` first, then fall back to `daily_summaries ORDER BY date DESC LIMIT 1` — guaranteed to get the user who has data.
+
+**Root cause 2 (sleep fallback):** Fallback from `sleep_sessions` → `daily_summaries.sleep_total_min` was checking only `[0]` (today's row, which has null sleep since the day isn't over). Coach-chat checks ALL rows via `.find(d => d.sleep_total_min)`. Fixed to use `.find()`.
+
+**Root cause 3 (redundant query + wrong filter type):** `weekSummaries` queried `daily_summaries` with a full ISO timestamp against a `date` column. Merged into single `dailies` query using `sevenDaysAgoDate` (date-only string).
+
+**Result:** Snapshot now shows real data — "slept 7h 52m (score 70/100), deep sleep 120m, 7-day avg 7h 33m". Message references actual numbers.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: WhatsApp Check-In — Sleep Fallback Fix
+
+**Problem:** `whatsapp-checkin` always showed "no sleep data synced yet" because it only looked at `sleep_sessions`, which was empty for the user.
+
+**Fix:** Added `daily_summaries.sleep_total_min` as fallback (matches `coach-chat` approach). When `sleep_sessions` has no row, `sleepMin` now falls back to `todaySummary?.[0]?.sleep_total_min`. Also removed the 48h time filter on `sleep_sessions` (now just `ORDER BY start_time DESC LIMIT 1`) and expanded `daily_summaries` query to 7 rows with `sleep_total_min` included.
+
+Deployed and tested — message sent (`SM70d3902d41dd2a1f98d70e97090bc334`), Claude generated coaching from illness watch data since sleep was null in both tables.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-14: Daily WhatsApp Check-In via Twilio + Claude AI
+
+New edge function `supabase/functions/whatsapp-checkin/index.ts` + migration `20260418_whatsapp_checkin_cron.sql`.
+
+**Flow:** pg_cron fires at 12:03 UTC daily → `trigger_whatsapp_checkin()` → edge function runs 5 parallel Supabase queries (sleep_sessions, daily_summaries, hrv_readings, illness_scores) → assembles health snapshot → calls Claude Haiku to generate a coaching sentence → sends via Twilio WhatsApp REST API to `whatsapp:+5491169742032`.
+
+**Recipient** seeded in `app_config.whatsapp_recipient`. To add multi-user support later: `whatsapp_numbers` table + Settings opt-in flow.
+
+**Pending:** User must set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` as Supabase secrets and join the Twilio sandbox from their phone before the first message can deliver.
+
+**Test:** `curl -X POST .../whatsapp-checkin -H "Authorization: Bearer focus-notify-2026" -d '{}'`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-13: Wind-down Notification — Per-User Dynamic Delivery Time
+
+**Problem:** Wind-down was sent at a fixed UTC time (01:00), accurate only for ART users with average wake times.
+
+**Fix:** Cron changed to `0 * * * *` (every hour). The edge function computes each user's 7-day average wake time, derives their personal wind-down UTC hour (`avg_wake - 8h 30min`), and only sends to users whose wind-down hour matches the current UTC hour. Everyone else is skipped.
+
+**Example:** User wakes at 6:30 AM UTC → bedtime 10:30 PM → wind-down at 10:00 PM, precisely.
+
+**Files:** `supabase/functions/daily-summary-push/index.ts`, migration `20260417_wind_down_hourly_cron.sql`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ## 2026-04-13: HR Detail — Scroll-Animated Collapsing Header
 
 **Source:** Claude Code — Macbook Pro

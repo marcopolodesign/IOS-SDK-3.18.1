@@ -2,11 +2,20 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
+
+const COLLAPSE_END = 80;
 import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DayNavigator } from '../../src/components/detail/DayNavigator';
@@ -102,6 +111,21 @@ export default function SpO2DetailScreen() {
 
   const riskColor = riskLabel === 'Normal' ? '#4ADE80' : riskLabel === 'Caution' ? '#FBBF24' : '#EF4444';
 
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [52, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [52, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [avgColor, '#FFFFFF']),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [80, 44], Extrapolation.CLAMP),
+  }));
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <DetailPageHeader title="Blood Oxygen" useSafeArea={false} />
@@ -112,7 +136,25 @@ export default function SpO2DetailScreen() {
         onSelectDay={setSelectedIndex}
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {!isLoading && dayData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineValue, numberAnimStyle]}>
+                {dayData.avg || '--'}
+              </Reanimated.Text>
+              <Text style={styles.headlineUnit}>% AVG SpO₂</Text>
+            </View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${riskColor}22`, borderColor: `${riskColor}55` }]}>
+              <Text style={[styles.chipText, { color: riskColor }]}>{riskLabel}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={scrollHandler}>
         {isLoading ? (
           <View style={styles.centered}><ActivityIndicator color="rgba(255,255,255,0.6)" /></View>
         ) : !dayData ? (
@@ -121,20 +163,6 @@ export default function SpO2DetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline */}
-            <View style={styles.headlineRow}>
-              <View style={styles.headlineStat}>
-                <Text style={[styles.headlineValue, { color: avgColor }]}>{dayData.avg || '--'}</Text>
-                <Text style={styles.headlineUnit}>% AVG SpO₂</Text>
-              </View>
-              <View style={styles.headlineDivider} />
-              <View style={styles.headlineStat}>
-                <View style={[styles.riskBadge, { backgroundColor: `${riskColor}22`, borderColor: `${riskColor}55` }]}>
-                  <Text style={[styles.riskBadgeText, { color: riskColor }]}>{riskLabel}</Text>
-                </View>
-                <Text style={styles.headlineUnit}>RISK LEVEL</Text>
-              </View>
-            </View>
 
             {/* Chart */}
             <DetailChartContainer

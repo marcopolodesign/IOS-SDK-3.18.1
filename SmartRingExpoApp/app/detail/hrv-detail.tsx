@@ -2,11 +2,20 @@ import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+
+const COLLAPSE_END = 80;
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
@@ -75,6 +84,21 @@ export default function HRVDetailScreen() {
 
   const color = sdnnColor(dayData?.sdnn ?? null);
 
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [44, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [44, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [color, '#FFFFFF']),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [80, 44], Extrapolation.CLAMP),
+  }));
+
   return (
     <View style={styles.container}>
       {/* Gradient zone: header + trend chart */}
@@ -107,7 +131,25 @@ export default function HRVDetailScreen() {
         />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {!isLoading && dayData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineValue, numberAnimStyle]}>
+                {dayData.sdnn ?? '--'}
+              </Reanimated.Text>
+              <Text style={styles.headlineUnit}>ms SDNN</Text>
+            </View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+              <Text style={[styles.chipText, { color }]}>{dayData.recoveryLabel}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={scrollHandler}>
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator color="rgba(255,255,255,0.6)" />
@@ -120,18 +162,6 @@ export default function HRVDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline */}
-            <View style={styles.headlineRow}>
-              <View style={styles.headlineStat}>
-                <Text style={[styles.headlineValue, { color }]}>{dayData.sdnn ?? '--'}</Text>
-                <Text style={styles.headlineUnit}>ms SDNN</Text>
-              </View>
-              <View style={styles.headlineDivider} />
-              <View style={styles.headlineStat}>
-                <Text style={[styles.headlineRecovery, { color }]}>{dayData.recoveryLabel}</Text>
-                <Text style={styles.headlineUnit}>RECOVERY</Text>
-              </View>
-            </View>
 
             {/* Metrics grid */}
             <MetricsGrid metrics={[
@@ -166,7 +196,7 @@ export default function HRVDetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }
@@ -181,15 +211,17 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', paddingTop: 80, gap: spacing.xs },
   emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.sm, fontFamily: fontFamily.regular },
   emptySubtext: { color: 'rgba(255,255,255,0.3)', fontSize: fontSize.xs, fontFamily: fontFamily.regular },
-  headlineRow: {
+  headlineSection: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingTop: spacing.xs,
+    overflow: 'hidden',
   },
-  headlineStat: { flex: 1, alignItems: 'center', gap: 6 },
+  headlineLeft: { flexDirection: 'column', alignItems: 'flex-start' },
+  headlineRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   headlineValue: { fontSize: 44, fontFamily: fontFamily.regular },
-  headlineRecovery: { fontSize: 28, fontFamily: fontFamily.regular },
   headlineUnit: {
     color: 'rgba(255,255,255,0.4)',
     fontSize: 10,
@@ -197,7 +229,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  headlineDivider: { width: 1, height: 48, backgroundColor: 'rgba(255,255,255,0.1)' },
+  chipRight: { overflow: 'hidden' },
+  chip: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
+  chipText: { fontSize: 10, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
   statsContainer: {
     marginHorizontal: spacing.md,
     backgroundColor: 'rgba(255,255,255,0.04)',

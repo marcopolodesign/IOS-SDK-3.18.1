@@ -2,17 +2,26 @@ import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+} from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+
+const COLLAPSE_END = 80;
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
-import type { DaySleepData, DayHRData, DayHRVData, DayActivityData } from '../../src/hooks/useMetricHistory';
+import type { DaySleepData, DayHRData, DayHRVData, DayActivityData, DayReadinessData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
 import type { StrainDayBreakdown } from '../../src/hooks/useHomeData';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
@@ -29,6 +38,14 @@ interface DayReadiness {
   restingHR: number;
   sleepLabel: string;
   hrLabel: string;
+}
+
+function sleepQualityLabel(score: number): string {
+  return score >= 80 ? 'Excellent' : score >= 60 ? 'Fair' : score > 0 ? 'Poor' : '--';
+}
+
+function restingHRLabel(rhr: number): string {
+  return rhr > 0 ? (rhr < 55 ? 'Excellent' : rhr < 65 ? 'Good' : rhr < 75 ? 'Fair' : 'Elevated') : '--';
 }
 
 function computeReadiness(
@@ -59,10 +76,23 @@ function computeReadiness(
       )))
     : 0;
 
-  const sleepLabel = sleepScore >= 80 ? 'Excellent' : sleepScore >= 60 ? 'Fair' : sleepScore > 0 ? 'Poor' : '--';
-  const hrLabel = restingHR > 0 ? (restingHR < 55 ? 'Excellent' : restingHR < 65 ? 'Good' : restingHR < 75 ? 'Fair' : 'Elevated') : '--';
+  const sleepLabel = sleepQualityLabel(sleepScore);
+  const hrLabel = restingHRLabel(restingHR);
 
   return { score, sleepScore, restingHRScore, strainScore, restingHR, sleepLabel, hrLabel };
+}
+
+function fromPersisted(d: DayReadinessData): DayReadiness {
+  const rhr = d.restingHR ?? 0;
+  return {
+    score: d.score,
+    sleepScore: d.sleepScore,
+    restingHRScore: d.restingHRScore,
+    strainScore: d.strainScore,
+    restingHR: rhr,
+    sleepLabel: sleepQualityLabel(d.sleepScore),
+    hrLabel: restingHRLabel(rhr),
+  };
 }
 
 function readinessColor(score: number): string {
@@ -385,8 +415,10 @@ export default function RecoveryDetailScreen() {
   const { data: hrData, isLoading: hrLoading } = useMetricHistory<DayHRData>('heartRate', { initialDays: 7, fullDays: 30 });
   const { data: hrvData, isLoading: hrvLoading } = useMetricHistory<DayHRVData>('hrv', { initialDays: 7, fullDays: 30 });
   const { data: activityData, isLoading: actLoading } = useMetricHistory<DayActivityData>('activity', { initialDays: 7, fullDays: 30 });
+  // Persisted readiness scores (server-computed nightly by compute_daily_readiness pg_cron)
+  const { data: readinessData, isLoading: readinessLoading } = useMetricHistory<DayReadinessData>('readiness', { initialDays: 7, fullDays: 30 });
 
-  const isLoading = sleepLoading || hrLoading || hrvLoading || actLoading;
+  const isLoading = sleepLoading || hrLoading || hrvLoading || actLoading || readinessLoading;
 
   const todayKey = DAY_ENTRIES[0]?.dateKey;
 
@@ -441,26 +473,60 @@ export default function RecoveryDetailScreen() {
   const getActivity = (key: string) => activityData.get(key) ?? (key === todayKey ? todayActivityFallback : undefined);
   const getHRV = (key: string) => hrvData.get(key);
 
-  // Compute readiness for all 30 days (for trend chart)
+  // Trend chart scores: prefer server-persisted; fall back to on-the-fly only for today
   const allScores = useMemo(() =>
-    DAY_ENTRIES.map(d => ({
-      dateKey: d.dateKey,
-      score: computeReadiness(getSleep(d.dateKey), getHR(d.dateKey), getActivity(d.dateKey), getHRV(d.dateKey)).score,
-    })),
-    [sleepData, hrData, activityData, hrvData, homeData]
+    DAY_ENTRIES.map(d => {
+      const persisted = readinessData.get(d.dateKey);
+      if (persisted) return { dateKey: d.dateKey, score: persisted.score };
+      // Fallback: compute client-side (typically only needed for today before cron runs)
+      return {
+        dateKey: d.dateKey,
+        score: computeReadiness(getSleep(d.dateKey), getHR(d.dateKey), getActivity(d.dateKey), getHRV(d.dateKey)).score,
+      };
+    }),
+    [sleepData, hrData, activityData, hrvData, homeData, readinessData]
   );
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
-  const readiness = useMemo(() => computeReadiness(
-    getSleep(selectedDateKey ?? ''),
-    getHR(selectedDateKey ?? ''),
-    getActivity(selectedDateKey ?? ''),
-    getHRV(selectedDateKey ?? ''),
-  ), [selectedDateKey, sleepData, hrData, activityData, hrvData, homeData]);
+
+  // Selected day detail: prefer server-persisted; fall back to client-side computation
+  const readiness = useMemo((): DayReadiness => {
+    const persisted = readinessData.get(selectedDateKey ?? '');
+    if (persisted) return fromPersisted(persisted);
+    return computeReadiness(
+      getSleep(selectedDateKey ?? ''),
+      getHR(selectedDateKey ?? ''),
+      getActivity(selectedDateKey ?? ''),
+      getHRV(selectedDateKey ?? ''),
+    );
+  }, [selectedDateKey, sleepData, hrData, activityData, hrvData, homeData, readinessData]);
 
   const hasData = readiness.score > 0;
   const color = readinessColor(readiness.score);
   const label = readinessLabel(readiness.score);
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [color, '#FFFFFF']),
+  }));
+  const labelAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 0], Extrapolation.CLAMP) }],
+  }));
+  const badgeExpandedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.4], [1, 0], Extrapolation.CLAMP),
+  }));
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [100, 44], Extrapolation.CLAMP),
+  }));
 
   return (
     <View style={styles.container}>
@@ -494,7 +560,32 @@ export default function RecoveryDetailScreen() {
         />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {hasData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
+                {readiness.score}
+              </Reanimated.Text>
+              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                Readiness Score
+              </Reanimated.Text>
+            </View>
+            <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
+              <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+                <Text style={[styles.badgeText, { color }]}>{label}</Text>
+              </View>
+            </Reanimated.View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+              <Text style={[styles.chipText, { color }]}>{label}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} onScroll={scrollHandler}>
         {isLoading ? (
           <View style={styles.centered}><ActivityIndicator color="rgba(255,255,255,0.6)" /></View>
         ) : !hasData ? (
@@ -504,18 +595,6 @@ export default function RecoveryDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Headline score */}
-            <View style={styles.headlineOuter}>
-              <View style={styles.headlineRow}>
-                <Text style={[styles.headlineScore, { color }]}>{readiness.score}</Text>
-                <Text style={styles.headlineLabel}>Readiness Score</Text>
-              </View>
-              <View style={styles.badgeRow}>
-                <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
-                  <Text style={[styles.badgeText, { color }]}>{label}</Text>
-                </View>
-              </View>
-            </View>
 
             {/* Score Breakdown */}
             <View style={styles.contribContainer}>
@@ -566,7 +645,7 @@ export default function RecoveryDetailScreen() {
             </View>
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }
@@ -580,21 +659,23 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.sm },
   emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.md, fontFamily: fontFamily.demiBold },
   emptySubtext: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, textAlign: 'center', paddingHorizontal: spacing.xl },
-  headlineOuter: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
+  headlineSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    overflow: 'hidden',
   },
+  headlineLeft: { flexDirection: 'column', alignItems: 'flex-start' },
   headlineRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular, lineHeight: 0 },
-  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold, marginBottom: 12 },
-  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start' },
+  headlineScore: { fontSize: 72, fontFamily: fontFamily.regular },
+  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: spacing.xs },
   badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -603,6 +684,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
+  chipRight: { overflow: 'hidden' },
+  chip: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
+  chipText: { fontSize: 10, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
   contribContainer: { marginHorizontal: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 16, paddingVertical: spacing.sm, marginBottom: spacing.md },
   contribTitle: { color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: fontFamily.regular, textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 8 },
   statsContainer: { marginHorizontal: spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 16, overflow: 'hidden', marginBottom: spacing.md },
