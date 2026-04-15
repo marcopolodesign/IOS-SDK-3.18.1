@@ -427,7 +427,8 @@ export default function RecoveryDetailScreen() {
     ? { date: todayKey, score: homeData.lastNightSleep.score, timeAsleep: homeData.lastNightSleep.timeAsleep,
         timeAsleepMinutes: homeData.lastNightSleep.timeAsleepMinutes, bedTime: homeData.lastNightSleep.bedTime ?? null,
         wakeTime: homeData.lastNightSleep.wakeTime ?? null, deepMin: 0, lightMin: 0, remMin: 0, awakeMin: 0,
-        segments: [], restingHR: homeData.lastNightSleep.restingHR ?? 0 }
+        segments: [], restingHR: homeData.lastNightSleep.restingHR ?? 0,
+        respiratoryRate: homeData.lastNightSleep.respiratoryRate ?? 0 }
     : undefined;
 
   const todayHRFallback: DayHRData | undefined = !hrData.get(todayKey)
@@ -641,6 +642,7 @@ export default function RecoveryDetailScreen() {
               { label: 'Readiness', value: `${readiness.score}`, unit: '/100' },
               { label: 'Sleep Score', value: readiness.sleepScore > 0 ? `${readiness.sleepScore}` : '--', unit: readiness.sleepScore > 0 ? '/100' : undefined },
               { label: 'Resting HR', value: readiness.restingHR > 0 ? `${readiness.restingHR}` : '--', unit: readiness.restingHR > 0 ? 'bpm' : undefined },
+              { label: 'Resp Rate', value: (() => { const rr = getSleep(selectedDateKey ?? '')?.respiratoryRate ?? 0; return rr > 0 ? `${rr}` : '--'; })(), unit: (() => { const rr = getSleep(selectedDateKey ?? '')?.respiratoryRate ?? 0; return rr > 0 ? '/min' : undefined; })() },
               { label: 'Recommended', value: readiness.score >= 80 ? 'High Intensity' : readiness.score >= 60 ? 'Moderate' : 'Rest' },
             ]} />
 

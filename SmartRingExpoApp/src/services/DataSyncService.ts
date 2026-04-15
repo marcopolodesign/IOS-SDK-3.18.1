@@ -474,7 +474,7 @@ class DataSyncService {
           })();
           return typeof ts === 'number' && ts >= block.start && ts <= block.end;
         });
-        const { restingHR } = extractSleepVitalsFromRaw(blockRawRecords.length > 0 ? blockRawRecords : rawRecords);
+        const { restingHR, respiratoryRate } = extractSleepVitalsFromRaw(blockRawRecords.length > 0 ? blockRawRecords : rawRecords);
 
         // Overlap guard — skip only if the existing session already has >= sleep minutes.
         // If the new block has more data (e.g. full night vs. partial mid-sleep sync), replace it.
@@ -522,7 +522,9 @@ class DataSyncService {
           sleepUnitLength: rec.unit,
           arraySleepQuality: rec.arr,
         }));
-        const detailJson = rawQualityRecords.length > 0 ? { rawQualityRecords } : null;
+        const detailJson = rawQualityRecords.length > 0
+          ? { rawQualityRecords, ...(respiratoryRate > 0 ? { respiratoryRate } : {}) }
+          : (respiratoryRate > 0 ? { respiratoryRate } : null);
 
         const napScore = classification.sessionType === 'nap'
           ? calculateNapScore(totalSleepMin, deep, light, rem, awake)

@@ -11,7 +11,7 @@ export interface MetricCell {
 }
 
 interface MetricsGridProps {
-  metrics: [MetricCell, MetricCell, MetricCell, MetricCell];
+  metrics: MetricCell[];
   style?: ViewStyle;
 }
 
@@ -34,19 +34,28 @@ function Cell({ cell }: { cell: MetricCell }) {
 }
 
 export function MetricsGrid({ metrics, style }: MetricsGridProps) {
+  const rows: MetricCell[][] = [];
+  for (let i = 0; i < metrics.length; i += 2) {
+    rows.push(metrics.slice(i, i + 2));
+  }
   return (
     <View style={[styles.container, style]}>
-      <View style={styles.row}>
-        <Cell cell={metrics[0]} />
-        <View style={styles.verticalDivider} />
-        <Cell cell={metrics[1]} />
-      </View>
-      <View style={styles.horizontalDivider} />
-      <View style={styles.row}>
-        <Cell cell={metrics[2]} />
-        <View style={styles.verticalDivider} />
-        <Cell cell={metrics[3]} />
-      </View>
+      {rows.map((row, ri) => (
+        <React.Fragment key={ri}>
+          {ri > 0 && <View style={styles.horizontalDivider} />}
+          <View style={styles.row}>
+            <Cell cell={row[0]} />
+            {row[1] ? (
+              <>
+                <View style={styles.verticalDivider} />
+                <Cell cell={row[1]} />
+              </>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+          </View>
+        </React.Fragment>
+      ))}
     </View>
   );
 }

@@ -41,6 +41,7 @@ export interface DaySleepData {
   awakeMin: number;
   segments: Array<{ stage: string; startTime: Date; endTime: Date }>;
   restingHR: number;
+  respiratoryRate: number;
 }
 
 export interface DayHRData {
@@ -262,6 +263,7 @@ async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string,
       awakeMin,
       segments,
       restingHR: row.resting_hr || row.detail_json?.restingHR || 0,
+      respiratoryRate: row.detail_json?.respiratoryRate || 0,
     });
   }
   return map;
@@ -522,6 +524,7 @@ async function fetchSleepFromRing(): Promise<Map<string, DaySleepData>> {
         awakeMin: sleep.awake || 0,
         segments,
         restingHR: 0,
+        respiratoryRate: 0,
       });
     }
   } catch (e) {
