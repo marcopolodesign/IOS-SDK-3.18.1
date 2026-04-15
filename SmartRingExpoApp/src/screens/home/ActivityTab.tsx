@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatSleepDuration } from '../../utils/ringData/sleep';
 import { TrainingInsightsCard } from '../../components/home/TrainingInsightsCard';
 import { RingIcon } from '../../assets/icons';
+import { useRelativeTime } from '../../hooks/useRelativeTime';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_W = SCREEN_WIDTH * 0.6;
@@ -134,6 +135,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
   const homeData = useHomeDataContext();
   const { t } = useTranslation();
   const [refreshing, setRefreshing] = React.useState(false);
+  const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
   const { scrollRef, scrollY, handleScroll, isScrolled, firstCardStyle } = useTabScroll(isActive, onScroll);
 
   const onRefresh = React.useCallback(async () => {
@@ -282,6 +284,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           <GradientInfoCard
             icon={<ThermometerIcon />}
             title={t('activity.temperature')}
+            titleCaption={lastSyncLabel ?? undefined}
             headerValue={tempC > 0 ? `${tempC.toFixed(1)}°` : '--'}
             headerSubtitle={tempStatus ?? t('activity.no_data')}
             gradientStops={[
@@ -315,6 +318,7 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
           <GradientInfoCard
             icon={<OxygenIcon />}
             title={t('activity.min_spo2')}
+            titleCaption={lastSyncLabel ?? undefined}
             headerValue={minSpo2 ? `${minSpo2}%` : '--'}
             headerSubtitle={spo2Status ?? t('activity.no_data')}
             gradientStops={[

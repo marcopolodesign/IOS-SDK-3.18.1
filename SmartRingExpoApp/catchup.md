@@ -4,6 +4,72 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-15: Recovery Detail — Past-Day Resting HR Fix
+
+**Problem:** Past days in Recovery Detail showed Resting HR = 0, causing underscored readiness scores.
+
+**Root causes (two):**
+1. `compute_daily_readiness` used a fixed midnight–8am local window to find overnight HR. Ring readings stored under slightly different timestamps (or from sessions starting before midnight) were missed. When no readings were found, `readiness_resting_hr` was stored as NULL.
+2. The client-side patch only triggered when `base.restingHR === 0` but not when it was a bad value > 90 (like 104bpm from a daytime reading the cron accidentally picked up).
+
+**Fix (3 parts):**
+1. **New SQL function** (`20260422_fix_readiness_hr_sleep_window.sql`): `compute_daily_readiness` now tries the sleep session's actual `start_time → end_time` window first (joining `heart_rate_readings` to the sleep session), then falls back to midnight–8am, then full-day min. This anchors the HR lookup to when the user was actually asleep, making it immune to timestamp bucketing issues. Backfill ran immediately for the past 30 days.
+2. **Client-side patch widened**: now also patches when `base.restingHR > 90` (clearly a bad daytime reading). Falls back through: hrData overnight → sleep_sessions.resting_hr → nothing.
+3. **`fetchSleepHistory`**: now reads `resting_hr` column from `sleep_sessions` (populated by cron backfill) as a source: `row.resting_hr || row.detail_json?.restingHR || 0`.
+
+**Files modified:** `app/detail/recovery-detail.tsx`, `src/hooks/useMetricHistory.ts`, `supabase/migrations/20260422_fix_readiness_hr_sleep_window.sql`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-15: Recovery Detail — Today Always Computed Client-Side
+
+**Root cause (diagnosed via logs):** `compute_daily_readiness` cron ran at 12:15 AM ART for today before any ring data was synced. It stored `score:20, sleepScore:0, restingHR:104, restingHRScore:0` — completely wrong. The 104 came from a stray HR reading, not overnight resting HR. The persisted row was then used instead of the correct ring values (sleepScore=90, restingHR=40, readiness=93).
+
+**Fix (3 parts):**
+1. `recovery-detail.tsx` — today always bypasses the persisted row and computes client-side using `sleepData` + `hrData` + `homeData`. Past days still use persisted data with the rHR null patch from the previous session.
+2. `allScores` trend chart — also excludes today from the persisted path for the same reason.
+3. New migration `20260421_fix_readiness_cron_exclude_today.sql` — changed cron range from `CURRENT_DATE-2 → CURRENT_DATE` to `CURRENT_DATE-3 → CURRENT_DATE-1`, so the cron never writes a garbage row for the current day again.
+
+**Files modified:** `app/detail/recovery-detail.tsx`, `supabase/migrations/20260421_fix_readiness_cron_exclude_today.sql`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-15: Fix SyncStatusSheet Show Timing (precheck regression)
+
+**Source:** Claude Code — Macbook Pro
+
+After the precheck was moved before `setData(isSyncing:true)`, cold-start logs showed `[sync] precheck 1522ms` — the header spinner was delayed by 1.5s due to a token refresh during `supabase.auth.getUser()`.
+
+**Fix:** Reverted the order — `setData(isSyncing:true)` fires immediately again (instant header spinner), then the precheck runs async. After it resolves, `showSheet` is flipped via `updateSP({ showSheet: true })` if conditions are met (cold-start + disconnected). Updated `SyncStatusSheet` effect to watch for the "both syncing AND showSheet" combined state going false→true (using `prevShowSheet` ref alongside `prevIsSyncing`), so the sheet opens correctly even when `showSheet` is set slightly after `isSyncing`.
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/components/home/SyncStatusSheet.tsx`
+
+---
+
+## 2026-04-14: Component Reference Docs + CLAUDE.md Update
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Created `components.md` — a comprehensive reference for every component in the app (58 total). Added a rule to `CLAUDE.md` requiring it to be kept in sync whenever components change.
+
+**Files created:**
+- `components.md` — Full reference: every component's file path, props, render output, data sources, and invariants. Organized by category (root, ui, common, detail, explainer, focus, home, sleep) with component hierarchy trees for Today and Focus tabs.
+
+**Files modified:**
+- `CLAUDE.md` — Added component reference rule under Design Conventions: read `components.md` before touching any component; update it in the same task before writing the `catchup.md` entry.
+
+**Key notes:**
+- `components.md` lives at the project root alongside `design-system.md`
+- The `SleepHypnogram` invariant (summaryRow.height === tooltipReplacement.height === 50) is documented there
+- `GradientInfoCard` usage note included — prefer extending it over creating new card shells
+- No skill created — the update rule is inline in `CLAUDE.md` (same pattern as the catchup rule), so Claude handles it automatically without a separate slash command
+
+---
+
 ## 2026-04-14: Recovery Detail — Resting HR Null Patch
 
 **Problem:** Resting HR showed `--` (0) in the Recovery detail page for today and past days.

@@ -24,6 +24,7 @@ import { useSleepDebt } from '../../hooks/useSleepDebt';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { BaselineProgressCard } from '../../components/home/BaselineProgressCard';
 import type { SleepDebtCategory } from '../../types/sleepDebt.types';
+import { useRelativeTime } from '../../hooks/useRelativeTime';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
   none: '#4ADE80',
@@ -47,6 +48,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   const { entries: timelineEntries, addEntry } = useTimelineEntries();
   const [refreshing, setRefreshing] = React.useState(false);
   const [sheetMode, setSheetMode] = React.useState<'recovery' | 'activity' | null>(null);
+  const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -144,6 +146,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
             <GradientInfoCard
               icon={<SleepScoreIcon />}
               title={t('overview.sleep_score')}
+              titleCaption={lastSyncLabel ?? undefined}
               headerValue={sleep.score || 0}
               headerSubtitle={sleepMessage}
               showArrow

@@ -26,6 +26,8 @@ type GradientInfoCardProps = {
   onHeaderPress?: () => void;
   /** Optional node placed on the right side of the header (e.g. InfoButton) */
   headerRight?: React.ReactNode;
+  /** Optional small caption shown below the title (e.g. "3m ago" last-sync label) */
+  titleCaption?: string;
   children: React.ReactNode;
 };
 
@@ -49,6 +51,7 @@ export function GradientInfoCard({
   style,
   onHeaderPress,
   headerRight,
+  titleCaption,
   children,
 }: GradientInfoCardProps) {
   return (
@@ -90,7 +93,12 @@ export function GradientInfoCard({
             <TouchableOpacity style={styles.header} onPress={onHeaderPress} activeOpacity={0.7}>
               <View style={styles.headerLeft}>
                 <View style={styles.iconWrapper}>{icon}</View>
-                <Text style={styles.title}>{title}</Text>
+                <View style={styles.titleColumn}>
+                  <Text style={styles.title}>{title}</Text>
+                  {titleCaption != null && (
+                    <Text style={styles.titleCaption} numberOfLines={1}>{titleCaption}</Text>
+                  )}
+                </View>
                 {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
               </View>
               {headerRight && <View>{headerRight}</View>}
@@ -99,7 +107,12 @@ export function GradientInfoCard({
             <View style={styles.header}>
               <View style={styles.headerLeft}>
                 <View style={styles.iconWrapper}>{icon}</View>
-                <Text style={styles.title}>{title}</Text>
+                <View style={styles.titleColumn}>
+                  <Text style={styles.title}>{title}</Text>
+                  {titleCaption != null && (
+                    <Text style={styles.titleCaption} numberOfLines={1}>{titleCaption}</Text>
+                  )}
+                </View>
                 {showArrow && <Text style={styles.linkArrow}>{'>'}</Text>}
               </View>
               {headerRight && <View>{headerRight}</View>}
@@ -163,13 +176,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
   },
+  titleColumn: {
+    flexShrink: 1,
+    flexDirection: 'column',
+  },
   title: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontFamily: fontFamily.regular,
     fontSize: 14,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    
+  },
+  titleCaption: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    letterSpacing: 0.2,
+    marginTop: 2,
   },
   linkArrow: {
     color: 'rgba(255, 255, 255, 0.8)',

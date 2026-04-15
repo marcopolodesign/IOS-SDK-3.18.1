@@ -473,12 +473,14 @@ export default function RecoveryDetailScreen() {
   const getActivity = (key: string) => activityData.get(key) ?? (key === todayKey ? todayActivityFallback : undefined);
   const getHRV = (key: string) => hrvData.get(key);
 
-  // Trend chart scores: prefer server-persisted; fall back to on-the-fly only for today
+  // Trend chart scores: use persisted for past days, compute client-side for today.
+  // Today's persisted row is always stale (cron runs at midnight before ring sync).
   const allScores = useMemo(() =>
     DAY_ENTRIES.map(d => {
-      const persisted = readinessData.get(d.dateKey);
-      if (persisted) return { dateKey: d.dateKey, score: persisted.score };
-      // Fallback: compute client-side (typically only needed for today before cron runs)
+      if (d.dateKey !== todayKey) {
+        const persisted = readinessData.get(d.dateKey);
+        if (persisted) return { dateKey: d.dateKey, score: persisted.score };
+      }
       return {
         dateKey: d.dateKey,
         score: computeReadiness(getSleep(d.dateKey), getHR(d.dateKey), getActivity(d.dateKey), getHRV(d.dateKey)).score,
@@ -489,23 +491,32 @@ export default function RecoveryDetailScreen() {
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
 
-  // Selected day detail: prefer server-persisted; fall back to client-side computation
+  // Selected day detail: prefer server-persisted for past days only.
+  // Today's persisted row is always stale — the cron runs at midnight before the ring syncs,
+  // so it captures wrong data (no sleep score, daytime HR as "resting"). Always compute today
+  // client-side from the actual synced ring data.
   const readiness = useMemo((): DayReadiness => {
-    const persisted = readinessData.get(selectedDateKey ?? '');
-    if (persisted) {
-      const base = fromPersisted(persisted);
-      // Patch: cron often runs before overnight HR is synced, leaving readiness_resting_hr NULL.
-      // Fill it in from heart_rate_readings (or today's ring data) when available.
-      if (base.restingHR === 0) {
-        const hr = getHR(selectedDateKey ?? '');
-        const rhr = hr?.restingHR ?? 0;
-        if (rhr > 0) {
-          const patchedHRScore = Math.max(0, Math.min(100, Math.round(((90 - rhr) / 50) * 100)));
-          return { ...base, restingHR: rhr, restingHRScore: patchedHRScore };
+    const isToday = selectedDateKey === todayKey;
+
+    if (!isToday) {
+      const persisted = readinessData.get(selectedDateKey ?? '');
+      if (persisted) {
+        const base = fromPersisted(persisted);
+        // Patch: cron may store null/bad restingHR if overnight HR wasn't synced yet.
+        // Try sources in priority order: heart_rate_readings → sleep_sessions.resting_hr
+        if (base.restingHR === 0 || base.restingHR > 90) {
+          const hrRHR = getHR(selectedDateKey ?? '')?.restingHR ?? 0;
+          const sleepRHR = getSleep(selectedDateKey ?? '')?.restingHR ?? 0;
+          const rhr = (hrRHR > 0 && hrRHR <= 90) ? hrRHR : (sleepRHR > 0 && sleepRHR <= 90 ? sleepRHR : 0);
+          if (rhr > 0) {
+            const patchedHRScore = Math.max(0, Math.min(100, Math.round(((90 - rhr) / 50) * 100)));
+            return { ...base, restingHR: rhr, restingHRScore: patchedHRScore };
+          }
         }
+        return base;
       }
-      return base;
     }
+
     return computeReadiness(
       getSleep(selectedDateKey ?? ''),
       getHR(selectedDateKey ?? ''),

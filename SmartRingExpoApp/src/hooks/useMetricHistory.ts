@@ -261,7 +261,7 @@ async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string,
       remMin,
       awakeMin,
       segments,
-      restingHR: row.detail_json?.restingHR || 0,
+      restingHR: row.resting_hr || row.detail_json?.restingHR || 0,
     });
   }
   return map;

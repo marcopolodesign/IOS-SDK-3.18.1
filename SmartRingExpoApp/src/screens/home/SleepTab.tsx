@@ -19,6 +19,7 @@ import { getSleepMessage } from '../../hooks/useHomeData';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useBaselineMode } from '../../context/BaselineModeContext';
+import { useRelativeTime } from '../../hooks/useRelativeTime';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -57,6 +58,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
   const baseline = useBaselineMode();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshCount, setRefreshCount] = React.useState(0);
+  const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -235,6 +237,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         <GradientInfoCard
           icon={<BrainIcon />}
           title={t('sleep.hrv_stress')}
+          titleCaption={lastSyncLabel ?? undefined}
           headerValue={sdnn > 0 ? String(sdnn) : '--'}
           headerSubtitle={sdnn > 0 ? 'SDNN · ms' : t('sleep.hrv_no_data')}
           gradientStops={[
@@ -284,6 +287,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         <GradientInfoCard
           icon={<DropIcon />}
           title={t('sleep.blood_oxygen')}
+          titleCaption={lastSyncLabel ?? undefined}
           headerValue={lastSpO2 ? `${lastSpO2}%` : '--'}
           headerSubtitle={spo2Status ?? t('sleep.no_overnight_data')}
           gradientStops={[

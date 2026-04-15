@@ -1312,8 +1312,23 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const logStage = (label: string, since: number) =>
         console.log(`[sync] ${label} ${Date.now() - since}ms`);
 
-      // ── Pre-check: BLE status + auth — runs before isSyncing so we know
-      // alreadyConnected before deciding whether to show the bottom sheet ──
+      // ── Sync progress tracking — starts immediately for instant header spinner ──
+      // showSheet starts false; flipped to true after precheck when cold-start + disconnected.
+      let sp: SyncProgressState = {
+        phase: 'connecting',
+        showSheet: false,
+        metrics: [...INITIAL_METRICS],
+      };
+      const updateSP = (update: Partial<SyncProgressState> | ((prev: SyncProgressState) => SyncProgressState)) => {
+        sp = typeof update === 'function' ? update(sp) : { ...sp, ...update };
+        setData(prev => ({ ...prev, syncProgress: sp }));
+      };
+
+      setData(prev => ({ ...prev, isSyncing: true, error: null, syncProgress: sp }));
+
+      // ── Pre-check: BLE status + auth ─────────────────────────────────────────
+      // Runs in parallel with the reconnect fire below. Auth may be slow on cold start
+      // (token refresh), but the header spinner is already visible above.
       const [statusResult, authResult] = await Promise.all([
         UnifiedSmartRingService.isConnected().catch(() => ({ connected: false })),
         supabase.auth.getUser(),
@@ -1324,20 +1339,11 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const avatarUrl = resolveAvatarUrl(authResult.data?.user);
       const userId = authResult.data?.user?.id;
 
-      // ── Sync progress tracking ──
-      // showSheet: only on cold-start (initial) when ring is not already connected
-      const showSheet = hydrationReason === 'initial' && !alreadyConnected;
-      let sp: SyncProgressState = {
-        phase: 'connecting',
-        showSheet,
-        metrics: [...INITIAL_METRICS],
-      };
-      const updateSP = (update: Partial<SyncProgressState> | ((prev: SyncProgressState) => SyncProgressState)) => {
-        sp = typeof update === 'function' ? update(sp) : { ...sp, ...update };
-        setData(prev => ({ ...prev, syncProgress: sp }));
-      };
-
-      setData(prev => ({ ...prev, isSyncing: true, error: null, syncProgress: sp }));
+      // Open the bottom sheet now that we know connection state —
+      // only on cold-start when ring is not already connected.
+      if (hydrationReason === 'initial' && !alreadyConnected) {
+        updateSP({ showSheet: true });
+      }
 
       // Fire reconnect immediately if needed (don't await yet)
       const reconnectPromise: Promise<{ success: boolean }> = alreadyConnected
@@ -1535,6 +1541,10 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         }
       }
       // Supabase fallback: if ring returned no sleep, try last night from cloud
+      if (!finalSleepData) {
+        console.warn('[sync] sleep ring returned 0 records — suspected native SDK no-fresh-data bug, falling back to Supabase');
+        reportError(new Error('sleep_ring_empty'), { op: 'sync.sleep.empty' }, 'warning');
+      }
       if (!finalSleepData && userId) {
         try {
           const yesterday = new Date();
@@ -1577,22 +1587,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
 
       if (finalSleepData) hasLoadedRealData.current = true;
 
-      // 3. Battery (testing.tsx pattern)
-      let ringBattery = 0;
-      let isRingCharging = false;
-      const battStart = Date.now();
-      updateSP(prev => updateMetric(prev, 'battery', 'loading'));
-      try {
-        const batt = await UnifiedSmartRingService.getBattery();
-        ringBattery = batt.battery;
-        isRingCharging = batt.isCharging ?? false;
-        console.log('✅ [useHomeData] battery:', ringBattery, 'charging:', isRingCharging);
-        updateSP(prev => updateMetric(prev, 'battery', 'done'));
-      } catch (e) {
-        console.log('⚠️ [useHomeData] battery failed:', e);
-        updateSP(prev => updateMetric(prev, 'battery', 'error'));
-      }
-      logStage('battery', battStart);
+      // 3. Battery — deferred (fetch completes after main setData to avoid 5s timeout on critical path)
 
       // 4. Continuous HR → resting HR + hrChartData (testing.tsx pattern)
       let restingHR = 0;
@@ -2120,8 +2115,8 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           sleepScore: sleep.score,
           lastNightSleep: sleep,
           activity,
-          ringBattery,
-          isRingCharging,
+          ringBattery: prev.ringBattery,
+          isRingCharging: prev.isRingCharging,
           streakDays: 0,
           insight, insightType: type,
           isLoading: false, isSyncing: false, error: null,
@@ -2164,7 +2159,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
 
         lastSyncCompletedAt.current = Date.now();
         logStage('TOTAL', syncStart);
-        console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: ringBattery, hrPts: finalHrChartData.length });
+        console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: newData.ringBattery, hrPts: finalHrChartData.length });
         saveToCache(newData);
         // Push all ring data (7 days of sleep + vitals) to Supabase in the background
         void dataSyncService.syncAllData()
@@ -2174,6 +2169,23 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           .catch(e => {
             reportError(e, { op: 'homeData.syncAllData' });
             setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'cloud', 'error') }));
+          });
+        // Battery — deferred off critical path (native callback often times out; not blocking UI)
+        const battStart = Date.now();
+        setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'battery', 'loading') }));
+        void UnifiedSmartRingService.getBattery()
+          .then(batt => {
+            console.log(`✅ [useHomeData] battery (deferred): ${batt.battery}% charging=${batt.isCharging} ${Date.now() - battStart}ms`);
+            setData(prev => ({
+              ...prev,
+              ringBattery: batt.battery,
+              isRingCharging: batt.isCharging ?? false,
+              syncProgress: updateMetric(prev.syncProgress, 'battery', 'done'),
+            }));
+          })
+          .catch(e => {
+            console.log(`⚠️ [useHomeData] battery (deferred) failed: ${e?.message} ${Date.now() - battStart}ms`);
+            setData(prev => ({ ...prev, syncProgress: updateMetric(prev.syncProgress, 'battery', 'error') }));
           });
         return newData;
       });

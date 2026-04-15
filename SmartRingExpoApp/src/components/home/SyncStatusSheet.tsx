@@ -131,14 +131,20 @@ export function SyncStatusSheet({ syncProgress, isSyncing, onFindRings }: SyncSt
     }
   }, [hide, connectionTimedOut]);
 
-  // ── Primary show trigger: isSyncing false→true AND showSheet is set ──
+  // ── Primary show trigger ──
   // showSheet is only true on cold-start when the ring was not already connected.
-  // Foreground resumes, manual refreshes, and already-connected starts use header-only sync.
+  // It may be set slightly after isSyncing (once the precheck resolves), so we
+  // fire show() whenever the combined "syncing AND showSheet" state goes false→true.
   const prevIsSyncing = useRef(false);
+  const prevShowSheet = useRef(false);
   useEffect(() => {
     const wasSync = prevIsSyncing.current;
+    const wasShowSheet = prevShowSheet.current;
     prevIsSyncing.current = isSyncing;
-    if (isSyncing && !wasSync && syncProgress.showSheet) {
+    prevShowSheet.current = syncProgress.showSheet;
+    const active = isSyncing && syncProgress.showSheet;
+    const wasActive = wasSync && wasShowSheet;
+    if (active && !wasActive) {
       show();
     }
   }, [isSyncing, syncProgress.showSheet, show]);
