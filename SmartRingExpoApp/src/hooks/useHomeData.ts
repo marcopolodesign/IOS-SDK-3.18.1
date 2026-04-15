@@ -1088,6 +1088,7 @@ const getEmptyData = (): HomeData => ({
   recoveryContributors: getEmptyRecoveryContributors(),
   syncProgress: {
     phase: 'idle',
+    showSheet: false,
     metrics: [...INITIAL_METRICS],
   },
   lastSyncedAt: null,
@@ -1306,9 +1307,29 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       }
       lastFetchTime.current = now;
 
+      // ── Stage timing instrumentation ─────────────────────────────────────────
+      const syncStart = Date.now();
+      const logStage = (label: string, since: number) =>
+        console.log(`[sync] ${label} ${Date.now() - since}ms`);
+
+      // ── Pre-check: BLE status + auth — runs before isSyncing so we know
+      // alreadyConnected before deciding whether to show the bottom sheet ──
+      const [statusResult, authResult] = await Promise.all([
+        UnifiedSmartRingService.isConnected().catch(() => ({ connected: false })),
+        supabase.auth.getUser(),
+      ]);
+      logStage('precheck', syncStart);
+      const alreadyConnected = (statusResult as any).connected ?? false;
+      const userName = resolveUserName(authResult.data?.user);
+      const avatarUrl = resolveAvatarUrl(authResult.data?.user);
+      const userId = authResult.data?.user?.id;
+
       // ── Sync progress tracking ──
+      // showSheet: only on cold-start (initial) when ring is not already connected
+      const showSheet = hydrationReason === 'initial' && !alreadyConnected;
       let sp: SyncProgressState = {
         phase: 'connecting',
+        showSheet,
         metrics: [...INITIAL_METRICS],
       };
       const updateSP = (update: Partial<SyncProgressState> | ((prev: SyncProgressState) => SyncProgressState)) => {
@@ -1317,16 +1338,6 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       };
 
       setData(prev => ({ ...prev, isSyncing: true, error: null, syncProgress: sp }));
-
-      // Run connection check and auth in parallel (both are fast)
-      const [statusResult, authResult] = await Promise.all([
-        UnifiedSmartRingService.isConnected().catch(() => ({ connected: false })),
-        supabase.auth.getUser(),
-      ]);
-      const alreadyConnected = (statusResult as any).connected ?? false;
-      const userName = resolveUserName(authResult.data?.user);
-      const avatarUrl = resolveAvatarUrl(authResult.data?.user);
-      const userId = authResult.data?.user?.id;
 
       // Fire reconnect immediately if needed (don't await yet)
       const reconnectPromise: Promise<{ success: boolean }> = alreadyConnected
@@ -1411,7 +1422,9 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       }
 
       // Await reconnect (likely already done since Strava fetch ran concurrently)
+      const reconnectStart = Date.now();
       const reconnectResult = await reconnectPromise;
+      if (!alreadyConnected) logStage('autoReconnect', reconnectStart);
       if (!alreadyConnected) {
         if (!reconnectResult.success) {
           // ── HealthKit fallback when ring is not connected ──
@@ -1501,6 +1514,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       let finalSleepData: SleepData | null = null;
       let ringNaps: RingNapBlock[] = [];
 
+      const sleepStart = Date.now();
       updateSP(prev => updateMetric(prev, 'sleep', 'loading'));
       for (let attempt = 1; attempt <= 3 && !finalSleepData; attempt++) {
         try {
@@ -1559,12 +1573,14 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       }
 
       updateSP(prev => updateMetric(prev, 'sleep', finalSleepData ? 'done' : 'error'));
+      logStage('sleep', sleepStart);
 
       if (finalSleepData) hasLoadedRealData.current = true;
 
       // 3. Battery (testing.tsx pattern)
       let ringBattery = 0;
       let isRingCharging = false;
+      const battStart = Date.now();
       updateSP(prev => updateMetric(prev, 'battery', 'loading'));
       try {
         const batt = await UnifiedSmartRingService.getBattery();
@@ -1576,11 +1592,13 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         console.log('⚠️ [useHomeData] battery failed:', e);
         updateSP(prev => updateMetric(prev, 'battery', 'error'));
       }
+      logStage('battery', battStart);
 
       // 4. Continuous HR → resting HR + hrChartData (testing.tsx pattern)
       let restingHR = 0;
       let hrDataIsToday = false;
       const hrChartData: Array<{ timeMinutes: number; heartRate: number }> = [];
+      const hrStart = Date.now();
       updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
       const hrRaw = await UnifiedSmartRingService.getContinuousHeartRateRaw();
@@ -1660,29 +1678,65 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           }
         }
       }
+      // Helper: merge HR records, skipping already-covered timeMinutes (dedup)
+      const mergeHRRecords = (records: any[], coveredMinutes: Set<number>) => {
+        for (const rec of records) {
+          if (!isRecordFromTargetDate(rec)) continue;
+          const arr = Array.isArray(rec.arrayDynamicHR)
+            ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
+            : [];
+          const ts = rec.startTimestamp;
+          const startMin = typeof ts === 'number'
+            ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
+            : (parseX3DateToMinutes(rec.date) ?? 0);
+          arr.forEach((v: number, idx: number) => {
+            const minute = startMin + idx;
+            if (v > 0 && !coveredMinutes.has(minute)) {
+              coveredMinutes.add(minute);
+              samples.push(v);
+              hrChartData.push({ timeMinutes: minute, heartRate: v });
+            }
+          });
+        }
+      };
+
       // If continuous HR is empty, try single/static HR as secondary source
       if (samples.length === 0) {
         try {
           const singleHR = await UnifiedSmartRingService.getSingleHeartRateRaw();
           console.log('📊 [useHomeData] Single HR records:', singleHR.records?.length);
-          for (const rec of singleHR.records || []) {
-            if (!isRecordFromTargetDate(rec)) continue;
-            const arr = Array.isArray(rec.arrayDynamicHR)
-              ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
-              : [];
-            const ts = rec.startTimestamp;
-            const startMin = typeof ts === 'number'
-              ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
-              : (parseX3DateToMinutes(rec.date) ?? 0);
-            arr.forEach((v: number, idx: number) => {
-              if (v > 0) {
-                samples.push(v);
-                hrChartData.push({ timeMinutes: startMin + idx, heartRate: v });
-              }
-            });
-          }
+          const covered = new Set(hrChartData.map(p => p.timeMinutes));
+          mergeHRRecords(singleHR.records || [], covered);
         } catch (e2) {
           console.log('⚠️ [useHomeData] Single HR fetch failed:', e2);
+        }
+      } else {
+        // Continuous HR has data — detect interior gaps and retry once if any exist
+        const coveredHours = new Set(hrChartData.map(p => Math.floor(p.timeMinutes / 60)));
+        const minHour = Math.min(...coveredHours);
+        const maxHour = Math.max(...coveredHours);
+        const hasInteriorGaps = maxHour > minHour &&
+          Array.from({ length: maxHour - minHour + 1 }, (_, i) => minHour + i)
+            .some(h => !coveredHours.has(h));
+
+        if (hasInteriorGaps) {
+          console.log(`📊 [useHomeData] HR interior gaps (hours ${minHour}-${maxHour}), retrying after 2s…`);
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const coveredMinutes = new Set(hrChartData.map(p => p.timeMinutes));
+            const hrRaw2 = await UnifiedSmartRingService.getContinuousHeartRateRaw();
+            const beforeCount = hrChartData.length;
+            mergeHRRecords(hrRaw2.records || [], coveredMinutes);
+            console.log(`📊 [useHomeData] HR retry added ${hrChartData.length - beforeCount} pts`);
+
+            // Also merge single HR for any still-uncovered hours after retry
+            const singleHR = await UnifiedSmartRingService.getSingleHeartRateRaw();
+            const beforeCount2 = hrChartData.length;
+            mergeHRRecords(singleHR.records || [], coveredMinutes);
+            console.log(`📊 [useHomeData] Single HR gap-fill added ${hrChartData.length - beforeCount2} pts`);
+          } catch (e2) {
+            console.log('⚠️ [useHomeData] HR gap-fill retry failed:', e2);
+          }
         }
       }
       if (samples.length > 0) restingHR = Math.min(...samples);
@@ -1694,10 +1748,12 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         console.log('⚠️ [useHomeData] HR failed:', e);
         updateSP(prev => updateMetric(prev, 'heartRate', 'error'));
       }
+      logStage('heartRate', hrStart);
 
       // 5. HRV (testing.tsx pattern)
       let hrvSdnn = 0;
       const hrvHrPoints: Array<{ timeMinutes: number; heartRate: number }> = [];
+      const hrvStart = Date.now();
       updateSP(prev => updateMetric(prev, 'hrv', 'loading'));
       try {
       const hrvNorm = await UnifiedSmartRingService.getHRVDataNormalizedArray();
@@ -1736,6 +1792,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         console.log('⚠️ [useHomeData] HRV failed:', e);
         updateSP(prev => updateMetric(prev, 'hrv', 'error'));
       }
+      logStage('hrv', hrvStart);
 
       if (restingHR === 0 && hrvHrPoints.length > 0) {
         // Use 10th percentile instead of absolute min to avoid outliers
@@ -1747,6 +1804,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
 
       // 6. Steps
       let activity: ActivityData = sanitizeActivity();
+      const stepsStart = Date.now();
       updateSP(prev => updateMetric(prev, 'steps', 'loading'));
       try {
       const stepsData = await UnifiedSmartRingService.getSteps();
@@ -1805,6 +1863,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       } catch (e) {
         console.log('⚠️ [useHomeData] sport sessions failed:', e);
       }
+      logStage('steps+sport', stepsStart);
 
       // Build final state
       if (restingHR === 0 && finalSleepData?.restingHR && finalSleepData.restingHR > 0) {
@@ -1818,6 +1877,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
       };
 
+      const vitalsStart = Date.now();
       updateSP(prev => updateMetric(prev, 'vitals', 'loading'));
       if (!sleep.respiratoryRate || sleep.respiratoryRate <= 0) {
         try {
@@ -1831,6 +1891,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         }
       }
       updateSP(prev => updateMetric(prev, 'vitals', 'done'));
+      logStage('vitals', vitalsStart);
 
       updateSP({ phase: 'complete' });
       updateSP(prev => updateMetric(prev, 'cloud', 'loading'));
@@ -2102,6 +2163,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         void saveMetricBaselines(baselinesRef.current);
 
         lastSyncCompletedAt.current = Date.now();
+        logStage('TOTAL', syncStart);
         console.log('📊 [useHomeData] setData →', { sleepScore: newData.sleepScore, overallScore: newData.overallScore, steps: newData.activity.steps, battery: ringBattery, hrPts: finalHrChartData.length });
         saveToCache(newData);
         // Push all ring data (7 days of sleep + vitals) to Supabase in the background
@@ -2172,7 +2234,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           isRingConnected: false,
           isLoading: false,
           isSyncing: false,
-          syncProgress: { phase: 'idle', metrics: [...INITIAL_METRICS] },
+          syncProgress: { phase: 'idle', showSheet: false, metrics: [...INITIAL_METRICS] },
         }));
       }
     });

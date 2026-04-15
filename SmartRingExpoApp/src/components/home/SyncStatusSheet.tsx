@@ -131,17 +131,17 @@ export function SyncStatusSheet({ syncProgress, isSyncing, onFindRings }: SyncSt
     }
   }, [hide, connectionTimedOut]);
 
-  // ── Primary show trigger: isSyncing false→true ──
-  // isSyncing is set in the same setData call as phase:'connecting', making it
-  // a reliable trigger regardless of when the component mounts relative to the sync.
+  // ── Primary show trigger: isSyncing false→true AND showSheet is set ──
+  // showSheet is only true on cold-start when the ring was not already connected.
+  // Foreground resumes, manual refreshes, and already-connected starts use header-only sync.
   const prevIsSyncing = useRef(false);
   useEffect(() => {
     const wasSync = prevIsSyncing.current;
     prevIsSyncing.current = isSyncing;
-    if (isSyncing && !wasSync) {
+    if (isSyncing && !wasSync && syncProgress.showSheet) {
       show();
     }
-  }, [isSyncing, show]);
+  }, [isSyncing, syncProgress.showSheet, show]);
 
   // ── Phase effect: keep phaseRef current + drive auto-dismiss + error hide ──
   useEffect(() => {

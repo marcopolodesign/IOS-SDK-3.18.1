@@ -25,8 +25,8 @@ export function SemiCircularGauge({
   label = 'FOCUS SCORE',
   animated = true,
 }: SemiCircularGaugeProps) {
-  const animatedValue = useRef(new Animated.Value(0)).current;
-  const [displayScore, setDisplayScore] = React.useState(0);
+  const animatedValue = useRef(new Animated.Value(score)).current;
+  const [displayScore, setDisplayScore] = React.useState(score);
   const [pathLength, setPathLength] = React.useState(0);
   const lengthPathRef = useRef<Path>(null);
   const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -37,7 +37,6 @@ export function SemiCircularGauge({
 
   useEffect(() => {
     if (animated) {
-      animatedValue.setValue(0);
       Animated.timing(animatedValue, {
         toValue: score,
         duration: 1500,

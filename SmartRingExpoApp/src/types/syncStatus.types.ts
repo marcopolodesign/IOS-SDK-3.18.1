@@ -11,4 +11,6 @@ export interface MetricSyncState {
 export interface SyncProgressState {
   phase: SyncPhase;
   metrics: MetricSyncState[];
+  /** Only true on cold-start when ring was not already connected — controls whether SyncStatusSheet opens */
+  showSheet: boolean;
 }

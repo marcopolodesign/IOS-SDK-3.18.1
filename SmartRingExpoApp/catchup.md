@@ -4,6 +4,60 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-14: Recovery Detail — Resting HR Null Patch
+
+**Problem:** Resting HR showed `--` (0) in the Recovery detail page for today and past days.
+
+**Root cause:** `compute_daily_readiness` pg_cron runs at 12:15 AM ART — before the ring has synced overnight HR data. It stores `readiness_resting_hr = NULL` in `daily_summaries`. `fromPersisted()` mapped `null → 0`, so the metric displayed `--`.
+
+**Fix:** In the `readiness` useMemo (`app/detail/recovery-detail.tsx`), when a persisted record has `restingHR === 0`, patch it from `getHR(selectedDateKey)` — which uses overnight readings from `heart_rate_readings` (past days) or `homeData.lastNightSleep?.restingHR` (today). The `restingHRScore` is also patched to keep the Score Breakdown bar accurate.
+
+**Files modified:** `app/detail/recovery-detail.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-14: Ring Connection UX — Sheet Gate + Stage Timing + Cached Score Animation
+
+Three improvements to the Today screen ring sync flow:
+
+**1. SyncStatusSheet only opens on cold-start + disconnected**
+The bottom sheet now has a `showSheet` flag in `SyncProgressState`. It is `true` only when `hydrationReason === 'initial'` AND the ring was not already connected at app launch. Foreground resumes (every 10 min), manual pull-to-refresh, and already-connected cold starts use the existing header spinner only — no sheet interruption.
+
+**2. Per-stage timing instrumentation**
+Each sync stage now logs elapsed ms to the console: `[sync] precheck Xms`, `[sync] autoReconnect Xms`, `[sync] sleep Xms`, `[sync] battery Xms`, `[sync] heartRate Xms`, `[sync] hrv Xms`, `[sync] steps+sport Xms`, `[sync] vitals Xms`, `[sync] TOTAL Xms`. The native Jstyle reconnect path also logs `[sync] jstyle.native.autoReconnect Xms`. No behavior change — logs only.
+
+**3. Animated numbers start from cached value, not 0**
+`SemiCircularGauge` (used for the Overview overall score and Sleep score) now seeds its `Animated.Value` and `displayScore` state from the incoming `score` prop instead of hardcoded 0. Since the cache is hydrated before mount, the gauge immediately shows the previous day's score and then tweens to the fresh value — no 0→score flash.
+
+**Files modified:**
+- `src/types/syncStatus.types.ts` — added `showSheet: boolean` to `SyncProgressState`
+- `src/components/home/SyncStatusSheet.tsx` — gate show-trigger on `syncProgress.showSheet`
+- `src/components/home/SemiCircularGauge.tsx` — seed `Animated.Value(score)` + `useState(score)`, remove `setValue(0)`
+- `src/hooks/useHomeData.ts` — precheck moved before `setData(isSyncing:true)`, `showSheet` added, `logStage` timing markers throughout
+- `src/services/JstyleService.ts` — timing wrapper around native `autoReconnect`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-14: HR Chart Gap Auto-Retry
+
+When the HR chart shows empty hours between hours that have data (interior gaps, e.g. 4am-6am missing during sleep), the app now automatically retries the BLE fetch to fill those gaps.
+
+**Logic:**
+1. After the initial continuous HR fetch, the app checks for interior gaps (hours with no data flanked by hours with data)
+2. If gaps are found, waits 2s for the ring to flush buffers, then re-fetches continuous HR and merges any new readings (dedup by minute)
+3. Also fetches single HR readings and merges those for any still-uncovered hours
+4. Resting HR calculation includes all newly added readings
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ## 2026-04-14: WhatsApp Check-In — 3× Daily + App Link + i18n
 
 Upgraded `whatsapp-checkin` from 1 message/day to 3, each with a distinct Claude prompt and data focus. Messages are generated in the user's language (`app_config.whatsapp_language`, supports `en`/`es`):

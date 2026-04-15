@@ -377,8 +377,11 @@ class JstyleService {
 
   async autoReconnect(): Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> {
     if (!JstyleBridge) throw new Error('Jstyle SDK not available');
-    return await withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')
+    const t0 = Date.now();
+    const result = await withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')
       .catch(() => ({ success: false, message: 'autoReconnect timed out' }));
+    console.log(`[sync] jstyle.native.autoReconnect ${Date.now() - t0}ms success=${result.success}`);
+    return result;
   }
 
   async forgetPairedDevice(): Promise<{ success: boolean; message: string }> {

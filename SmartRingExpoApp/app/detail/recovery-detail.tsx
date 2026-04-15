@@ -492,7 +492,20 @@ export default function RecoveryDetailScreen() {
   // Selected day detail: prefer server-persisted; fall back to client-side computation
   const readiness = useMemo((): DayReadiness => {
     const persisted = readinessData.get(selectedDateKey ?? '');
-    if (persisted) return fromPersisted(persisted);
+    if (persisted) {
+      const base = fromPersisted(persisted);
+      // Patch: cron often runs before overnight HR is synced, leaving readiness_resting_hr NULL.
+      // Fill it in from heart_rate_readings (or today's ring data) when available.
+      if (base.restingHR === 0) {
+        const hr = getHR(selectedDateKey ?? '');
+        const rhr = hr?.restingHR ?? 0;
+        if (rhr > 0) {
+          const patchedHRScore = Math.max(0, Math.min(100, Math.round(((90 - rhr) / 50) * 100)));
+          return { ...base, restingHR: rhr, restingHRScore: patchedHRScore };
+        }
+      }
+      return base;
+    }
     return computeReadiness(
       getSleep(selectedDateKey ?? ''),
       getHR(selectedDateKey ?? ''),
