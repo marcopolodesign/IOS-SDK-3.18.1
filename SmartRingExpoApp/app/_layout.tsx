@@ -18,7 +18,7 @@ Sentry.init({
   enabled: true,
   beforeSend(event) {
     // Strip any auth tokens or sensitive strings from breadcrumb data
-    if (event.breadcrumbs?.values) {
+    if (Array.isArray(event.breadcrumbs?.values)) {
       event.breadcrumbs.values = event.breadcrumbs.values.map(crumb => {
         if (crumb.data) {
           const cleaned = { ...crumb.data };
