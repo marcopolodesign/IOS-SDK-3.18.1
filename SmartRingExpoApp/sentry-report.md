@@ -41,3 +41,20 @@
 - **7394530406** (V8Bridge Disconnect): Ongoing fatal. CoreBluetooth's `handlePeripheralDisconnectionCompleted:` path tries to call `Disconnect:` on a `V8Bridge` instance, which does not implement that selector. Stack frames are redacted. V8Bridge is off-limits per project constraints; requires native iOS engineer to find and remove the residual V8Bridge delegate registration.
 - `gh` CLI not available — PR creation skipped.
 - No auto-fixable issues found today.
+
+## 2026-04-16
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7406743701 | TypeError: undefined is not a function (in `beforeSend`) | error | 2026-04-13T00:32:01Z | 2026-04-16T12:02:16Z | Auto-fixed (PR #2) — same root as 7408046962; `Array.isArray` guard applied |
+| 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08T01:52:47Z | 2026-04-16T02:21:54Z | Needs manual review — V8Bridge off-limits per constraints |
+| 7408046962 | TypeError: event.breadcrumbs.values.map is not a function (it is undefined) | error | 2026-04-13T13:51:22Z | 2026-04-15T17:32:24Z | Auto-fixed (PR #2) |
+| 7414141259 | TypeError: event.breadcrumbs.values.map is not a function (it is undefined) | error | 2026-04-15T13:50:19Z | 2026-04-15T16:04:49Z | Auto-fixed (PR #2) |
+| 7414514453 | TypeError: event.breadcrumbs.values.map is not a function (it is undefined) | error | 2026-04-15T16:03:10Z | 2026-04-15T16:03:10Z | Auto-fixed (PR #2) |
+
+### 2026-04-16 Notes
+- 9 unresolved issues total; 5 seen within the last 24 h.
+- **Root cause (7406743701 / 7408046962 / 7414141259 / 7414514453):** `beforeSend` in `app/_layout.tsx:21` checked `event.breadcrumbs?.values` for truthiness, but `values` can be a non-array truthy value in some Sentry SDK edge cases, causing `.map is not a function`. Fixed with `Array.isArray(event.breadcrumbs?.values)`. Branch `sentry/fix-7408046962` → **PR #2**.
+- **7394530406** (V8Bridge Disconnect): Still recurring. Ongoing fatal — V8Bridge off-limits per project constraints. Requires native iOS engineer.
+- `gh` CLI not available — PR created via GitHub MCP (PR #2: marcopolodesign/IOS-SDK-3.18.1#2).
+- Note: `sentry-report.md` was being committed to a detached-HEAD chain and was absent from `main`. Re-created on `main` with full history restored.
