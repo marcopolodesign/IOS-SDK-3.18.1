@@ -58,3 +58,17 @@
 - **7394530406** (V8Bridge Disconnect): Still recurring. Ongoing fatal — V8Bridge off-limits per project constraints. Requires native iOS engineer.
 - `gh` CLI not available — PR created via GitHub MCP (PR #2: marcopolodesign/IOS-SDK-3.18.1#2).
 - Note: `sentry-report.md` was being committed to a detached-HEAD chain and was absent from `main`. Re-created on `main` with full history restored.
+
+## 2026-04-17
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7406743701 | TypeError: undefined is not a function (in `beforeSend`) | error | 2026-04-13T00:32:01Z | 2026-04-16T12:32:03Z | Needs manual review — errors originate from old production build `com.focusring.app@1.0.3+25`; fix already shipped in PR #2. Publish latest build to App Store to resolve. |
+| 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08T01:52:47Z | 2026-04-16T12:46:45Z | Needs manual review — V8Bridge off-limits per constraints. Requires native iOS engineer. |
+
+### 2026-04-17 Notes
+- 9 unresolved issues total; 2 seen within the last 24 h.
+- **7406743701** (TypeError `beforeSend`): Stack trace is fully minified (`app:///main.jsbundle`, no source maps). Culprit is `beforeSend` in production build `com.focusring.app@1.0.3+25` (dist 25). The `Array.isArray` guard fix was already applied in PR #2 on 2026-04-16. Errors will stop once the updated build is distributed. No further code change needed.
+- **7394530406** (V8Bridge Disconnect): Ongoing fatal. `NSInvalidArgumentException` — `-[V8Bridge Disconnect:]` unrecognized selector. CoreBluetooth disconnect path is invoking `Disconnect:` on a `V8Bridge` instance that does not implement it. V8Bridge files are off-limits per project constraints. Requires native iOS engineer to audit bridge initialisation and remove residual V8Bridge delegate registration.
+- No auto-fixable issues today — neither issue meets the confidence threshold for an automated fix.
+- `gh` CLI not available — PR creation skipped.
