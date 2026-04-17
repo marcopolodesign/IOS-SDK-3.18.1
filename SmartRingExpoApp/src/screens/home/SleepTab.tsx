@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated, FlatList, ImageBackground, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, Animated, FlatList, ImageBackground, Dimensions } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
@@ -133,14 +133,6 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         />
       }
     >
-      {/* Syncing Indicator */}
-      {homeData.isSyncing && (
-        <View style={styles.syncingBanner}>
-          <ActivityIndicator size="small" color="rgba(255,255,255,0.8)" />
-          <Text style={styles.syncingText}>{t('sleep.syncing')}</Text>
-        </View>
-      )}
-
       {/* Sleep Score Gauge — or baseline banner */}
       {baseline.isInBaselineMode && !baseline.metrics.sleep.ready ? (
         <View style={styles.baselineBanner}>
@@ -380,23 +372,6 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: spacing.lg,
     paddingBottom: 100,
-  },
-  syncingBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: 12,
-    gap: 8,
-  },
-  syncingText: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
   },
   gaugeSection: {
     alignItems: 'center',

@@ -4,6 +4,18 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-17: Sleep Tab — Remove "Syncing with device" Banner
+
+Removed the "Syncing with device…" indicator that appeared at the top of the Sleep tab (one of the `materialTopTabs` in the home screen) while `homeData.isSyncing` was true. Users reported it as redundant since the top-of-screen sync sheet already communicates sync state.
+
+**User-visible change:** The Sleep tab no longer shows the purple-tinted "Syncing with device…" banner during sync. Sync progress remains visible via the existing `SyncStatusSheet` bottom sheet on the Today screen.
+
+**Files modified:** `src/screens/home/SleepTab.tsx` — removed the syncing banner JSX, unused `ActivityIndicator` import, and orphaned `syncingBanner`/`syncingText` styles.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ## 2026-04-14: Recovery Detail — Resting HR Null Patch
 
 **Problem:** Resting HR showed `--` (0) in the Recovery detail page for today and past days.
