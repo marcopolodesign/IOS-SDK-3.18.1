@@ -192,6 +192,8 @@ interface CachedData {
   cachedAt: number;
   lastSyncedAt: number | null;
   stravaActivities?: StravaActivitySummary[];
+  hrChartData?: Array<{ timeMinutes: number; heartRate: number }>;
+  hrDataIsToday?: boolean;
 }
 
 // Basal + adjusted active calorie estimation using static profile (to be made dynamic later)
@@ -579,6 +581,8 @@ async function saveToCache(data: HomeData): Promise<void> {
       cachedAt: Date.now(),
       lastSyncedAt: data.lastSyncedAt ?? Date.now(),
       stravaActivities: data.stravaActivities,
+      hrChartData: data.hrChartData,
+      hrDataIsToday: data.hrDataIsToday,
     };
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cached));
     console.log('😴 [useHomeData] Data cached successfully');
@@ -608,6 +612,17 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
     }
 
     console.log('😴 [useHomeData] Loaded cached data from', new Date(data.cachedAt).toLocaleTimeString());
+
+    // HR chart shows 24 hourly buckets for *today* — only restore if the
+    // cache was written earlier the same calendar day, otherwise the card
+    // would render yesterday's hours as today's.
+    const cachedDate = new Date(data.cachedAt);
+    const now = new Date();
+    const isSameCalendarDay =
+      cachedDate.getFullYear() === now.getFullYear() &&
+      cachedDate.getMonth() === now.getMonth() &&
+      cachedDate.getDate() === now.getDate();
+
     return {
       sleepScore: data.sleepScore,
       lastNightSleep: {
@@ -624,6 +639,8 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
       readiness: data.readiness,
       lastSyncedAt: data.lastSyncedAt ?? data.cachedAt,
       stravaActivities: (data.stravaActivities as StravaActivitySummary[]) ?? [],
+      hrChartData: isSameCalendarDay ? (data.hrChartData ?? []) : [],
+      hrDataIsToday: isSameCalendarDay ? (data.hrDataIsToday ?? false) : false,
     };
   } catch (error) {
     console.log('😴 [useHomeData] Failed to load cache:', error);
