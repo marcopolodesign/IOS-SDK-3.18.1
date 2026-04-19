@@ -72,3 +72,5 @@
 - **7394530406** (V8Bridge Disconnect): Ongoing fatal. `NSInvalidArgumentException` — `-[V8Bridge Disconnect:]` unrecognized selector. CoreBluetooth disconnect path is invoking `Disconnect:` on a `V8Bridge` instance that does not implement it. V8Bridge files are off-limits per project constraints. Requires native iOS engineer to audit bridge initialisation and remove residual V8Bridge delegate registration.
 - No auto-fixable issues today — neither issue meets the confidence threshold for an automated fix.
 - `gh` CLI not available — PR creation skipped.
+
+## 2026-04-19 — No new issues
