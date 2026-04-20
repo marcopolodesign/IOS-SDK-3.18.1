@@ -110,6 +110,18 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Recent Changes
 
+### 2026-04-20: Sleep Hypnogram — Trim Leading/Trailing Awake + Sync Ring Clock
+
+**Problem:** Hypnogram showed inflated per-stage minute labels (e.g. "20/30 min" in the Awake lane) and BEDTIME was ~20 min earlier than the user's real bedtime, with the offset varying each night.
+
+**Root cause:** The ring's raw sleep block `startTimestamp` is when it began recording (user in bed but not yet asleep), not sleep onset. `buildBlockResult` / `blockToRingNap` in `useHomeData.ts` returned `bedTime = block.start` / `wakeTime = block.end` unaltered. Secondary: `JstyleService.setTime()` existed but was never called, so ring-clock drift compounded.
+
+**Fix:** Added `trimAwakeEdges(segments)` helper in `src/hooks/useHomeData.ts` that slices off leading + trailing `'awake'` segments while preserving mid-night awakenings. Applied in `buildBlockResult` (returns `null` if all-awake) and `blockToRingNap` (returns zeroed block, dropped by the caller's `totalMin > 0` filter). `timeAsleepMinutes` and `calculateSleepScore` inputs unchanged — still use full-timeline totals for accurate efficiency scoring. Also wired `JstyleService.setTime()` as fire-and-forget in `UnifiedSmartRingService.autoReconnect()` Jstyle success branch.
+
+**User-visible:** BEDTIME now equals first non-awake minute (sleep onset, matches Oura/Ultrahuman). Awake lane minute label no longer includes pre-sleep in-bed time. Nap cards also trimmed. Sleep score unchanged. Ring clock re-syncs on every reconnect.
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/services/UnifiedSmartRingService.ts`
+
 ### 2026-04-18: HR Card — Restore From Cache on Cold Start
 
 **Problem:** HR card on Overview showed "None"/"No data" while the ring was loading and connecting/syncing on cold start, while Sleep/Activity rendered cached values instantly.
