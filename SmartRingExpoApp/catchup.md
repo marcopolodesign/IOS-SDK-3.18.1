@@ -4,6 +4,26 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-20: Sleep Hypnogram — Trim Leading/Trailing Awake + Sync Ring Clock
+
+**Problem:** Two related Sleep-tab bugs:
+1. The hypnogram always showed inflated per-stage minute labels (e.g. "20 / 30 min" in the Awake lane) because leading in-bed awake minutes were counted before sleep onset.
+2. The BEDTIME label appeared ~20 min earlier than actual bedtime (user went to bed 12:44 AM, app showed 12:21 AM), with the offset varying night-to-night.
+
+**Root cause:** The ring emits sleep records whose `startTimestamp` is when it *started recording* (user donned the ring / moved around in bed before sleep), not when sleep actually began. `buildBlockResult` (and `blockToRingNap`) returned `bedTime = block.start` / `wakeTime = block.end` without trimming the leading/trailing awake segments, so: (a) BEDTIME was earlier than real sleep onset, and (b) the Awake lane count included pre-sleep in-bed minutes. Secondary issue: `JstyleService.setTime()` existed but was never called, so any ring-clock drift compounded over time.
+
+**Fix:**
+1. **`src/hooks/useHomeData.ts`** — Added `trimAwakeEdges(segments)` helper that slices off leading + trailing `'awake'` segments while preserving mid-night awakenings (real disturbances). Used in `buildBlockResult` (returns `null` if the block was entirely awake — caller at `~line 882` already handles `null`) and `blockToRingNap` (returns a zeroed `RingNapBlock` so the existing `.filter(n => n.totalMin > 0)` drops it naturally). `timeAsleepMinutes` and the `calculateSleepScore` inputs are unchanged — they still derive from full-timeline stage totals, so sleep score and efficiency scoring stay correct.
+2. **`src/services/UnifiedSmartRingService.ts`** — In the Jstyle success branch of `autoReconnect()`, added fire-and-forget `JstyleService.setTime().catch(...)` right after the `connected` state emit. Runs once per physical reconnection (the natural "align clocks" boundary); does not block connection.
+
+**User-visible behaviour:** BEDTIME now equals the first non-awake minute of the hypnogram (sleep onset) — matching Oura/Ultrahuman convention. The Awake lane total no longer includes the minutes spent fidgeting before sleep, so the displayed number is noticeably smaller and matches what was actually slept. Nap card start/end times also reflect first/last non-awake minute. Sleep score and `timeAsleep` are unchanged. Ring clock re-syncs on every reconnect, so BEDTIME drift relative to the phone clock no longer compounds over time.
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/services/UnifiedSmartRingService.ts`
+
+**Source:** Claude.ai — web
+
+---
+
 ## 2026-04-18: HR Card — Restore From Cache on Cold Start
 
 **Problem:** While the app is loading and the ring is still connecting/syncing on cold start, the Heart Rate card on the Overview tab showed **"None"** / **"No data"**. Sleep, Activity, Readiness, etc. already render cached values instantly in the same window.

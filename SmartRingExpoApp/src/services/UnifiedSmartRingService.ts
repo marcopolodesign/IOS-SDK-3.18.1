@@ -375,6 +375,7 @@ class UnifiedSmartRingService {
               addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'jstyle' });
               if (result.deviceId) setRingContext(result.deviceId, 'jstyle');
               setTimeout(() => this.emitConnectionState('connected'), 50);
+              JstyleService.setTime().catch(e => console.log('[Unified] setTime on reconnect failed:', e));
               V8Service.forgetPairedDevice().catch(() => {});
               return result;
             }
