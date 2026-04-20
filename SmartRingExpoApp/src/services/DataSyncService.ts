@@ -229,28 +229,37 @@ class DataSyncService {
     syncId: string | null
   ) {
     try {
-      const hourlyData = await service.get24HourHeartRate();
-      
-      if (hourlyData && hourlyData.length > 0) {
-        const now = new Date();
-        const readings = hourlyData
-          .map((hr, index) => {
-            if (hr === 0) return null;
-            const recordedAt = new Date(now);
-            recordedAt.setHours(index, 0, 0, 0);
-            return {
-              user_id: userId,
-              sync_id: syncId,
-              heart_rate: hr,
-              recorded_at: recordedAt.toISOString(),
-              source: 'smart_ring',
-            };
-          })
-          .filter((r): r is NonNullable<typeof r> => r !== null);
+      const raw = await service.getContinuousHeartRateRaw();
+      const records: any[] = raw?.records ?? [];
 
-        if (readings.length > 0) {
-          await supabaseService.insertHeartRateReadings(readings);
-        }
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+
+      const readings: Array<{ user_id: string; sync_id: string | null; heart_rate: number; recorded_at: string; source: string }> = [];
+
+      for (const record of records) {
+        const startMs: number = record.startTimestamp ?? 0;
+        const arr: number[] = record.arrayDynamicHR ?? [];
+        arr.forEach((hr, idx) => {
+          if (hr <= 0) return;
+          const ts = new Date(startMs + idx * 60_000);
+          const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
+          if (dateStr !== todayStr) return;
+          readings.push({
+            user_id: userId,
+            sync_id: syncId,
+            heart_rate: hr,
+            recorded_at: ts.toISOString(),
+            source: 'smart_ring',
+          });
+        });
+      }
+
+      if (readings.length > 0) {
+        await supabaseService.deleteHeartRateReadingsForRange(userId, startOfToday, endOfToday);
+        await supabaseService.insertHeartRateReadings(readings);
       }
     } catch (e) {
       console.error('Error syncing heart rate data:', e);

@@ -110,6 +110,16 @@ class SupabaseService {
     return true;
   }
 
+  async deleteHeartRateReadingsForRange(userId: string, from: Date, to: Date): Promise<void> {
+    const { error } = await supabase
+      .from('heart_rate_readings')
+      .delete()
+      .eq('user_id', userId)
+      .gte('recorded_at', from.toISOString())
+      .lt('recorded_at', to.toISOString());
+    if (error) reportError(error, { method: 'deleteHeartRateReadingsForRange', table: 'heart_rate_readings' });
+  }
+
   async getHeartRateReadings(
     userId: string,
     startDate: Date,

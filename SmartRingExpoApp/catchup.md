@@ -4,6 +4,61 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-20: HR Detail — Drag-to-Scrub + Truncate Future Timeline
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced tap-to-freeze-scroll with a PanResponder drag-to-scrub interaction identical to the overview HR card and sleep hypnogram. Also dropped the horizontal ScrollView entirely (no more 1344px canvas — chart now fits to screen width), and truncated today's x-axis at the current minute so no empty future grid is shown.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Removed `ScrollView` import + horizontal scroll wrapper; removed `HOUR_WIDTH`/`TOTAL_CHART_W`/`CONTENT_W` constants; removed `scrollRef`/`scrollOffsetRef`/auto-scroll `useEffect`; removed separate fixed y-axis SVG overlay; removed tap-toggle `handleSvgPress`. Added `layoutWidthRef` + `handleTouchRef` ref pattern (mirrors `DailyHeartRateCard`); added `PanResponder` with grant/move/release/terminate; added `maxMinute = isToday ? nowMinutes : 1440` for x-scale; merged y-axis labels into the single `<Svg width="100%" viewBox="...">`. Hour ticks filtered to `≤ ceil(maxMinute/60)` so no empty future labels render.
+
+**Key notes:**
+- `handleTouchRef.current` is mutated on every render (not inside a `useEffect`) — same stale-closure avoidance pattern as `DailyHeartRateCard.tsx:160`
+- Drag converts screen px → SVG units via `touchPx * (CHART_W / layoutWidth)` since SVG uses `width="100%"` with a fixed `viewBox`
+- `maxMinute` is memoized with `useMemo([isToday])` — recomputed only on day change, not every render
+- Tooltip dismissed on `onPanResponderRelease` and `onPanResponderTerminate` (mirrors both reference components exactly)
+
+---
+
+## 2026-04-20: HR Detail — Remove Minimap, Freeze Scroll on Tooltip, Gradient Fill
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Three UX refinements to the HR detail chart: (1) removed the minimap strip below the chart — it added visual clutter with no meaningful value; (2) tapping the chart now freezes horizontal scrolling while the tooltip is pinned (tap again anywhere to dismiss and resume scrolling); (3) replaced the flat red area fill with a `LinearGradient` that fades from red at the top to transparent black at the baseline, giving a more polished depth effect.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Removed `MINI_H` constant, `miniScrollX` state, `miniToX`/`miniToY`/`miniPath`/`maxScroll`/`viewportW`/`viewportX` variables, and the minimap `<View>` block. Added `scrollEnabled={!tooltip}` to the `ScrollView` (replaces `onScrollBeginDrag` dismiss). Added `LinearGradient` to SVG import; added `<Defs><LinearGradient id="hrAreaGrad">` inside the scrollable SVG canvas; changed area `<Path>` fill from `rgba(171,13,13,0.18)` to `url(#hrAreaGrad)`. Simplified `onScroll` handler to only track offset (no minimap state update).
+
+**Key notes:**
+- Scroll freeze is implemented via `scrollEnabled={!tooltip}` — simpler and more reliable than PanResponder conflicts
+- Gradient uses `gradientUnits="userSpaceOnUse"` with `y1={PAD_V}` / `y2={baselineY}` so it maps to the actual chart content area regardless of data range
+- `LinearGradient` was added to the existing `react-native-svg` named import (same import line as `RadialGradient`)
+
+---
+
+## 2026-04-20: HR Detail — Scrollable Continuous Chart + Per-Minute Sync
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The HR detail chart was showing hourly averages, hiding the true 107 bpm peak that the home card correctly reported. Replaced the fixed hourly line chart with a horizontally scrollable, minute-resolution continuous curve. The chart is 1344px wide (56px/hour × 24 hours) — roughly 4× the screen width — so per-minute wiggle is clearly visible. Changed the Supabase sync pipeline to write one row per minute (instead of one per hour), so historical days get the same resolution as today on the next sync. Also added a minimap strip below the chart showing the full 24h at a glance with a sliding viewport indicator.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Replaced `HourlyHRLine` (hourly-bucket averages, PanResponder) with `ContinuousHRLine`: horizontal `ScrollView` wrapping a 1344px SVG, fixed y-axis overlay, `monotoneCubicPath` smooth curve, peak (red) + trough (white) labeled markers, tap-to-tooltip (dismisses on scroll), auto-scroll to current time on mount, minimap strip with animated viewport rectangle. Added `HOUR_WIDTH`, `TOTAL_CHART_W`, `MINI_H`, `CONTENT_W` constants. Added `formatTimeFromMinutes` helper. `useMemo` for the expensive path + extremes computation. Removed `PanResponder` import; added `ScrollView`, `useEffect`.
+- `src/hooks/useMetricHistory.ts` — Added `minutePoints: Array<{ timeMinutes, heartRate }>` to `DayHRData` interface. `fetchHRHistory` now stores `minute = d.getMinutes()` per row so `minutePoints` carries sub-hour precision when Supabase has it. `fetchHRFromRing` similarly maps `timeMinutes` directly from the raw ring result.
+- `src/services/DataSyncService.ts` — `syncHeartRateData` now calls `getContinuousHeartRateRaw()` (per-minute array) instead of `get24HourHeartRate()` (24 averages). Flattens `arrayDynamicHR[i]` into rows with `recorded_at = startTimestamp + i * 60_000`. Deletes today's existing rows first (clears stale hourly-rounded rows) then bulk-upserts the new per-minute set.
+- `src/services/SupabaseService.ts` — Added `deleteHeartRateReadingsForRange(userId, from, to)` helper (range delete on `heart_rate_readings`).
+
+**Key notes:**
+- Today's chart is minute-resolution immediately (data lives in `homeData.hrChartData`); historical days upgrade naturally the next time each day becomes "today" under the new sync path — no backfill needed
+- Supabase schema already supports arbitrary `recorded_at` precision; `(user_id, recorded_at)` unique constraint handles idempotent re-syncs
+- DB growth: ~1440 rows/day/user (~525k/year) — acceptable for current user count
+- The minimap `viewportX` is derived from `miniScrollX` state (updated at 100ms intervals via `scrollEventThrottle`), so the indicator moves smoothly without per-frame re-renders
+- `areaPath` now uses `${linePath} L lastX baseline L firstX baseline Z` (no `.slice()` string hack)
+- Tap on chart shows tooltip for nearest sample; swiping to scroll auto-dismisses tooltip via `onScrollBeginDrag`
+
+---
+
 ## 2026-04-15: Morning Sleep Sync — Targeted BLE Reconnect Trigger + Enriched Notifications
 
 **Source:** Claude Code — Macbook Pro

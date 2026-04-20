@@ -15,8 +15,9 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
+import { monotoneCubicPath } from '../../src/utils/chartMath';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { LiveHeartRateCard } from '../../src/components/home/LiveHeartRateCard';
@@ -27,16 +28,15 @@ import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
 
 const COLLAPSE_END = 80;
 
-
 const DAY_ENTRIES = buildDayNavigatorLabels(30);
 const SCREEN_WIDTH = Dimensions.get('window').width;
 // CHART_W accounts for chartContainer marginHorizontal (md) + paddingHorizontal (sm) both sides
 const CHART_W = SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2;
 const CHART_H = 234;
-const PAD_LEFT = 34; // reserved for Y-axis labels
-const PAD_RIGHT = 8;
+const PAD_LEFT = 34;
 const PAD_V = 16;
 const TOOLTIP_W = 88;
+
 
 function hrQualityLabel(restingHR: number): string {
   if (restingHR <= 0) return 'No data';
@@ -63,16 +63,18 @@ function hrInsight(data: DayHRData | undefined): string {
   return `Your HR stayed in a healthy range. Resting HR of ${data.restingHR} bpm is a solid indicator of recovery.`;
 }
 
-function formatHourLabel(hour: number): string {
-  if (hour === 0) return '12:00 AM';
-  if (hour === 12) return '12:00 PM';
-  return hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`;
-}
-
 function formatHourCompact(hour: number): string {
   if (hour === 0) return '12AM';
   if (hour === 12) return '12PM';
   return hour > 12 ? `${hour - 12}PM` : `${hour}AM`;
+}
+
+function formatTimeFromMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
 function buildTodayHRFromContext(
@@ -87,142 +89,180 @@ function buildTodayHRFromContext(
   return {
     date: today,
     hourlyPoints: pts.map(p => ({ hour: Math.floor(p.timeMinutes / 60) % 24, heartRate: p.heartRate })),
+    minutePoints: pts,
     restingHR: Math.min(...vals),
     peakHR: Math.max(...vals),
     avgHR: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
   };
 }
 
-// ─── Hourly HR line chart ─────────────────────────────────────────────────────
-function HourlyHRLine({ points, restingHR, peakHR, endHour, isToday }: { points: DayHRData['hourlyPoints']; restingHR: number; peakHR: number; endHour: number; isToday?: boolean }) {
-  const [tooltip, setTooltip] = useState<{ hour: number; heartRate: number; svgX: number; touchPx: number } | null>(null);
-  const layoutWidth = useRef(0);
-  const currentHour = new Date().getHours();
+// ─── Fit-to-screen continuous HR line chart with drag-to-scrub ────────────────
+function ContinuousHRLine({
+  points, restingHR, peakHR, isToday,
+}: {
+  points: DayHRData['minutePoints']; restingHR: number; peakHR: number; isToday?: boolean;
+}) {
+  const [tooltip, setTooltip] = useState<{ svgX: number; heartRate: number; timeMinutes: number } | null>(null);
+  const layoutWidthRef = useRef(0);
+  const handleTouchRef = useRef<(x: number) => void>(() => {});
 
-  const hourMap = new Map<number, number[]>();
-  points.forEach(p => {
-    if (p.heartRate <= 0) return;
-    // Drop readings from future hours when viewing today
-    if (isToday && p.hour > currentHour) return;
-    if (!hourMap.has(p.hour)) hourMap.set(p.hour, []);
-    hourMap.get(p.hour)!.push(p.heartRate);
-  });
-  const sorted = Array.from(hourMap.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([hour, hrs]) => ({ hour, heartRate: Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) }));
+  const maxMinute = useMemo(() => {
+    if (!isToday) return 1440;
+    const now = new Date();
+    return Math.max(60, now.getHours() * 60 + now.getMinutes());
+  }, [isToday]);
 
-  if (sorted.length < 2) return null;
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    return points
+      .filter(p => p.heartRate > 0 && (!isToday || p.timeMinutes <= nowMin))
+      .sort((a, b) => a.timeMinutes - b.timeMinutes);
+  }, [points, isToday]);
 
   const minY = Math.max(30, restingHR - 10);
-  const maxY = peakHR + 10;
-  const range = Math.max(1, maxY - minY);
+  const range = Math.max(1, peakHR + 10 - minY);
+  const chartBodyW = CHART_W - PAD_LEFT;
 
-  // X-axis always spans midnight (0) to endHour so scale is consistent across days
-  const hourSpan = Math.max(1, endHour);
-  const toX = (hour: number) => PAD_LEFT + (hour / hourSpan) * (CHART_W - PAD_LEFT - PAD_RIGHT);
+  const toX = (tm: number) => PAD_LEFT + (tm / maxMinute) * chartBodyW;
   const toY = (hr: number) => PAD_V + (1 - (hr - minY) / range) * (CHART_H - PAD_V * 2);
 
-  const linePts = sorted.map(p => ({ x: toX(p.hour), y: toY(p.heartRate) }));
-  const linePath = 'M ' + linePts.map(p => `${p.x} ${p.y}`).join(' L ');
+  const { linePath, linePts, peakSample, troughSample } = useMemo(() => {
+    if (filtered.length < 2) return { linePath: '', linePts: [], peakSample: null, troughSample: null };
+    const innerToX = (tm: number) => PAD_LEFT + (tm / maxMinute) * chartBodyW;
+    const innerToY = (hr: number) => PAD_V + (1 - (hr - minY) / range) * (CHART_H - PAD_V * 2);
+    const pts = filtered.map(p => ({ x: innerToX(p.timeMinutes), y: innerToY(p.heartRate) }));
+    const path = monotoneCubicPath(pts);
+    const peak = filtered.reduce((a, b) => b.heartRate > a.heartRate ? b : a, filtered[0]);
+    const trough = filtered.reduce((a, b) => b.heartRate < a.heartRate ? b : a, filtered[0]);
+    return { linePath: path, linePts: pts, peakSample: peak, troughSample: trough };
+  }, [filtered, minY, range, maxMinute, chartBodyW]);
 
-  const firstX = toX(sorted[0].hour);
-  const lastX = toX(sorted[sorted.length - 1].hour);
-  const baselineY = toY(minY);
-  const areaPath = [
-    `M ${PAD_LEFT} ${baselineY}`,
-    `L ${firstX} ${baselineY}`,
-    ...linePts.map(p => `L ${p.x} ${p.y}`),
-    `L ${lastX} ${baselineY}`,
-    'Z',
-  ].join(' ');
-
-  // Ref-based handler so PanResponder (created once) always calls the latest closure
-  const handleRef = useRef<(touchPx: number) => void>(null as any);
-  handleRef.current = (touchPx: number) => {
-    if (!layoutWidth.current || sorted.length === 0) return;
-    const svgX = (touchPx / layoutWidth.current) * CHART_W;
-    let nearest = sorted[0];
+  // Mutated on every render so PanResponder always sees current state
+  handleTouchRef.current = (touchPx: number) => {
+    if (!layoutWidthRef.current || filtered.length === 0) return;
+    const svgX = Math.max(PAD_LEFT, Math.min(CHART_W, touchPx * (CHART_W / layoutWidthRef.current)));
+    let nearest = filtered[0];
     let nearestDist = Infinity;
-    for (const p of sorted) {
-      const dist = Math.abs(toX(p.hour) - svgX);
+    for (const p of filtered) {
+      const dist = Math.abs(toX(p.timeMinutes) - svgX);
       if (dist < nearestDist) { nearestDist = dist; nearest = p; }
     }
-    setTooltip({ hour: nearest.hour, heartRate: nearest.heartRate, svgX: toX(nearest.hour), touchPx });
+    setTooltip({ svgX: toX(nearest.timeMinutes), heartRate: nearest.heartRate, timeMinutes: nearest.timeMinutes });
   };
 
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: evt => handleRef.current(evt.nativeEvent.locationX),
-    onPanResponderMove: evt => handleRef.current(evt.nativeEvent.locationX),
-    onPanResponderRelease: () => setTooltip(null),
-    onPanResponderTerminate: () => setTooltip(null),
-  })).current;
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder:        () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder:         () => true,
+      onMoveShouldSetPanResponderCapture:  () => true,
+      onPanResponderGrant:     e => handleTouchRef.current(e.nativeEvent.locationX),
+      onPanResponderMove:      e => handleTouchRef.current(e.nativeEvent.locationX),
+      onPanResponderRelease:   ()  => setTooltip(null),
+      onPanResponderTerminate: ()  => setTooltip(null),
+    })
+  ).current;
+
+  if (filtered.length < 2 || !linePath || !peakSample || !troughSample) return null;
+
+  const firstX = linePts[0].x;
+  const lastX = linePts[linePts.length - 1].x;
+  const baselineY = toY(minY);
+  const areaPath = `${linePath} L ${lastX} ${baselineY} L ${firstX} ${baselineY} Z`;
+
+  const peakX = toX(peakSample.timeMinutes);
+  const peakYPos = toY(peakSample.heartRate);
+  const troughX = toX(troughSample.timeMinutes);
+  const troughYPos = toY(troughSample.heartRate);
+  const peakLabelY = Math.max(PAD_V + 10, peakYPos - 8);
+  const troughLabelY = Math.min(CHART_H - PAD_V - 2, troughYPos + 14);
 
   const tooltipLeft = tooltip
-    ? Math.max(4, Math.min(layoutWidth.current - TOOLTIP_W - 4, tooltip.touchPx - TOOLTIP_W / 2))
+    ? Math.max(0, Math.min(CHART_W - TOOLTIP_W, tooltip.svgX - TOOLTIP_W / 2))
     : 0;
+
+  // Only show hour ticks up to maxMinute
+  const maxHour = Math.ceil(maxMinute / 60);
+  const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24].filter(h => h <= maxHour);
 
   return (
     <View
-      {...pan.panHandlers}
-      onLayout={e => { layoutWidth.current = e.nativeEvent.layout.width; }}
       style={chartStyles.chartWrapper}
+      onLayout={e => { layoutWidthRef.current = e.nativeEvent.layout.width; }}
+      {...pan.panHandlers}
     >
       {tooltip && (
         <View style={[chartStyles.tooltip, { left: tooltipLeft }]}>
           <Text style={chartStyles.tooltipValue}>{tooltip.heartRate} bpm</Text>
-          <Text style={chartStyles.tooltipTime}>{formatHourLabel(tooltip.hour)}</Text>
+          <Text style={chartStyles.tooltipTime}>{formatTimeFromMinutes(tooltip.timeMinutes)}</Text>
         </View>
       )}
-      <Svg width={CHART_W} height={CHART_H}>
-        {[0.25, 0.5, 0.75].map((frac, i) => {
-          const lineY = PAD_V + frac * (CHART_H - PAD_V * 2);
-          const bpm = Math.round(minY + (1 - frac) * range);
-          return (
-            <React.Fragment key={i}>
-              <Line
-                x1={PAD_LEFT} x2={CHART_W - PAD_RIGHT}
-                y1={lineY} y2={lineY}
-                stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="3,4"
-              />
-              <SvgText
-                x={2} y={lineY + 3}
-                textAnchor="start" fontSize={9}
-                fill="rgba(255,255,255,0.3)"
-                fontFamily={fontFamily.regular}
-              >{bpm}</SvgText>
-            </React.Fragment>
-          );
-        })}
-        <Path d={areaPath} fill="rgba(171,13,13,0.18)" />
-        <Path
-          d={linePath}
-          stroke="rgba(255,255,255,0.85)"
-          strokeWidth={1.2}
-          fill="none"
-        />
-        {tooltip && (
-          <Line
-            x1={tooltip.svgX} y1={PAD_V}
-            x2={tooltip.svgX} y2={CHART_H - PAD_V}
-            stroke="rgba(255,255,255,0.5)" strokeWidth={1}
+
+      <Svg width="100%" height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
+        <Defs>
+          <LinearGradient id="hrAreaGrad" gradientUnits="userSpaceOnUse" x1="0" y1={PAD_V} x2="0" y2={baselineY}>
+            <Stop offset="0%" stopColor="#AB0D0D" stopOpacity={0.5} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+
+        {/* Y-axis labels */}
+        {[0.25, 0.5, 0.75].map((frac, i) => (
+          <SvgText key={i} x={2} y={PAD_V + frac * (CHART_H - PAD_V * 2) + 3}
+            textAnchor="start" fontSize={9} fill="rgba(255,255,255,0.3)"
+            fontFamily={fontFamily.regular}
+          >
+            {Math.round(minY + (1 - frac) * range)}
+          </SvgText>
+        ))}
+
+        {/* Horizontal guide lines */}
+        {[0.25, 0.5, 0.75].map((frac, i) => (
+          <Line key={i}
+            x1={PAD_LEFT} x2={CHART_W}
+            y1={PAD_V + frac * (CHART_H - PAD_V * 2)}
+            y2={PAD_V + frac * (CHART_H - PAD_V * 2)}
+            stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="3,4"
           />
+        ))}
+
+        <Path d={areaPath} fill="url(#hrAreaGrad)" />
+        <Path d={linePath} stroke="rgba(255,255,255,0.85)" strokeWidth={1.2} fill="none" />
+
+        {/* Peak marker */}
+        <Circle cx={peakX} cy={peakYPos} r={4} fill="#FF6B6B" />
+        <SvgText x={peakX} y={peakLabelY} textAnchor="middle" fontSize={9} fill="#FF9999" fontFamily={fontFamily.demiBold}>
+          {peakSample.heartRate}
+        </SvgText>
+
+        {/* Trough marker */}
+        {troughSample.timeMinutes !== peakSample.timeMinutes && (
+          <>
+            <Circle cx={troughX} cy={troughYPos} r={4} fill="rgba(255,255,255,0.7)" />
+            <SvgText x={troughX} y={troughLabelY} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.6)" fontFamily={fontFamily.demiBold}>
+              {troughSample.heartRate}
+            </SvgText>
+          </>
         )}
-        {sorted.map(p => {
-          const isSelected = tooltip?.hour === p.hour;
-          return (
-            <Circle
-              key={p.hour}
-              cx={toX(p.hour)}
-              cy={toY(p.heartRate)}
-              r={isSelected ? 6 : 4.5}
-              fill="#FFFFFF"
+
+        {/* Drag cursor */}
+        {tooltip && (
+          <>
+            <Line
+              x1={tooltip.svgX} y1={PAD_V} x2={tooltip.svgX} y2={CHART_H - PAD_V}
+              stroke="rgba(255,255,255,0.5)" strokeWidth={1}
             />
-          );
-        })}
-        {[0, 6, 12, 18, 24].map(h => (
-          <SvgText key={h} x={toX(h)} y={CHART_H - 2} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)" fontFamily={fontFamily.regular}>
+            <Circle cx={tooltip.svgX} cy={toY(tooltip.heartRate)} r={5} fill="#FFFFFF" />
+          </>
+        )}
+
+        {/* X-axis hour ticks */}
+        {hourTicks.map(h => (
+          <SvgText key={h} x={toX(h * 60)} y={CHART_H - 2}
+            textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)"
+            fontFamily={fontFamily.regular}
+          >
             {formatHourCompact(h === 24 ? 0 : h)}
           </SvgText>
         ))}
@@ -293,9 +333,6 @@ export default function HeartRateDetailScreen() {
     return supabaseToday;
   })();
 
-  // Chart always spans the full 24h day; future hours are blank (no data)
-  const endHour = 24;
-
   const hrValues = useMemo(() =>
     DAY_ENTRIES.map(d => ({
       dateKey: d.dateKey,
@@ -306,7 +343,7 @@ export default function HeartRateDetailScreen() {
     [data, todayLive]
   );
 
-  const hasData = !!dayData && (dayData.restingHR > 0 || dayData.hourlyPoints.length > 0);
+  const hasData = !!dayData && (dayData.restingHR > 0 || (dayData.minutePoints?.length ?? dayData.hourlyPoints.length) > 0);
   const color = hrColor(dayData?.restingHR ?? 0);
   const label = hrQualityLabel(dayData?.restingHR ?? 0);
 
@@ -427,13 +464,12 @@ export default function HeartRateDetailScreen() {
             </View>
 
             {/* Line chart */}
-            {dayData!.hourlyPoints.length >= 2 && (
+            {(dayData!.minutePoints?.length ?? dayData!.hourlyPoints.length) >= 2 && (
               <View style={styles.chartContainer}>
-                <HourlyHRLine
-                  points={dayData!.hourlyPoints}
+                <ContinuousHRLine
+                  points={dayData!.minutePoints ?? dayData!.hourlyPoints.map(p => ({ timeMinutes: p.hour * 60, heartRate: p.heartRate }))}
                   restingHR={dayData!.restingHR}
                   peakHR={dayData!.peakHR}
-                  endHour={endHour}
                   isToday={selectedIndex === 0}
                 />
               </View>
@@ -444,7 +480,7 @@ export default function HeartRateDetailScreen() {
               { label: 'Resting HR', value: `${dayData!.restingHR || '--'}`, unit: 'bpm' },
               { label: 'Average HR', value: `${dayData!.avgHR || '--'}`, unit: 'bpm' },
               { label: 'Peak HR', value: `${dayData!.peakHR || '--'}`, unit: 'bpm' },
-              { label: 'Hours Tracked', value: `${dayData!.hourlyPoints.length}` },
+              { label: 'Readings', value: `${dayData!.minutePoints?.length ?? dayData!.hourlyPoints.length}` },
             ]} />
 
             {/* Live measurement */}

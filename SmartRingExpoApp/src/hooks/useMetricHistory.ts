@@ -47,6 +47,7 @@ export interface DaySleepData {
 export interface DayHRData {
   date: string;
   hourlyPoints: Array<{ hour: number; heartRate: number }>;
+  minutePoints: Array<{ timeMinutes: number; heartRate: number }>;
   restingHR: number;
   peakHR: number;
   avgHR: number;
@@ -283,12 +284,12 @@ async function fetchHRHistory(userId: string, days: number = 7): Promise<Map<str
   if (error || !data || data.length === 0) return new Map();
 
   // Group by date
-  const byDate = new Map<string, Array<{ hour: number; heartRate: number; val: number }>>();
+  const byDate = new Map<string, Array<{ hour: number; minute: number; heartRate: number; val: number }>>();
   for (const row of data) {
     const d = new Date(row.recorded_at);
     const dateKey = toDateStr(d);
     if (!byDate.has(dateKey)) byDate.set(dateKey, []);
-    byDate.get(dateKey)!.push({ hour: d.getHours(), heartRate: row.heart_rate, val: row.heart_rate });
+    byDate.get(dateKey)!.push({ hour: d.getHours(), minute: d.getMinutes(), heartRate: row.heart_rate, val: row.heart_rate });
   }
 
   const map = new Map<string, DayHRData>();
@@ -301,6 +302,7 @@ async function fetchHRHistory(userId: string, days: number = 7): Promise<Map<str
     map.set(dateKey, {
       date: dateKey,
       hourlyPoints: pts.map(p => ({ hour: p.hour, heartRate: p.heartRate })),
+      minutePoints: pts.map(p => ({ timeMinutes: p.hour * 60 + p.minute, heartRate: p.heartRate })),
       restingHR,
       peakHR: vals.length > 0 ? Math.max(...vals) : 0,
       avgHR: vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
@@ -538,12 +540,13 @@ async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
   const map = new Map<string, DayHRData>();
   try {
     const result = await UnifiedSmartRingService.getScheduledHeartRateRaw([0, 1, 2, 3, 4, 5, 6]);
-    const byDate = new Map<string, Array<{ hour: number; heartRate: number }>>();
+    const byDate = new Map<string, Array<{ hour: number; timeMinutes: number; heartRate: number }>>();
     for (const r of result) {
       const ts = (r as any).timestamp;
       const dateKey = ts ? toDateStr(new Date(ts)) : toDateStr(new Date());
       if (!byDate.has(dateKey)) byDate.set(dateKey, []);
-      byDate.get(dateKey)!.push({ hour: (r as any).hour ?? 0, heartRate: r.heartRate });
+      const tm: number = r.timeMinutes ?? ((r as any).hour ?? 0) * 60;
+      byDate.get(dateKey)!.push({ hour: Math.floor(tm / 60), timeMinutes: tm, heartRate: r.heartRate });
     }
     for (const [dateKey, pts] of byDate) {
       const vals = pts.map(p => p.heartRate).filter(v => v > 0);
@@ -551,7 +554,8 @@ async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
       const restingHR = overnightVals.length ? Math.min(...overnightVals) : (vals.length ? Math.min(...vals) : 0);
       map.set(dateKey, {
         date: dateKey,
-        hourlyPoints: pts,
+        hourlyPoints: pts.map(p => ({ hour: p.hour, heartRate: p.heartRate })),
+        minutePoints: pts.map(p => ({ timeMinutes: p.timeMinutes, heartRate: p.heartRate })),
         restingHR,
         peakHR: vals.length ? Math.max(...vals) : 0,
         avgHR: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0,
