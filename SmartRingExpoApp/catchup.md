@@ -4,6 +4,82 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-20: Sleep Detail — Stage Rows Redesign + Chart Reorder
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Redesigned sleep stage rows to match Oura's pill-label structure (colored pill on left, "Xh Ym • Z%" on right, no progress bar), reordered the scroll content so stages appear first then the HR/temp charts below, and removed the glass card background from both charts (now render on the plain dark background).
+
+**Files modified:**
+- `app/detail/sleep-detail.tsx` — Replaced `SleepStageBar` + `stageStyles` + `STAGE_RANGES` with `SleepStageRow` + `stageRowStyles`; pill uses `${color}28` (semi-transparent) background and color-matched text; stat shows `"Xh Ym • Z%"` format. Render order changed to: hypnogram → stages → MetricsGrid → HR chart → Temp chart → Naps. Chart wrappers changed from `styles.chartCard` (glass card) to `styles.chartSection` (no bg, no border, just top padding). Stage order updated to Awake / REM Sleep / Light Sleep / Deep Sleep to match reference layout.
+
+---
+
+## 2026-04-20: Sleep Detail — Oura-Style Resting HR Chart Redesign
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Redesigned the Resting HR chart in Sleep detail to match the Oura Ring visual style: hot pink sharp polyline (no smooth spline), dashed resting-HR reference line, "Lowest HR Zone" vertical band highlighting the 30-min sleep window with the lowest average HR, and bed/wake time pill labels at the x-axis edges.
+
+**Files modified:**
+- `app/detail/sleep-detail.tsx` — Replaced `SleepHRLine` component: removed monotone cubic path + gradient fill; added sharp polyline (`#FF2D78`), dashed white reference line at `minHR`, "Lowest HR Zone" band (semi-transparent pink rect + vertical center line + label + dot marker), round 10-bpm y-axis ticks, pill-shaped bed/wake time labels at x-axis edges (intermediate hours only rendered where they don't collide with pills). New component-scoped constants: `HR_CHART_H=200`, `HR_XAXIS_H=26`, `HR_PAD_LEFT=30`, `PILL_W=58`, `PILL_H=18`.
+
+**Key notes:**
+- Sharp polyline chosen intentionally (vs cubic spline) — shows minute-by-minute HR variability that the Oura reference chart emphasizes
+- Lowest HR Zone: scans each sample with a ±15-min window, picks the center with the minimum window average; zone width is always 30 min
+- Pill x-axis labels use exact bed/wake timestamps (lowercase, e.g. "12:52 am"); intermediate hour ticks are suppressed if within 8px of a pill
+
+---
+
+## 2026-04-20: Sleep Detail — Resting HR + Skin Temperature Charts
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added two new charts to the Sleep detail screen so it now shows three visualizations: the existing hypnogram, a Resting Heart Rate line chart, and a Skin Temperature line chart — all scoped to the sleep window (bedTime → wakeTime). Mirrors the drag-to-scrub, gradient-fill, monotone cubic pattern from the HR detail page.
+
+**Files modified:**
+- `app/detail/sleep-detail.tsx` — Added `SleepHRLine` and `SleepTempLine` inline chart components; `buildSleepWindowHourTicks` helper (shared by both); `buildTodaySleepFromContext` now accepts `hrChartData` and injects `hrSamples`; added `useEffect` that Supabase-fetches today's temperature samples (since live overlay doesn't hit the batch query); `activeTempSamples` merges live and batch paths; two new chart card render blocks inserted after hypnogram; `chartCard/chartHeader/chartTitle/chartSubtitle` styles added; new imports: `monotoneCubicPath`, `supabase`, `useTranslation`, `PanResponder`, `Dimensions`, extended SVG imports
+- `src/hooks/useMetricHistory.ts` — `DaySleepData` extended with `hrSamples` and `tempSamples`; `fetchSleepHistory` fires two parallel Supabase queries (HR + temperature) spanning the full session range, then distributes samples per session; pre-converts rows to `timeMs` before per-session filter loop (avoids duplicate `.map()` per session); `fetchSleepFromRing` initializes both fields to `[]`
+- `src/i18n/locales/en.json` — Added `sleep.chart_hr_title`, `sleep.chart_hr_subtitle`, `sleep.chart_temp_title`, `sleep.chart_temp_subtitle`
+- `src/i18n/locales/es.json` — Same four keys in Spanish
+
+**Key notes:**
+- X-axis spans bedTime → wakeTime (not a full 24h day) so both charts are dense and readable for typical 6–9h windows
+- HR chart: monotone cubic path, red gradient fill, peak/trough dot markers, drag-to-scrub tooltip — identical visual language to `heart-rate-detail.tsx`
+- Temperature chart: orange line, green normal-band (36.1–37.2°C) with dashed reference lines, drag-to-scrub tooltip
+- Data strategy: Supabase batch (2 queries covering full date range → distributed per session) avoids N+1; today's temperature uses a direct Supabase fetch in a `useEffect` since the live overlay path bypasses the batch
+- Both charts render hidden when `samples.length < 2` — no blank cards on days without HR/temp sync
+- `buildSleepWindowHourTicks` extracted as shared helper after simplify pass found the 16-line block was verbatim duplicated in both chart components
+
+---
+
+## 2026-04-20: Live HR Card — Full Layout Redesign (State-Specific, No #222 Body)
+
+**Source:** Claude Code — Macbook Pro
+
+Removed the dark `#222` body and redesigned all states within the gradient area:
+- **Idle**: number + "Last Measured X" inline, static heart on right, "Start" pill in body
+- **Measuring**: body owns full-width row — big number (or "...") + "Xs remaining" on left, pulsing heart on right; no stop button
+- **Done**: "98 BPM" in header, static heart on right; body = "Tap to re-measure" + status chip only
+- **Error**: "Try Again" pill
+
+Removed `CountdownRing` SVG component and unused `Circle` import. Added `hr_live.tap_to_remeasure` to `en.json` + `es.json`.
+
+**Files modified:** `src/components/common/GradientInfoCard.tsx`, `src/components/home/LiveHeartRateCard.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+## 2026-04-20: Fix HR Detail — Today Bar Jumps When Navigating to Yesterday
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Fixed a bug where today's resting HR in the trend bar chart would jump from the live ring value (e.g. 45) to the Supabase-stored value (e.g. 65) whenever the user scrolled to a different day. Root cause: `todayLive` was gated on `selectedIndex === 0`, so navigating away from today set it to `null` and `hrValues` fell back to Supabase data for today's bar. Fix: split into `todayLiveData` (always computed from ring context, drives the bar chart) and `todayLive` (only active when today is selected, drives the detail section display).
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Split `todayLive` into `todayLiveData` + `todayLive`; `hrValues` now uses `todayLiveData`
+
+---
+
 ## 2026-04-20: HR Detail — Drag-to-Scrub + Truncate Future Timeline
 
 **Source:** Claude Code — Macbook Pro

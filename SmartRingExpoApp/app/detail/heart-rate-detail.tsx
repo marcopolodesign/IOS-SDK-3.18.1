@@ -310,10 +310,14 @@ export default function HeartRateDetailScreen() {
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
   const todayKey = DAY_ENTRIES[0]?.dateKey;
 
-  // Only use live context data when it's actually from today
-  const todayLive = selectedIndex === 0 && homeData.hrDataIsToday && homeData.hrChartData.length > 0
+  // Live ring data for today — computed independently of selectedIndex so the
+  // trend bar for today doesn't jump when navigating to a different day.
+  const todayLiveData = homeData.hrDataIsToday && homeData.hrChartData.length > 0
     ? buildTodayHRFromContext(homeData.hrChartData)
     : null;
+
+  // Only overlay live data in the detail section when today is actually selected.
+  const todayLive = selectedIndex === 0 ? todayLiveData : null;
 
   const dayData = (() => {
     if (selectedIndex !== 0 || !selectedDateKey) {
@@ -336,11 +340,11 @@ export default function HeartRateDetailScreen() {
   const hrValues = useMemo(() =>
     DAY_ENTRIES.map(d => ({
       dateKey: d.dateKey,
-      value: d.dateKey === todayKey && todayLive
-        ? todayLive.restingHR
+      value: d.dateKey === todayKey && todayLiveData
+        ? todayLiveData.restingHR
         : (data.get(d.dateKey)?.restingHR ?? 0),
     })),
-    [data, todayLive]
+    [data, todayLiveData]
   );
 
   const hasData = !!dayData && (dayData.restingHR > 0 || (dayData.minutePoints?.length ?? dayData.hourlyPoints.length) > 0);

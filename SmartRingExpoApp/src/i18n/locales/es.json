@@ -120,7 +120,11 @@
     "nap_score_great": "Siesta Excelente",
     "nap_score_okay": "Siesta Regular",
     "nap_score_poor": "Siesta Mala",
-    "nap_contributed": "{{minutes}} min de siesta contados para la recuperación"
+    "nap_contributed": "{{minutes}} min de siesta contados para la recuperación",
+    "chart_hr_title": "Frecuencia cardíaca en reposo",
+    "chart_hr_subtitle": "{{value}} lpm mín.",
+    "chart_temp_title": "Temperatura de la piel",
+    "chart_temp_subtitle": "{{value}}°C prom."
   },
   "sleep_debt": {
     "card_title": "Deuda de Sueño",
@@ -529,6 +533,7 @@
     "result_no_reading": "Sin lectura capturada",
     "button_reset": "Reiniciar",
     "button_measure_again": "Medir de nuevo",
+    "tap_to_remeasure": "Toca para medir de nuevo",
     "error_message": "Medición fallida. Asegúrate de llevar el dispositivo.",
     "button_try_again": "Intentar de nuevo",
     "button_start": "Iniciar medición",

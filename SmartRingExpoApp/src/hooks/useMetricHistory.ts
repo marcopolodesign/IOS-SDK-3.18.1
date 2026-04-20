@@ -42,6 +42,8 @@ export interface DaySleepData {
   segments: Array<{ stage: string; startTime: Date; endTime: Date }>;
   restingHR: number;
   respiratoryRate: number;
+  hrSamples: Array<{ timeMs: number; heartRate: number }>;
+  tempSamples: Array<{ timeMs: number; temperature: number }>;
 }
 
 export interface DayHRData {
@@ -265,8 +267,43 @@ async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string,
       segments,
       restingHR: row.resting_hr || row.detail_json?.restingHR || 0,
       respiratoryRate: row.detail_json?.respiratoryRate || 0,
+      hrSamples: [],
+      tempSamples: [],
     });
   }
+
+  // Batch-fetch HR and temperature samples across all session windows (avoids N+1)
+  if (data.length > 0) {
+    const earliest = new Date(Math.min(...data.map(r => new Date(r.start_time).getTime())));
+    const latest   = new Date(Math.max(...data.map(r => new Date(r.end_time).getTime())));
+
+    const [hrResp, tempResp] = await Promise.all([
+      supabase.from('heart_rate_readings')
+        .select('heart_rate, recorded_at')
+        .eq('user_id', userId)
+        .gte('recorded_at', earliest.toISOString())
+        .lte('recorded_at', latest.toISOString())
+        .order('recorded_at', { ascending: true }),
+      supabase.from('temperature_readings')
+        .select('temperature_c, recorded_at')
+        .eq('user_id', userId)
+        .gte('recorded_at', earliest.toISOString())
+        .lte('recorded_at', latest.toISOString())
+        .order('recorded_at', { ascending: true }),
+    ]);
+
+    const allHR   = (hrResp.data ?? []).map(r => ({ timeMs: new Date(r.recorded_at).getTime(), heartRate: r.heart_rate }));
+    const allTemp = (tempResp.data ?? []).map(r => ({ timeMs: new Date(r.recorded_at).getTime(), temperature: r.temperature_c }));
+
+    for (const [, day] of map) {
+      if (!day.bedTime || !day.wakeTime) continue;
+      const startMs = day.bedTime.getTime();
+      const endMs   = day.wakeTime.getTime();
+      day.hrSamples   = allHR.filter(s => s.timeMs >= startMs && s.timeMs <= endMs && s.heartRate > 0);
+      day.tempSamples = allTemp.filter(s => s.timeMs >= startMs && s.timeMs <= endMs && s.temperature > 0);
+    }
+  }
+
   return map;
 }
 
@@ -527,6 +564,8 @@ async function fetchSleepFromRing(): Promise<Map<string, DaySleepData>> {
         segments,
         restingHR: 0,
         respiratoryRate: 0,
+        hrSamples: [],
+        tempSamples: [],
       });
     }
   } catch (e) {

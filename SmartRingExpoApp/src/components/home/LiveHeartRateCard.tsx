@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, NativeModules, NativeEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
@@ -43,38 +43,6 @@ function HeartIcon({ size = 24, color = '#fff' }: { size?: number; color?: strin
   );
 }
 
-function CountdownRing({ seconds, total = MEASURE_DURATION, size = 80 }: { seconds: number; total?: number; size?: number }) {
-  const radius = (size - 8) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = seconds / total;
-  const dashOffset = circumference * (1 - progress);
-
-  return (
-    <Svg width={size} height={size}>
-      <Circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke="rgba(255,255,255,0.15)"
-        strokeWidth={4}
-        fill="none"
-      />
-      <Circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke="rgba(255, 100, 100, 0.9)"
-        strokeWidth={4}
-        fill="none"
-        strokeDasharray={circumference}
-        strokeDashoffset={dashOffset}
-        strokeLinecap="round"
-        rotation="-90"
-        origin={`${size / 2}, ${size / 2}`}
-      />
-    </Svg>
-  );
-}
 
 type LiveHeartRateCardProps = {
   headerRight?: React.ReactNode;
@@ -301,30 +269,42 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
 
   const isConnected = homeData.isRingConnected;
 
-  const headerValue = state === 'idle'
-    ? (lastMeasurement ? String(lastMeasurement.heartRate) : (isConnected ? t('hr_live.status_ready') : t('hr_live.value_na')))
-    : state === 'measuring'
-    ? (currentHR ? String(currentHR) : '…')
-    : state === 'done'
-    ? (currentHR ? String(currentHR) : '--')
-    : '--';
+  // idle/done: static heart on the right
+  const staticHeart = (state === 'idle' || state === 'done' || state === 'error')
+    ? <HeartIcon size={26} color="rgba(255,107,107,0.55)" />
+    : null;
 
-  const headerSubtitle = state === 'idle'
-    ? (lastMeasurement
-      ? t('hr_live.subtitle_last_measured', { time: formatMeasuredTime(lastMeasurement.measuredAt) })
-      : (isConnected ? t('hr_live.subtitle_idle') : t('hr_live.status_disconnected')))
-    : state === 'measuring'
-    ? t('hr_live.subtitle_measuring', { seconds: secondsLeft })
-    : state === 'done'
-    ? t('hr_live.subtitle_done')
-    : t('hr_live.subtitle_error');
+  // measuring: body owns the full layout; headerValue not used
+  const cardHeaderValue = state === 'measuring'
+    ? undefined
+    : state === 'idle'
+      ? (lastMeasurement ? String(lastMeasurement.heartRate) : (isConnected ? t('hr_live.status_ready') : t('hr_live.value_na')))
+      : state === 'done'
+        ? (currentHR ? String(currentHR) : '--')
+        : '--';
+
+  const cardHeaderSubtitle = state === 'measuring'
+    ? undefined
+    : state === 'idle'
+      ? (lastMeasurement
+        ? t('hr_live.subtitle_last_measured', { time: formatMeasuredTime(lastMeasurement.measuredAt) })
+        : (isConnected ? t('hr_live.subtitle_idle') : t('hr_live.status_disconnected')))
+      : state === 'done'
+        ? t('hr_live.bpm_unit')
+        : undefined;
+
+  const hrStatusLabel = currentHR
+    ? currentHR < 60 ? t('hr_live.result_low')
+      : currentHR < 100 ? t('hr_live.result_normal')
+      : t('hr_live.result_elevated')
+    : null;
 
   return (
     <GradientInfoCard
       icon={<HeartIcon size={20} color="#FF6B6B" />}
       title={t('hr_live.card_title')}
-      headerValue={headerValue}
-      headerSubtitle={headerSubtitle}
+      headerValue={cardHeaderValue}
+      headerSubtitle={cardHeaderSubtitle}
       gradientStops={[
         { offset: 0, color: 'rgba(180, 20, 20, 0.99)' },
         { offset: 0.75, color: 'rgba(0, 0, 0, 0.27)' },
@@ -332,211 +312,129 @@ export function LiveHeartRateCard({ headerRight }: LiveHeartRateCardProps = {}) 
       gradientCenter={{ x: 0.51, y: -0.86 }}
       gradientRadii={{ rx: '80%', ry: '300%' }}
       showArrow={false}
-      headerRight={headerRight}
+      headerRight={headerRight ?? staticHeart}
+      contentContainerStyle={styles.transparentBody}
     >
-      <View style={styles.body}>
-        {state === 'measuring' ? (
-          <View style={styles.measuringContainer}>
-            <View style={styles.countdownWrapper}>
-              <CountdownRing seconds={secondsLeft} total={MEASURE_DURATION} size={100} />
-              <View style={styles.countdownCenter}>
-                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                  <HeartIcon size={28} color="#FF6B6B" />
-                </Animated.View>
-                {currentHR ? (
-                  <Text style={styles.liveHRText}>{currentHR}</Text>
-                ) : null}
-              </View>
-            </View>
-            <TouchableOpacity style={styles.stopBtn} onPress={stopMeasurement}>
-              <Text style={styles.stopBtnText}>{t('hr_live.button_stop')}</Text>
+      {state === 'measuring' ? (
+        <View style={styles.measuringRow}>
+          <View style={styles.measuringLeft}>
+            <Text style={styles.bigNumber}>{currentHR ?? '...'}</Text>
+            <Text style={styles.timeRemaining}>{secondsLeft}s remaining</Text>
+          </View>
+          <Animated.View style={[styles.pulsingHeart, { transform: [{ scale: pulseAnim }] }]}>
+            <HeartIcon size={44} color="#FF6B6B" />
+          </Animated.View>
+        </View>
+      ) : state === 'done' ? (
+        <View style={styles.doneBody}>
+          {isConnected && (
+            <TouchableOpacity onPress={startMeasurement}>
+              <Text style={styles.tapRemeasure}>{t('hr_live.tap_to_remeasure')}</Text>
             </TouchableOpacity>
-          </View>
-        ) : state === 'done' ? (
-          <View style={styles.doneContainer}>
-            <View style={styles.resultRow}>
-              <HeartIcon size={32} color="#FF6B6B" />
-              <Text style={styles.resultHR}>{currentHR ?? '--'}</Text>
-              <Text style={styles.resultUnit}>{t('hr_live.bpm_unit')}</Text>
+          )}
+          {hrStatusLabel && (
+            <View style={styles.statusChip}>
+              <Text style={styles.statusChipText}>{hrStatusLabel}</Text>
             </View>
-            <Text style={styles.resultLabel}>
-              {currentHR
-                ? currentHR < 60 ? t('hr_live.result_low')
-                  : currentHR < 100 ? t('hr_live.result_normal')
-                  : t('hr_live.result_elevated')
-                : t('hr_live.result_no_reading')}
-            </Text>
-            <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.actionBtn} onPress={reset}>
-                <Text style={styles.actionBtnText}>{t('hr_live.button_reset')}</Text>
-              </TouchableOpacity>
-              {isConnected && (
-                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={startMeasurement}>
-                  <Text style={styles.actionBtnTextPrimary}>{t('hr_live.button_measure_again')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        ) : state === 'error' ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{t('hr_live.error_message')}</Text>
-            <TouchableOpacity style={styles.actionBtn} onPress={reset}>
-              <Text style={styles.actionBtnText}>{t('hr_live.button_try_again')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          // idle
-          <TouchableOpacity
-            style={[styles.measureBtn, !isConnected && styles.measureBtnDisabled]}
-            onPress={startMeasurement}
-            disabled={!isConnected}
-          >
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <HeartIcon size={28} color={isConnected ? '#FF6B6B' : 'rgba(255,255,255,0.3)'} />
-            </Animated.View>
-            <Text style={[styles.measureBtnText, !isConnected && styles.measureBtnTextDisabled]}>
-              {isConnected ? t('hr_live.button_start') : t('hr_live.status_disconnected')}
-            </Text>
-            {isConnected && (
-              <Text style={styles.measureBtnSub}>{t('hr_live.info_duration')}</Text>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+          )}
+        </View>
+      ) : state === 'error' ? (
+        <TouchableOpacity style={styles.startBtn} onPress={reset}>
+          <Text style={styles.startBtnText}>{t('hr_live.button_try_again')}</Text>
+        </TouchableOpacity>
+      ) : (
+        // idle
+        <TouchableOpacity
+          style={[styles.startBtn, !isConnected && styles.startBtnDisabled]}
+          onPress={startMeasurement}
+          disabled={!isConnected}
+        >
+          <Text style={[styles.startBtnText, !isConnected && styles.disabledText]}>
+            {isConnected ? t('hr_live.button_start') : t('hr_live.status_disconnected')}
+          </Text>
+        </TouchableOpacity>
+      )}
     </GradientInfoCard>
   );
 }
 
 const styles = StyleSheet.create({
-  body: {
-    paddingVertical: spacing.md,
+  transparentBody: {
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    paddingTop: 0,
+    paddingBottom: spacing.md,
+  },
+  // measuring: full-width row
+  measuringRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  measuringContainer: {
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  countdownWrapper: {
-    width: 100,
-    height: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countdownCenter: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  liveHRText: {
-    color: '#fff',
-    fontSize: 18,
-    fontFamily: fontFamily.demiBold,
-    marginTop: 2,
-  },
-  stopBtn: {
-    paddingHorizontal: 28,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-  },
-  stopBtnText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.demiBold,
-  },
-  doneContainer: {
-    alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
     width: '100%',
   },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.sm,
+  measuringLeft: {
+    flex: 1,
   },
-  resultHR: {
+  bigNumber: {
     color: '#fff',
-    fontSize: 52,
-    fontFamily: fontFamily.demiBold,
-    lineHeight: 58,
-  },
-  resultUnit: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: fontSize.md,
+    fontSize: 48,
+    fontWeight: '100',
     fontFamily: fontFamily.regular,
-    marginBottom: 4,
+    lineHeight: 52,
   },
-  resultLabel: {
-    color: 'rgba(255,255,255,0.7)',
+  timeRemaining: {
+    color: 'rgba(255,255,255,0.55)',
     fontSize: fontSize.sm,
     fontFamily: fontFamily.regular,
-    textAlign: 'center',
+    marginTop: 2,
   },
-  actionRow: {
+  pulsingHeart: {
+    paddingLeft: spacing.md,
+  },
+  // done
+  doneBody: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.sm,
   },
-  actionBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+  tapRemeasure: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  statusChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
   },
-  actionBtnPrimary: {
-    backgroundColor: 'rgba(255, 80, 80, 0.25)',
-    borderColor: 'rgba(255, 80, 80, 0.4)',
-  },
-  actionBtnText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-  },
-  actionBtnTextPrimary: {
-    color: '#fff',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.demiBold,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  errorText: {
-    color: 'rgba(255,120,120,0.9)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-    textAlign: 'center',
-  },
-  measureBtn: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    width: '100%',
-  },
-  measureBtnDisabled: {
-    opacity: 0.5,
-  },
-  measureBtnText: {
-    color: '#fff',
-    fontSize: fontSize.md,
-    fontFamily: fontFamily.demiBold,
-  },
-  measureBtnTextDisabled: {
-    color: 'rgba(255,255,255,0.4)',
-  },
-  measureBtnSub: {
-    color: 'rgba(255,255,255,0.5)',
+  statusChipText: {
+    color: 'rgba(255,255,255,0.85)',
     fontSize: fontSize.xs,
-    fontFamily: fontFamily.regular,
+    fontFamily: fontFamily.demiBold,
+  },
+  // idle / error
+  startBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.20)',
+    alignSelf: 'flex-start',
+  },
+  startBtnDisabled: {
+    opacity: 0.4,
+  },
+  startBtnText: {
+    color: '#fff',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
+  },
+  disabledText: {
+    color: 'rgba(255,255,255,0.4)',
   },
 });
 

@@ -28,6 +28,8 @@ type GradientInfoCardProps = {
   headerRight?: React.ReactNode;
   /** Optional small caption shown below the title (e.g. "3m ago" last-sync label) */
   titleCaption?: string | null;
+  /** Override styles on the content container (e.g. transparent background) */
+  contentContainerStyle?: ViewStyle;
   children: React.ReactNode;
 };
 
@@ -52,6 +54,7 @@ export function GradientInfoCard({
   onHeaderPress,
   headerRight,
   titleCaption,
+  contentContainerStyle,
   children,
 }: GradientInfoCardProps) {
   return (
@@ -130,7 +133,7 @@ export function GradientInfoCard({
             </View>
           )}
 
-          <View style={styles.contentContainer}>{children}</View>
+          <View style={[styles.contentContainer, contentContainerStyle]}>{children}</View>
         </View>
       </View>
     </View>

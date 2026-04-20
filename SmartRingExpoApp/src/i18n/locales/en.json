@@ -120,7 +120,11 @@
     "nap_score_great": "Great Nap",
     "nap_score_okay": "Okay Nap",
     "nap_score_poor": "Poor Nap",
-    "nap_contributed": "{{minutes}} min of nap time counted toward recovery"
+    "nap_contributed": "{{minutes}} min of nap time counted toward recovery",
+    "chart_hr_title": "Resting Heart Rate",
+    "chart_hr_subtitle": "{{value}} bpm low",
+    "chart_temp_title": "Skin Temperature",
+    "chart_temp_subtitle": "{{value}}°C avg"
   },
   "sleep_debt": {
     "card_title": "Sleep Debt",
@@ -515,6 +519,7 @@
     "result_no_reading": "No reading captured",
     "button_reset": "Reset",
     "button_measure_again": "Measure Again",
+    "tap_to_remeasure": "Tap to re-measure",
     "error_message": "Measurement failed. Ensure device is worn.",
     "button_try_again": "Try Again",
     "button_start": "Start Measurement",
