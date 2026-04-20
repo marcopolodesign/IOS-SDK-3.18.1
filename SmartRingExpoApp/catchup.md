@@ -405,6 +405,22 @@ After the precheck was moved before `setData(isSyncing:true)`, cold-start logs s
 - The `SleepHypnogram` invariant (summaryRow.height === tooltipReplacement.height === 50) is documented there
 - `GradientInfoCard` usage note included — prefer extending it over creating new card shells
 - No skill created — the update rule is inline in `CLAUDE.md` (same pattern as the catchup rule), so Claude handles it automatically without a separate slash command
+## 2026-04-18: HR Card — Restore From Cache on Cold Start
+
+**Problem:** While the app is loading and the ring is still connecting/syncing on cold start, the Heart Rate card on the Overview tab showed **"None"** / **"No data"**. Sleep, Activity, Readiness, etc. already render cached values instantly in the same window.
+
+**Root cause:** `hrChartData` (and its companion `hrDataIsToday`) were **not** included in the `CachedData` persisted to `home_data_cache`. On mount, `useHomeData` initialises `hrChartData: []`, so `DailyHeartRateCard` received `preloadedData=[]` → `noData === true` → rendered `hr_daily.value_none`. The existing preserve-last-good-fetch fallback at `useHomeData.ts` only kicks in after the first successful in-session fetch, so it did nothing on cold start.
+
+**Fix (single file — `src/hooks/useHomeData.ts`):**
+1. Added optional `hrChartData` and `hrDataIsToday` fields to the `CachedData` interface.
+2. `saveToCache()` now persists both alongside sleep/activity/battery etc.
+3. `loadFromCache()` restores them, gated on an `isSameCalendarDay(cachedAt)` check. If the cache was written on a prior calendar day, HR falls back to `[]` / `false` instead of rendering yesterday's hourly buckets as today's.
+
+**User-visible behaviour:** On cold start (force-quit → relaunch while ring connects), the HR card now renders the last known hourly bars + range immediately, matching Sleep/Activity instant-display. Once the fresh BLE fetch completes, the bars update in place. Cross-day launches still show "None" until fresh today-data lands, which is correct.
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+**Source:** Claude.ai — web
 
 ---
 

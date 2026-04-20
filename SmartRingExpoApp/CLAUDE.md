@@ -110,6 +110,16 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Recent Changes
 
+### 2026-04-18: HR Card — Restore From Cache on Cold Start
+
+**Problem:** HR card on Overview showed "None"/"No data" while the ring was loading and connecting/syncing on cold start, while Sleep/Activity rendered cached values instantly.
+
+**Root cause:** `hrChartData` was never part of the `CachedData` shape persisted to `home_data_cache`.
+
+**Fix:** In `src/hooks/useHomeData.ts`, added optional `hrChartData` + `hrDataIsToday` to the `CachedData` interface, persist them in `saveToCache()`, and restore them in `loadFromCache()` gated on a same-calendar-day check (so yesterday's hourly buckets can't render as today's).
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
 ### 2026-04-10: Sleep Hypnogram — Continuous Gradient Step Figure
 
 **Design:** The hypnogram figure (`src/components/home/SleepHypnogram.tsx`) is now a continuous step chart using a single figure-wide vertical `LinearGradient` (`gradientUnits="userSpaceOnUse"`). All blocks and connectors share `fill="url(#sleepGradient)"` — no per-stage colors on the figure.
