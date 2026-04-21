@@ -17,6 +17,8 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import Reanimated, {
   useSharedValue,
@@ -296,17 +298,92 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── Animated AI Text ─────────────────────────────────────────────────────────
 
-const WORD_STAGGER_MS = 30;
-const WORD_DURATION_MS = 500;
-const WORD_EASE = Easing.bezier(0.4, 0, 0, 1);
+const BLOCK_STAGGER_MS = 60;
+const BLOCK_DURATION_MS = 400;
+const BLOCK_EASE = Easing.bezier(0.4, 0, 0, 1);
 
-function AnimatedWord({ word, delay }: { word: string; delay: number }) {
+type InlineSegment = { text: string; bold: boolean; italic: boolean };
+type Block =
+  | { kind: 'paragraph'; segments: InlineSegment[] }
+  | { kind: 'list-item'; marker: string; segments: InlineSegment[] };
+
+function parseInline(text: string): InlineSegment[] {
+  const segments: InlineSegment[] = [];
+  const regex = /\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_/g;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      segments.push({ text: text.slice(lastIndex, m.index), bold: false, italic: false });
+    }
+    if (m[1] !== undefined) segments.push({ text: m[1], bold: true, italic: false });
+    else if (m[2] !== undefined) segments.push({ text: m[2], bold: true, italic: false });
+    else if (m[3] !== undefined) segments.push({ text: m[3], bold: false, italic: true });
+    else if (m[4] !== undefined) segments.push({ text: m[4], bold: false, italic: true });
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({ text: text.slice(lastIndex), bold: false, italic: false });
+  }
+  return segments.length > 0 ? segments : [{ text, bold: false, italic: false }];
+}
+
+function parseBlocks(text: string): Block[] {
+  let normalized = text.replace(/\r\n/g, '\n');
+  // Coach responses sometimes glue list items onto preceding sentences or emit
+  // them as "**Label**: body" headers. Split numbered items onto their own lines.
+  normalized = normalized.replace(/([^\n])\s*(?=\d+\.\s+\S)/g, (match, prev) =>
+    /\d/.test(prev) ? match : `${prev}\n`
+  );
+  // Strip stray bold markers that wrap a full "**Label**: body" header — we
+  // keep the bolding via inline parsing, but ensure each section starts fresh.
+  normalized = normalized.replace(/\n{2,}/g, '\n');
+  const lines = normalized.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const blocks: Block[] = [];
+  for (const line of lines) {
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)$/);
+    const bulletMatch = line.match(/^[-*•]\s+(.*)$/);
+    if (numberedMatch) {
+      blocks.push({
+        kind: 'list-item',
+        marker: `${numberedMatch[1]}.`,
+        segments: parseInline(numberedMatch[2]),
+      });
+    } else if (bulletMatch) {
+      blocks.push({
+        kind: 'list-item',
+        marker: '•',
+        segments: parseInline(bulletMatch[1]),
+      });
+    } else {
+      blocks.push({ kind: 'paragraph', segments: parseInline(line) });
+    }
+  }
+  return blocks;
+}
+
+function renderSegments(segments: InlineSegment[]) {
+  return segments.map((s, i) => {
+    const style = s.bold
+      ? msgStyles.boldText
+      : s.italic
+      ? msgStyles.italicText
+      : undefined;
+    return (
+      <Text key={i} style={style}>
+        {s.text}
+      </Text>
+    );
+  });
+}
+
+function AnimatedBlock({ block, delay }: { block: Block; delay: number }) {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(6);
 
   React.useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: WORD_DURATION_MS, easing: WORD_EASE }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: WORD_DURATION_MS, easing: WORD_EASE }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: BLOCK_DURATION_MS, easing: BLOCK_EASE }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: BLOCK_DURATION_MS, easing: BLOCK_EASE }));
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -314,19 +391,30 @@ function AnimatedWord({ word, delay }: { word: string; delay: number }) {
     transform: [{ translateY: translateY.value }],
   }));
 
+  if (block.kind === 'list-item') {
+    return (
+      <Reanimated.View style={[msgStyles.listRow, style]}>
+        <Text style={[msgStyles.text, msgStyles.aiText, msgStyles.listMarker]}>{block.marker}</Text>
+        <Text style={[msgStyles.text, msgStyles.aiText, msgStyles.listContent]}>
+          {renderSegments(block.segments)}
+        </Text>
+      </Reanimated.View>
+    );
+  }
+
   return (
     <Reanimated.Text style={[msgStyles.text, msgStyles.aiText, style]}>
-      {word}{' '}
+      {renderSegments(block.segments)}
     </Reanimated.Text>
   );
 }
 
 function AnimatedAIText({ text }: { text: string }) {
-  const words = text.split(' ');
+  const blocks = useMemo(() => parseBlocks(text), [text]);
   return (
-    <View style={msgStyles.aiTextWrap}>
-      {words.map((word, i) => (
-        <AnimatedWord key={i} word={word} delay={i * WORD_STAGGER_MS} />
+    <View style={msgStyles.aiBlocks}>
+      {blocks.map((block, i) => (
+        <AnimatedBlock key={i} block={block} delay={i * BLOCK_STAGGER_MS} />
       ))}
     </View>
   );
@@ -379,8 +467,8 @@ function MessageBubble({ message, sleep, allSessions, sleepDebt, steps, readines
     <View style={msgStyles.rowAI}>
       <AnimatedAIText text={message.text} />
       {message.artifact && (
-        <ArtifactView artifact={message.artifact} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={steps} />
-      )}}
+        <ArtifactView artifact={message.artifact} message={message} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={steps} readiness={readiness} />
+      )}
       <View style={msgStyles.aiFooter}>
         <AIIcon size={32} color="white" />
       </View>
@@ -408,10 +496,20 @@ const msgStyles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  aiTextWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  aiBlocks: {
+    gap: 10,
     marginBottom: 4,
+  },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  listMarker: {
+    minWidth: 20,
+  },
+  listContent: {
+    flex: 1,
   },
   aiFooter: {
     flexDirection: 'column',
@@ -426,6 +524,13 @@ const msgStyles = StyleSheet.create({
   },
   userText: { color: '#FFFFFF' },
   aiText: { color: 'rgba(255,255,255,0.9)' },
+  boldText: {
+    fontFamily: fontFamily.demiBold,
+    color: '#FFFFFF',
+  },
+  italicText: {
+    fontStyle: 'italic',
+  },
   typingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -488,7 +593,20 @@ export function AIChatScreen() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const isNearBottomRef = useRef(true);
   const initialQueryFired = useRef(false);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    isNearBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
+  const maybeAutoScroll = useCallback(() => {
+    if (isNearBottomRef.current) {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    }
+  }, []);
 
   useFocusEffect(useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -514,6 +632,7 @@ export function AIChatScreen() {
       setMessages(prev => [...prev, userMsg]);
       setInput('');
       setIsTyping(true);
+      isNearBottomRef.current = true;
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
 
       try {
@@ -535,7 +654,11 @@ export function AIChatScreen() {
         setMessages(prev => [...prev, errMsg]);
       } finally {
         setIsTyping(false);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+        setTimeout(() => {
+          if (isNearBottomRef.current) {
+            scrollRef.current?.scrollToEnd({ animated: true });
+          }
+        }, 50);
       }
     },
     [input, isTyping, messages, focusState.readiness, focusState.illness]
@@ -615,7 +738,9 @@ export function AIChatScreen() {
             contentContainerStyle={styles.messageListContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+            onScroll={handleScroll}
+            scrollEventThrottle={64}
+            onContentSizeChange={maybeAutoScroll}
           >
             {messages.map(msg => (
               <MessageBubble key={msg.id} message={msg} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={homeData.activity.steps} readiness={focusState.readiness} />

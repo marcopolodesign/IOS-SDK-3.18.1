@@ -4,6 +4,35 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-21: Coach Chat — Markdown Rendering + Scroll Behavior Fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** Coach replies displayed raw markdown (`**bold**` asterisks leaked through, numbered list markers `1.` / `2.` / `3.` appeared stranded on centered-looking lines with their body wrapping onto adjacent text). The chat was also "hard to scroll" — any layout change yanked the user back to the bottom, fighting manual scroll up.
+
+**Root cause:**
+- `AnimatedAIText` split the entire AI response on single spaces and rendered each word as its own `Reanimated.Text` inside a `flexDirection: 'row' / flexWrap: 'wrap'` container. Newlines embedded in words (e.g. `"on:\n\n1."`) produced tall multi-line "boxes" inside the flex row, which is why list markers floated oddly. No markdown syntax was parsed — `**bold**` rendered literally.
+- `ScrollView.onContentSizeChange` unconditionally called `scrollToEnd`, so even during normal re-renders or while the user was reading earlier messages, the list snapped to the bottom.
+- Stray `}` on the old `MessageBubble` JSX (line 383) that also rendered as a literal character.
+
+**Fix:** Replaced the per-word animator with a block-level markdown renderer in `src/screens/AIChatScreen.tsx`:
+- `parseInline()` tokenizes `**bold**`, `__bold__`, `*italic*`, `_italic_` into styled segments.
+- `parseBlocks()` normalizes newlines, splits paragraphs, and detects numbered (`1. `) / bulleted (`-`, `*`, `•`) list items with a separate marker slot. Also inserts a newline before inline list markers so coach responses that glue `1. ` onto the preceding sentence still render as a proper list.
+- `AnimatedBlock` animates each paragraph/list-item as a single unit (60ms stagger, 400ms fade+rise) — dramatically fewer reanimated handles than the old word-by-word approach, which removes the scroll jank.
+- `renderSegments` nests inline `<Text>` children (bold uses `fontFamily.demiBold` + pure white, italic uses `fontStyle: 'italic'`) so React Native handles wrapping naturally.
+- Fixed the stray `}` and passed the missing `message` / `readiness` props through `ArtifactView` so its type matches.
+
+**Scroll behavior:**
+- Added `isNearBottomRef` + `onScroll` handler that tracks whether the user is within 80px of the bottom.
+- `onContentSizeChange` now only calls `scrollToEnd` when the user was already at the bottom. The explicit send-message scroll resets the flag so new messages still snap into view.
+
+**User-visible:** Coach responses now render with proper bold emphasis, properly-formatted numbered lists (marker on the left, body text flowing beside it), and correct paragraph spacing. Scrolling up to re-read earlier messages is no longer interrupted by auto-scroll-to-end. Subtle block-level fade-in-from-below replaces the stuttery word-by-word reveal.
+
+**Files modified:**
+- `src/screens/AIChatScreen.tsx`
+
+---
+
 ## 2026-04-20: Sleep Detail — Stage Rows Redesign + Chart Reorder
 
 **Source:** Claude Code — Macbook Pro
