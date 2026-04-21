@@ -76,3 +76,17 @@
 ## 2026-04-19 — No new issues
 
 ## 2026-04-20 — No new issues
+
+## 2026-04-21
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7406743701 | TypeError: undefined is not a function (in `beforeSend`) | error | 2026-04-13T00:32:01Z | 2026-04-21T02:28:18Z | Needs manual review — fix shipped in PR #2 (awaiting merge + App Store release). Errors originate from old production build `com.focusring.app@1.0.3+25`. |
+| 7408046962 | TypeError: event.breadcrumbs.values.map is not a function (it is undefined) | error | 2026-04-13T13:51:22Z | 2026-04-20T16:05:13Z | Fix in PR #2 (branch `sentry/fix-7408046962`, awaiting merge). |
+| 7427443933 | EXC_BAD_ACCESS KERN_INVALID_ADDRESS (Reanimated shadow tree recursion) | fatal | 2026-04-20T16:04:12Z | 2026-04-20T16:04:12Z | Needs manual review — native crash in `reanimated::cloneShadowTreeWithNewPropsRecursive` (13-level recursion → `folly::dynamic::hash` SIGSEGV). Dev build only (`com.focusring.app.dev@1.0.3+4`). Not auto-fixable. |
+
+### 2026-04-21 Notes
+- 10 unresolved issues total; 3 seen within the last 24 h (cutoff 2026-04-20T00:00Z).
+- **7406743701 / 7408046962** (`beforeSend` TypeError): Fix committed in branch `sentry/fix-7408046962`; PR #2 still open awaiting merge. Merge PR #2 and publish a new App Store build to fully resolve.
+- **7427443933** (Reanimated EXC_BAD_ACCESS): `reanimated::ReanimatedModuleProxy::performOperations` → `cloneShadowTreeWithNewPropsRecursive` (13 recursive levels) → `ShadowNode::clone` → `folly::dynamic::hash` → SIGSEGV. Likely a deeply nested animated subtree being mutated on every frame. Dev build only; not yet seen in production. Investigate which screen drives the 13-level recursion and flatten the animated tree or upgrade Reanimated.
+- Project slug: `focus-app`. `gh` CLI not available — PR creation handled via GitHub MCP (PR #2 already exists).
