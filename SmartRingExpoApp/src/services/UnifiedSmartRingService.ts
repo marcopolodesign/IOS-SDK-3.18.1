@@ -743,6 +743,32 @@ class UnifiedSmartRingService {
     return { success: true };
   }
 
+  async getDeviceTime(): Promise<{ time: string }> {
+    return await JstyleService.getDeviceTime();
+  }
+
+  private _ringOffsetMs = 0;
+  private _ringOffsetComputedAt = 0;
+  private static readonly OFFSET_TTL_MS = 5 * 60_000; // 5 minutes
+
+  /** Returns ms to add to ring timestamps to get device (wall-clock) time. Cached for 5 min. */
+  async getRingOffsetMs(): Promise<number> {
+    const age = Date.now() - this._ringOffsetComputedAt;
+    if (age < UnifiedSmartRingService.OFFSET_TTL_MS) return this._ringOffsetMs;
+    try {
+      const { time } = await JstyleService.getDeviceTime();
+      const [datePart, timePart] = time.split(' ');
+      const [y, m, d] = datePart.split('.').map(Number);
+      const [hh, mm, ss] = (timePart ?? '00:00:00').split(':').map(Number);
+      const ringNow = new Date(y, m - 1, d, hh, mm, ss).getTime();
+      this._ringOffsetMs = Date.now() - ringNow;
+      this._ringOffsetComputedAt = Date.now();
+    } catch {
+      this._ringOffsetMs = 0;
+    }
+    return this._ringOffsetMs;
+  }
+
   // ========== Device ==========
 
   findDevice(): void {

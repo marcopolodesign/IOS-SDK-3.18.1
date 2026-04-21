@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, PanResponder, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, PanResponder } from 'react-native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { GradientInfoCard } from '../common/GradientInfoCard';
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import { reportError } from '../../utils/sentry';
+import { ActivityInfoSheet } from './ActivityInfoSheet';
+import type { UnifiedActivity } from '../../types/activity.types';
 
 type HourRange = { hour: number; min: number; max: number; hasData: boolean };
 
@@ -22,22 +25,28 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
   const { t } = useTranslation();
   const [hourlyHrRanges, setHourlyHrRanges] = useState<HourRange[]>([]);
   const [selectedHrIndex, setSelectedHrIndex] = useState<number | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<UnifiedActivity | null>(null);
   const isMockData = UnifiedSmartRingService.isUsingMockData();
   const homeData = useHomeDataContext();
   const chartWidthRef = useRef(0);
+  const touchStartXRef = useRef(0);
+  const lastSetHrIndexRef = useRef<number | null>(null);
 
-  // Map today's Strava activities to their start hour
-  const activityByHour = useMemo(() => {
+  // Map today's unified activities (all sources) to their start hour
+  const activitiesByHour = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const map = new Map<number, string>(); // hour → activity name
-    for (const a of homeData.stravaActivities) {
-      if (!a.start_date) continue;
-      if (!a.start_date.startsWith(todayStr)) continue;
-      const hour = new Date(a.start_date).getHours();
-      if (!map.has(hour)) map.set(hour, a.name ?? a.sport_type ?? 'Workout');
+    const map = new Map<number, UnifiedActivity[]>();
+    for (const a of homeData.unifiedActivities) {
+      if (!a.startDate.startsWith(todayStr)) continue;
+      const hour = new Date(a.startDate).getHours();
+      const existing = map.get(hour) ?? [];
+      existing.push(a);
+      map.set(hour, existing);
     }
     return map;
-  }, [homeData.stravaActivities]);
+  }, [homeData.unifiedActivities]);
+  const activitiesByHourRef = useRef(activitiesByHour);
+  activitiesByHourRef.current = activitiesByHour;
   const handleTouchRef = useRef<(x: number) => void>(() => {});
   const onTouchStartRef = useRef(onTouchStart);
   const onTouchEndRef   = useRef(onTouchEnd);
@@ -166,6 +175,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
       Math.min(hourlyHrRanges.length - 1, Math.round(ratio * (hourlyHrRanges.length - 1)))
     );
     if (hourlyHrRanges[idx]?.hasData) {
+      lastSetHrIndexRef.current = idx;
       setSelectedHrIndex(idx);
     }
   };
@@ -173,21 +183,29 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
+        touchStartXRef.current = evt.nativeEvent.locationX;
         onTouchStartRef.current?.();
         handleTouchRef.current(evt.nativeEvent.locationX);
       },
       onPanResponderMove: (evt) => {
         handleTouchRef.current(evt.nativeEvent.locationX);
       },
-      onPanResponderRelease: () => {
+      onPanResponderRelease: (evt) => {
+        const dx = Math.abs(evt.nativeEvent.locationX - touchStartXRef.current);
+        const idx = lastSetHrIndexRef.current;
+        if (dx < 8 && idx !== null) {
+          const acts = activitiesByHourRef.current.get(idx);
+          if (acts?.length) setSelectedActivity(acts[0]);
+        }
+        lastSetHrIndexRef.current = null;
         setSelectedHrIndex(null);
         onTouchEndRef.current?.();
       },
       onPanResponderTerminate: () => {
+        lastSetHrIndexRef.current = null;
         setSelectedHrIndex(null);
         onTouchEndRef.current?.();
       },
@@ -195,6 +213,12 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
   ).current;
 
   return (
+    <>
+    <ActivityInfoSheet
+      activity={selectedActivity}
+      visible={!!selectedActivity}
+      onClose={() => setSelectedActivity(null)}
+    />
     <GradientInfoCard
       icon={<Text style={styles.hrIcon}>♥</Text>}
       title={t('hr_daily.card_title')}
@@ -239,18 +263,23 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
                 const selected = selectedHrIndex === idx;
                 const hasSelection = selectedHrIndex !== null;
                 const barOpacity = hasData ? (hasSelection ? (selected ? 1 : 0.35) : 1) : 0.08;
-                const hasActivity = activityByHour.has(item.hour);
+                const hourActivities = activitiesByHour.get(item.hour);
+                const primary = hourActivities?.[0];
+                const extra = (hourActivities?.length ?? 0) - 1;
                 return (
                   <View key={`hr-${idx}`} style={styles.hrBarWrapper}>
-                    {hasActivity && (
-                      <TouchableOpacity
-                        style={styles.activityPin}
-                        onPress={() => router.push('/detail/heart-rate-detail')}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <View style={styles.activityPinDot} />
-                        <View style={styles.activityPinStem} />
-                      </TouchableOpacity>
+                    {primary && (
+                      <View style={styles.activityPin} pointerEvents="none">
+                        <View style={[styles.activityIconCircle, { backgroundColor: `${primary.color}28` }]}>
+                          <Ionicons name={primary.icon as any} size={10} color={primary.color} />
+                          {extra > 0 && (
+                            <View style={styles.extraBadge}>
+                              <Text style={styles.extraBadgeText}>+{extra}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={[styles.activityPinStem, { backgroundColor: primary.color }]} />
+                      </View>
                     )}
                     <View
                       style={[
@@ -294,6 +323,7 @@ export function DailyHeartRateCard({ preloadedData, headerRight, onTouchStart, o
         )}
       </View>
     </GradientInfoCard>
+    </>
   );
 }
 
@@ -348,19 +378,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  activityPinDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#FC4C02',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+  activityIconCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   activityPinStem: {
     width: 1.5,
     height: 5,
-    backgroundColor: '#FC4C02',
     opacity: 0.7,
+  },
+  extraBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -4,
+    backgroundColor: 'rgba(10,10,20,0.85)',
+    borderRadius: 4,
+    paddingHorizontal: 2,
+  },
+  extraBadgeText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 7,
+    fontFamily: fontFamily.demiBold,
   },
   noDataContainer: {
     flex: 1,

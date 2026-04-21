@@ -15,7 +15,8 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Pattern, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { monotoneCubicPath } from '../../src/utils/chartMath';
 import { supabase } from '../../src/services/SupabaseService';
 
@@ -34,7 +35,7 @@ import { useTranslation } from 'react-i18next';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 // chartCard has marginHorizontal md + paddingHorizontal sm each side
 const CHART_W = SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2;
-const CHART_H = 180;
+const CHART_H = 135;
 const PAD_LEFT = 34;
 const PAD_V = 14;
 const TOOLTIP_W = 96;
@@ -73,7 +74,7 @@ function buildSleepWindowHourTicks(bedTime: Date, wakeTime: Date): { hourTicks: 
 }
 
 // ─── Oura-style HR chart for sleep window ────────────────────────────────────
-const HR_CHART_H = 200;
+const HR_CHART_H = 150;
 const HR_XAXIS_H = 26; // reserved at bottom for x-axis labels
 const HR_PAD_LEFT = 30;
 const HR_PAD_V = 10;
@@ -521,67 +522,177 @@ function buildTodaySleepFromContext(
     awakeMin,
     segments: (sleep.segments ?? []) as any,
     restingHR: sleep.restingHR ?? 0,
+    respiratoryRate: 0,
     hrSamples,
     tempSamples: [],
   };
 }
 
-function SleepStageRow({
+const STAGE_BAR_H = 40;
+const STAGE_BAR_RADIUS = 10;
+// statsContainer has marginHorizontal: spacing.md only — no padding
+const STAGE_BAR_W = SCREEN_WIDTH - spacing.md * 2;
+const STAGE_LABEL_MIN_W = 82; // minimum fill width so label is always readable
+
+function SleepStageBar({
   label,
   minutes,
   totalMinutes,
   color,
+  recMinPct,
+  recMaxPct,
 }: {
   label: string;
   minutes: number;
   totalMinutes: number;
   color: string;
+  recMinPct?: number; // 0–100, omit to hide zone
+  recMaxPct?: number; // 0–100
 }) {
-  const pct = totalMinutes > 0 ? Math.round((minutes / totalMinutes) * 100) : 0;
+  const pct = totalMinutes > 0 ? minutes / totalMinutes : 0;
+  const pctRounded = Math.round(pct * 100);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
 
+  const fillW = Math.max(STAGE_LABEL_MIN_W, pct * STAGE_BAR_W);
+  const showRec = recMinPct != null && recMaxPct != null;
+  const recX  = showRec ? (recMinPct! / 100) * STAGE_BAR_W : 0;
+  const recW  = showRec ? ((recMaxPct! - recMinPct!) / 100) * STAGE_BAR_W : 0;
+  const patId = `hp_${label.replace(/\s/g, '')}`;
+  const recLabelX = recX + recW / 2;
+  const statsStr = `${pctRounded}% · ${timeStr}`;
   return (
-    <View style={stageRowStyles.row}>
-      <View style={[stageRowStyles.pill, { backgroundColor: `${color}28` }]}>
-        <Text style={[stageRowStyles.pillText, { color }]}>{label}</Text>
+    <View style={stageBarStyles.row}>
+      <Svg width={STAGE_BAR_W} height={STAGE_BAR_H}>
+        <Defs>
+          <Pattern id={patId} patternUnits="userSpaceOnUse" width="8" height="8">
+            <Line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
+            <Line x1="-2" y1="2" x2="2" y2="-2" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
+            <Line x1="6" y1="10" x2="10" y2="6" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
+          </Pattern>
+        </Defs>
+
+        {/* Dark background track */}
+        <Rect x={0} y={0} width={STAGE_BAR_W} height={STAGE_BAR_H}
+          rx={STAGE_BAR_RADIUS} ry={STAGE_BAR_RADIUS}
+          fill="rgba(255,255,255,0.07)" />
+
+        {/* Colored fill */}
+        {fillW > 0 && (
+          <Rect x={0} y={0} width={fillW} height={STAGE_BAR_H}
+            rx={STAGE_BAR_RADIUS} ry={STAGE_BAR_RADIUS}
+            fill={color} />
+        )}
+
+        {/* Recommended range — no rounded corners, min/max labels flanking the rect */}
+        {showRec && (
+          <>
+            <Rect x={recX} y={0} width={recW} height={STAGE_BAR_H}
+              fill={`url(#${patId})`}
+              stroke="rgba(255,255,255,0.6)"
+              strokeWidth={1.5} />
+            <SvgText
+              x={recX - 5} y={STAGE_BAR_H / 2 + 5}
+              textAnchor="end"
+              fill="rgba(255,255,255,0.6)"
+              fontSize={10}
+              fontWeight="600"
+            >{recMinPct}%</SvgText>
+            <SvgText
+              x={recX + recW + 5} y={STAGE_BAR_H / 2 + 5}
+              textAnchor="start"
+              fill="rgba(255,255,255,0.6)"
+              fontSize={10}
+              fontWeight="600"
+            >{recMaxPct}%</SvgText>
+          </>
+        )}
+
+        {/* Stage label — left inside */}
+        <SvgText
+          x={13} y={STAGE_BAR_H / 2 + 5}
+          fill="rgba(255,255,255,0.95)"
+          fontSize={14}
+          fontWeight="700"
+        >{label}</SvgText>
+
+      </Svg>
+      <View style={stageBarStyles.statOverlay}>
+        <Text style={stageBarStyles.stat} numberOfLines={1}>{statsStr}</Text>
       </View>
-      <Text style={stageRowStyles.stat}>{timeStr} • {pct}%</Text>
     </View>
   );
 }
 
-const stageRowStyles = StyleSheet.create({
+const stageBarStyles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: 5,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  pill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  pillText: {
-    fontSize: 14,
-    fontFamily: fontFamily.demiBold,
+  statOverlay: {
+    position: 'absolute',
+    right: spacing.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   stat: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 15,
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
     fontFamily: fontFamily.demiBold,
+    flexShrink: 0,
   },
 });
+
+function AIIcon({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 25 25" fill="none">
+      <Path d="M20.8333 19.1667C20.3913 19.1667 19.9674 19.3423 19.6548 19.6548C19.3423 19.9674 19.1667 20.3913 19.1667 20.8334C19.1667 20.8967 19.1783 20.9575 19.1858 21.0192C17.2822 22.5229 14.9259 23.3384 12.5 23.3334C8.94833 23.3334 5.83333 20.0234 5.83333 16.25C5.83333 12.3442 9.01083 9.16669 12.9167 9.16669H13.3333V7.50002H12.9167C8.09167 7.50002 4.16667 11.425 4.16667 16.25C4.16667 17.82 4.60833 19.325 5.36417 20.6309C3.10333 18.6425 1.66667 15.7384 1.66667 12.5C1.66667 10.7375 2.07667 9.05586 2.885 7.50336L1.40667 6.73419C0.483232 8.51592 0.000837275 10.4932 0 12.5C0 19.3925 5.6075 25 12.5 25C15.3117 25 17.985 24.0667 20.1708 22.3617C20.398 22.4605 20.6444 22.5075 20.8921 22.4991C21.1397 22.4907 21.3823 22.4272 21.6023 22.3132C21.8223 22.1992 22.0142 22.0376 22.1638 21.8402C22.3135 21.6427 22.4173 21.4144 22.4676 21.1718C22.5179 20.9291 22.5135 20.6784 22.4547 20.4377C22.3958 20.197 22.2841 19.9724 22.1275 19.7804C21.971 19.5883 21.7736 19.4336 21.5497 19.3274C21.3258 19.2213 21.0811 19.1663 20.8333 19.1667Z" fill="rgba(255,255,255,0.9)" />
+      <Path d="M10 15.8333V17.5H8.33337V15.8333H10ZM16.6667 7.5V9.16667H15V7.5H16.6667Z" fill="rgba(255,255,255,0.9)" />
+      <Path d="M12.5 0C9.68833 0 7.015 0.933333 4.82917 2.63833C4.49998 2.49573 4.13356 2.46315 3.78438 2.54544C3.4352 2.62773 3.12189 2.82049 2.89101 3.09507C2.66013 3.36965 2.52402 3.7114 2.50289 4.06953C2.48177 4.42766 2.57676 4.78304 2.77376 5.08286C2.97075 5.38268 3.25923 5.61094 3.59631 5.73371C3.9334 5.85648 4.30111 5.8672 4.64478 5.76429C4.98845 5.66138 5.28974 5.45032 5.50387 5.16249C5.718 4.87466 5.83355 4.52541 5.83333 4.16667C5.83333 4.10333 5.82167 4.0425 5.81417 3.98083C7.71783 2.47716 10.0741 1.66158 12.5 1.66667C16.0517 1.66667 19.1667 4.97667 19.1667 8.75C19.1667 12.6558 15.9892 15.8333 12.0833 15.8333H11.6667V17.5H12.0833C16.9083 17.5 20.8333 13.575 20.8333 8.75C20.8333 7.17917 20.39 5.67333 19.6333 4.36667C21.8958 6.355 23.3333 9.26 23.3333 12.5C23.3333 14.2625 22.9233 15.9442 22.115 17.4967L23.5933 18.2658C24.5168 16.4841 24.9992 14.5068 25 12.5C25 5.6075 19.3925 0 12.5 0Z" fill="rgba(255,255,255,0.9)" />
+    </Svg>
+  );
+}
+
+const SLEEP_INSIGHT_CACHE_PREFIX = 'sleep-insight-v1-';
+
+async function fetchSleepInsight(dayData: DaySleepData): Promise<string> {
+  const cacheKey = `${SLEEP_INSIGHT_CACHE_PREFIX}${dayData.date}`;
+  const cached = await AsyncStorage.getItem(cacheKey);
+  if (cached) return cached;
+
+  const totalMin = dayData.awakeMin + dayData.remMin + dayData.lightMin + dayData.deepMin;
+  const pct = (m: number) => totalMin > 0 ? Math.round((m / totalMin) * 100) : 0;
+  const fmt = (m: number) => { const h = Math.floor(m / 60); const min = m % 60; return h > 0 ? `${h}h ${min}m` : `${min}m`; };
+
+  const prompt = `Analyze this sleep data and give 2–3 specific, actionable recommendations to improve sleep quality. Be direct and personal, no bullet points, max 3 sentences.
+
+Sleep data (${dayData.date}):
+- Total sleep: ${dayData.timeAsleep} (score: ${dayData.score}/100)
+- Deep sleep: ${fmt(dayData.deepMin)} (${pct(dayData.deepMin)}% — recommended 13–23%)
+- REM sleep: ${fmt(dayData.remMin)} (${pct(dayData.remMin)}% — recommended 20–25%)
+- Light sleep: ${fmt(dayData.lightMin)} (${pct(dayData.lightMin)}% — recommended 45–55%)
+- Awake: ${fmt(dayData.awakeMin)} (${pct(dayData.awakeMin)}%)
+${dayData.restingHR > 0 ? `- Resting HR during sleep: ${dayData.restingHR} bpm` : ''}`;
+
+  const { data, error } = await supabase.functions.invoke('coach-chat', {
+    body: { message: prompt, history: [] },
+  });
+  if (error || !data?.message) throw error ?? new Error('No response');
+
+  const insight: string = data.message;
+  await AsyncStorage.setItem(cacheKey, insight);
+  return insight;
+}
 
 export default function SleepDetailScreen() {
   const { t } = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [todayTempSamples, setTodayTempSamples] = useState<DaySleepData['tempSamples']>([]);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiInsightLoading, setAiInsightLoading] = useState(false);
 
   // Progressive: show last 7 days immediately, extend to 30 silently in background
   const { data, isLoading } = useMetricHistory<DaySleepData>('sleep', { initialDays: 7, fullDays: 30 });
@@ -602,15 +713,15 @@ export default function SleepDetailScreen() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || cancelled) return;
-      const { data: rows } = await supabase
+      const { data: rows } = await (supabase
         .from('temperature_readings')
         .select('temperature_c, recorded_at')
         .eq('user_id', user.id)
         .gte('recorded_at', todayLive.bedTime!.toISOString())
         .lte('recorded_at', todayLive.wakeTime!.toISOString())
-        .order('recorded_at', { ascending: true });
+        .order('recorded_at', { ascending: true }) as any);
       if (!cancelled && rows && rows.length > 0) {
-        setTodayTempSamples(rows.map(r => ({
+        setTodayTempSamples(rows.map((r: any) => ({
           timeMs: new Date(r.recorded_at).getTime(),
           temperature: r.temperature_c,
         })));
@@ -619,6 +730,19 @@ export default function SleepDetailScreen() {
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex, todayLive?.bedTime?.getTime(), todayLive?.wakeTime?.getTime()]);
+
+  // AI sleep insight — fetched once per day, cached in AsyncStorage
+  useEffect(() => {
+    if (!dayData) return;
+    let cancelled = false;
+    setAiInsight(null);
+    setAiInsightLoading(true);
+    fetchSleepInsight(dayData)
+      .then(text => { if (!cancelled) setAiInsight(text); })
+      .catch(() => { if (!cancelled) setAiInsight(null); })
+      .finally(() => { if (!cancelled) setAiInsightLoading(false); });
+    return () => { cancelled = true; };
+  }, [dayData?.date]);
 
   const allScores = useMemo(() =>
     DAY_ENTRIES.map(d => ({
@@ -785,13 +909,29 @@ export default function SleepDetailScreen() {
             })()}
 
             {/* Sleep stages */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow title="Total Sleep" value={dayData.timeAsleep} />
-              <SleepStageRow label="Awake" minutes={dayData.awakeMin} totalMinutes={dayData.timeAsleepMinutes} color="#F87171" />
-              <SleepStageRow label="REM Sleep" minutes={dayData.remMin} totalMinutes={dayData.timeAsleepMinutes} color="#60A5FA" />
-              <SleepStageRow label="Light Sleep" minutes={dayData.lightMin} totalMinutes={dayData.timeAsleepMinutes} color="#93C5FD" />
-              <SleepStageRow label="Deep Sleep" minutes={dayData.deepMin} totalMinutes={dayData.timeAsleepMinutes} color="#7C6CC0" />
-            </View>
+            {(() => {
+              const totalStageMin = dayData.awakeMin + dayData.remMin + dayData.lightMin + dayData.deepMin;
+              return (
+                <View style={styles.statsContainer}>
+                  <DetailStatRow title="Total Sleep" value={dayData.timeAsleep} />
+                  <SleepStageBar label="Awake"  minutes={dayData.awakeMin}  totalMinutes={totalStageMin} color="#C26060" />
+                  <SleepStageBar label="REM"    minutes={dayData.remMin}    totalMinutes={totalStageMin} color="#D45050" recMinPct={20} recMaxPct={25} />
+                  <SleepStageBar label="Light"  minutes={dayData.lightMin}  totalMinutes={totalStageMin} color="#D96A6A" recMinPct={45} recMaxPct={55} />
+                  <SleepStageBar label="Deep"   minutes={dayData.deepMin}   totalMinutes={totalStageMin} color="#B92929" recMinPct={13} recMaxPct={23} />
+
+                  {/* AI sleep insight */}
+                  {(aiInsightLoading || aiInsight) && (
+                    <View style={styles.aiInsightRow}>
+                      <AIIcon size={18} />
+                      {aiInsightLoading && !aiInsight
+                        ? <ActivityIndicator size="small" color="rgba(255,255,255,0.5)" style={{ marginLeft: 8 }} />
+                        : <Text style={styles.aiInsightText}>{aiInsight}</Text>
+                      }
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             {/* Metrics grid */}
             <MetricsGrid metrics={[
@@ -908,6 +1048,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   insightText: { color: 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: fontFamily.regular, lineHeight: 24 },
+  aiInsightRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  aiInsightText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    fontFamily: fontFamily.regular,
+    lineHeight: 19,
+  },
   chartSection: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.md,

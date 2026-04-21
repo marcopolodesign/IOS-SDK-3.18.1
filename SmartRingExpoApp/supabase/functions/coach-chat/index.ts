@@ -447,7 +447,19 @@ Guidelines:
 - Keep answers concise (2-5 sentences) and actionable
 - If asked about data not in the snapshot, say so honestly
 - Never invent values not listed above
-- Tone: warm, direct, science-informed`;
+- Tone: warm, direct, science-informed
+
+IMPORTANT: Always respond with a valid JSON object in this exact format:
+{
+  "message": "your full response here",
+  "follow_ups": ["short question 1", "short question 2", "short question 3"]
+}
+
+Rules for follow_ups:
+- Exactly 2-3 natural follow-up questions the user might want to ask next
+- Each question must be under 8 words
+- Derive them from what you discussed in your response
+- Never repeat the user's current question`;
 
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY secret not set');
@@ -478,7 +490,20 @@ Guidelines:
     }
 
     const anthropicData = await anthropicRes.json();
-    const reply: string = anthropicData.content?.[0]?.text ?? "I'm having trouble responding right now. Please try again.";
+    const rawText: string = anthropicData.content?.[0]?.text ?? '';
+
+    let reply: string = rawText;
+    let followUps: string[] = [];
+    try {
+      // Claude may wrap the JSON in a code fence — strip it first
+      const jsonStr = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      if (typeof parsed.message === 'string') reply = parsed.message;
+      if (Array.isArray(parsed.follow_ups)) followUps = parsed.follow_ups.slice(0, 3);
+    } catch {
+      // Non-JSON fallback: use raw text as message, no follow-ups
+      reply = rawText || "I'm having trouble responding right now. Please try again.";
+    }
 
     // Attach the most relevant artifact based on what the user asked about
     const msgLower = message.toLowerCase();
@@ -500,7 +525,7 @@ Guidelines:
     );
     const artifact = matched ? { type: matched.type } : undefined;
 
-    return new Response(JSON.stringify({ message: reply, artifact }), {
+    return new Response(JSON.stringify({ message: reply, artifact, followUps }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
   } catch (err) {

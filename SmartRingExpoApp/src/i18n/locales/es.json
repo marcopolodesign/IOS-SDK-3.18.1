@@ -962,5 +962,13 @@
     "no_data": "Sin datos de entrenamiento esta semana",
     "dominant_zone": "{{pct}}% en {{zone}}",
     "past_7_days": "Últimos 7 días"
+  },
+  "activity_popup": {
+    "start_time": "Inicio",
+    "duration": "Duración",
+    "avg_hr": "FC Prom.",
+    "max_hr": "FC Máx.",
+    "distance": "Distancia",
+    "view_full": "Ver actividad completa"
   }
 }

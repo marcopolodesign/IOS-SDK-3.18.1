@@ -10,7 +10,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   Keyboard,
   ActivityIndicator,
   Share,
@@ -98,6 +97,7 @@ type Message = {
   role: 'user' | 'ai';
   text: string;
   artifact?: Artifact;
+  followUps?: string[];
 };
 
 // ─── Suggestion Chips ─────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ async function callCoach(
   message: string,
   history: Message[],
   focusContext?: { readiness: ReadinessScore | null; illness: IllnessWatch | null }
-): Promise<{ text: string; artifact?: Artifact }> {
+): Promise<{ text: string; artifact?: Artifact; followUps?: string[] }> {
   const { data, error } = await supabase.functions.invoke('coach-chat', {
     body: {
       message,
@@ -173,6 +173,7 @@ async function callCoach(
   return {
     text: data.message as string,
     artifact: data.artifact as Artifact | undefined,
+    followUps: Array.isArray(data.followUps) ? (data.followUps as string[]) : undefined,
   };
 }
 
@@ -294,13 +295,66 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// ─── Inline Markdown Parser ───────────────────────────────────────────────────
+
+type InlineSpan = { bold: boolean; text: string };
+
+function parseInline(line: string): InlineSpan[] {
+  const spans: InlineSpan[] = [];
+  const regex = /\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(line)) !== null) {
+    if (m.index > last) spans.push({ bold: false, text: line.slice(last, m.index) });
+    spans.push({ bold: true, text: m[1] });
+    last = m.index + m[0].length;
+  }
+  if (last < line.length) spans.push({ bold: false, text: line.slice(last) });
+  return spans;
+}
+
 // ─── Animated AI Text ─────────────────────────────────────────────────────────
 
 const WORD_STAGGER_MS = 30;
 const WORD_DURATION_MS = 500;
 const WORD_EASE = Easing.bezier(0.4, 0, 0, 1);
 
-function AnimatedWord({ word, delay }: { word: string; delay: number }) {
+function countAnimatedWords(text: string): number {
+  let count = 0;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const listMatch = line.match(/^(\d+)\.\s+([\s\S]+)$/);
+    if (listMatch) count += 1; // the "N." prefix word
+    const content = listMatch ? listMatch[2] : line;
+    for (const span of parseInline(content)) {
+      count += span.text.split(' ').filter(Boolean).length;
+    }
+  }
+  return count;
+}
+
+function textAnimationDelay(text: string): number {
+  return countAnimatedWords(text) * WORD_STAGGER_MS + WORD_DURATION_MS;
+}
+
+function AnimatedFadeIn({ delay, children, style }: { delay: number; children: React.ReactNode; style?: object }) {
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(8);
+
+  React.useEffect(() => {
+    opacity.value = withDelay(delay, withTiming(1, { duration: 400, easing: WORD_EASE }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 400, easing: WORD_EASE }));
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  return <Reanimated.View style={[animStyle, style]}>{children}</Reanimated.View>;
+}
+
+function AnimatedWord({ word, bold, delay }: { word: string; bold: boolean; delay: number }) {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(6);
 
@@ -315,22 +369,88 @@ function AnimatedWord({ word, delay }: { word: string; delay: number }) {
   }));
 
   return (
-    <Reanimated.Text style={[msgStyles.text, msgStyles.aiText, style]}>
+    <Reanimated.Text style={[msgStyles.text, msgStyles.aiText, bold && msgStyles.boldText, style]}>
       {word}{' '}
     </Reanimated.Text>
   );
 }
 
 function AnimatedAIText({ text }: { text: string }) {
-  const words = text.split(' ');
+  let wordIndex = 0;
+  const lines = text.split('\n');
+
   return (
-    <View style={msgStyles.aiTextWrap}>
-      {words.map((word, i) => (
-        <AnimatedWord key={i} word={word} delay={i * WORD_STAGGER_MS} />
-      ))}
+    <View>
+      {lines.map((line, lineIdx) => {
+        if (!line.trim()) {
+          return <View key={lineIdx} style={{ height: 6 }} />;
+        }
+
+        const listMatch = line.match(/^(\d+)\.\s+([\s\S]+)$/);
+        const content = listMatch ? listMatch[2] : line;
+        const spans = parseInline(content);
+
+        type WordEntry = { text: string; bold: boolean; delay: number };
+        const words: WordEntry[] = [];
+        if (listMatch) {
+          words.push({ text: `${listMatch[1]}.`, bold: true, delay: wordIndex++ * WORD_STAGGER_MS });
+        }
+        for (const span of spans) {
+          for (const w of span.text.split(' ')) {
+            if (w) words.push({ text: w, bold: span.bold, delay: wordIndex++ * WORD_STAGGER_MS });
+          }
+        }
+
+        return (
+          <View key={lineIdx} style={listMatch ? msgStyles.listLine : msgStyles.aiTextWrap}>
+            <View style={msgStyles.aiTextInner}>
+              {words.map((w, i) => (
+                <AnimatedWord key={i} word={w.text} bold={w.bold} delay={w.delay} />
+              ))}
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
+
+// ─── Follow-up Chips ─────────────────────────────────────────────────────────
+
+function FollowUpChips({ questions, onSelect, delay = 0 }: { questions: string[]; onSelect: (q: string) => void; delay?: number }) {
+  return (
+    <AnimatedFadeIn delay={delay} style={followUpStyles.row}>
+      {questions.map((q, i) => (
+        <TouchableOpacity key={i} style={followUpStyles.chip} onPress={() => onSelect(q)} activeOpacity={0.7}>
+          <Text style={followUpStyles.chipText}>{q}</Text>
+        </TouchableOpacity>
+      ))}
+    </AnimatedFadeIn>
+  );
+}
+
+const followUpStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  chip: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  chipText: {
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+  },
+});
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
@@ -375,15 +495,17 @@ function MessageBubble({ message, sleep, allSessions, sleepDebt, steps, readines
     );
   }
 
+  const footerDelay = textAnimationDelay(message.text);
+
   return (
     <View style={msgStyles.rowAI}>
       <AnimatedAIText text={message.text} />
       {message.artifact && (
-        <ArtifactView artifact={message.artifact} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={steps} />
-      )}}
-      <View style={msgStyles.aiFooter}>
+        <ArtifactView artifact={message.artifact} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={steps} readiness={readiness} />
+      )}
+      <AnimatedFadeIn delay={footerDelay} style={msgStyles.aiFooter}>
         <AIIcon size={32} color="white" />
-      </View>
+      </AnimatedFadeIn>
     </View>
   );
 }
@@ -412,6 +534,20 @@ const msgStyles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginBottom: 4,
+  },
+  listLine: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  aiTextInner: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  boldText: {
+    fontWeight: '700',
   },
   aiFooter: {
     flexDirection: 'column',
@@ -519,11 +655,11 @@ export function AIChatScreen() {
       try {
         await stravaService.backgroundSync(3).catch(() => null);
 
-        const { text: aiText, artifact } = await callCoach(text, messages, {
+        const { text: aiText, artifact, followUps } = await callCoach(text, messages, {
           readiness: focusState.readiness,
           illness: focusState.illness,
         });
-        const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', text: aiText, artifact };
+        const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', text: aiText, artifact, followUps };
         setMessages(prev => [...prev, aiMsg]);
       } catch (err: unknown) {
         console.error('[coach] error:', err);
@@ -566,16 +702,15 @@ export function AIChatScreen() {
         style={styles.blob}
       />
 
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
         {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+        <TouchableOpacity activeOpacity={1} onPress={Keyboard.dismiss} style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
           <View style={styles.headerBtn} />
           <Text style={styles.headerTitle}>Coach</Text>
           <TouchableOpacity style={styles.headerBtn} activeOpacity={0.7} onPress={() => router.back()}>
             <CloseIcon />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
 
         {/* Hero — shown before first message */}
         {showHero ? (
@@ -615,20 +750,27 @@ export function AIChatScreen() {
             contentContainerStyle={styles.messageListContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
           >
             {messages.map(msg => (
               <MessageBubble key={msg.id} message={msg} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={homeData.activity.steps} readiness={focusState.readiness} />
             ))}
             {isTyping && <TypingIndicator />}
+            {(() => {
+              const last = messages.at(-1);
+              const chips = !isTyping && last?.role === 'ai' && last.followUps?.length ? last.followUps : null;
+              const delay = last ? textAnimationDelay(last.text) : 0;
+              return chips ? <FollowUpChips questions={chips} onSelect={sendMessage} delay={delay} /> : null;
+            })()}
           </ScrollView>
         )}
 
         {/* Chips + input move up with keyboard */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ marginBottom: insets.bottom + 12 }}>
-          <View style={styles.inputWrapper}>
+          <View style={[styles.inputWrapper, !showHero && styles.inputWrapperChat]}>
           {showHero && <SuggestionChips onSelect={sendMessage} />}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, !showHero && styles.inputContainerChat]}>
             <TextInput
               style={styles.input}
               value={input}
@@ -653,7 +795,6 @@ export function AIChatScreen() {
           </View>{/* end inputWrapper */}
         </KeyboardAvoidingView>
       </SafeAreaView>
-      </TouchableWithoutFeedback>
     </LinearGradient>
   );
 }
@@ -762,6 +903,11 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 40,
     overflow: 'hidden',
   },
+  inputWrapperChat: {
+    borderWidth: 0,
+    borderRadius: 0,
+    overflow: 'visible',
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -772,6 +918,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 16,
     paddingVertical: 20,
+  },
+  inputContainerChat: {
+    borderRadius: 18,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    marginTop: 0,
   },
   input: {
     flex: 1,

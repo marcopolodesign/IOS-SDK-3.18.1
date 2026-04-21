@@ -4,6 +4,102 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-21: Ring Clock Offset Correction for HR Timestamps
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** HR spikes were appearing ~1.5h later than their actual time because the ring's RTC was drifting fast before the `setTime()` sync fix (April 20). Implemented clock-offset correction in both the Supabase sync path and the live chart path so drifted ring timestamps are corrected using the ring's reported current time.
+
+**Files created:** none
+
+**Files modified:**
+- `src/services/UnifiedSmartRingService.ts` — Added `getRingOffsetMs()`: calls `JstyleService.getDeviceTime()`, parses "YYYY.MM.DD HH:mm:ss", returns `Date.now() - ringNow`. Cached for 5 minutes so both `DataSyncService` and `useHomeData` reuse one BLE call per sync session
+- `src/services/DataSyncService.ts` — Removed duplicate `computeRingOffsetMs()` helper; `syncHeartRateData` now calls `service.getRingOffsetMs()` and applies offset when computing `recorded_at` for each HR reading written to Supabase
+- `src/hooks/useHomeData.ts` — Replaced 8-line inline offset block with a single `await UnifiedSmartRingService.getRingOffsetMs().catch(() => 0)`. `tsToMinutes()` and `parseX3DateToMinutes()` both apply the offset before converting epoch ms → minutes-of-day for the live HR chart
+
+**Key notes:**
+- If the ring clock is already synced correctly (offset ≈ 0), no correction is applied — the fix is a no-op for healthy clocks
+- The cache TTL (5 min) means a ring that drifts slowly will still get corrected on every reconnect/sync cycle
+- Old Supabase HR data written before the fix has wrong timestamps and will remain wrong until the ring buffer rolls over and re-syncs — this self-corrects within ~24h as new correctly-timestamped data overwrites the day's records
+
+---
+
+## 2026-04-21: Coach Chat — AI Icon + Follow-up Chips Animate After Text
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** The AI icon and follow-up chips appeared immediately when the message mounted, while the word-by-word text animation was still running.
+
+**Fix:** Added `countAnimatedWords(text)` + `textAnimationDelay(text)` helpers that mirror the word-parsing logic in `AnimatedAIText` to compute exactly when the last word finishes. Added `AnimatedFadeIn` reusable component (opacity + translateY, 400ms, `withDelay`). AI icon wrapped in `<AnimatedFadeIn delay={footerDelay}>` inside `MessageBubble`. `FollowUpChips` accepts a `delay` prop and wraps its row in `AnimatedFadeIn`. Chips render site passes `textAnimationDelay(last.text)` as the delay.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-04-21: Coach Chat — Follow-up Question Chips
+
+**Source:** Claude Code — Macbook Pro
+
+**Feature:** After every AI response, 2–3 contextual follow-up question chips appear below the last message. Tapping one sends it as the next message. Chips disappear as soon as the user sends anything (their own or a chip), and reappear after the next AI reply.
+
+**Implementation:**
+- `coach-chat` edge function: system prompt now instructs Claude to respond as JSON `{ "message": "...", "follow_ups": [...] }`. Parsed after the API call with code-fence stripping and a try/catch fallback so the chat never breaks on non-JSON replies.
+- `callCoach()`: return type extended with `followUps?: string[]`.
+- `Message` type: added `followUps?: string[]` field, stored on each AI message.
+- `FollowUpChips` component: `flexWrap: 'wrap'` row of pill chips (`rgba(255,255,255,0.08)` bg, `rgba(255,255,255,0.2)` border, 20px radius, 13px text).
+- Chips rendered inside the messages `ScrollView`; visible only when last message is an AI message and Claude is not currently typing.
+- Edge function deployed to `pxuemdkxdjuwxtupeqoa`.
+
+**Files modified:** `supabase/functions/coach-chat/index.ts`, `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-04-21: Activity Icons on HR Card + HR Detail Chart
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added sport-type icons (Ionicons, colored by activity type) to both the HR Overview card and HR Detail line chart. Tapping a bar with an activity or tapping an icon opens a bottom-sheet popup showing the workout's name, start time, duration, avg/max HR, and distance. Strava activities get a "View full activity" button; Apple Health and ring workouts show info only. When dragging on the HR Detail chart, the tooltip also reveals the active workout name and icon when the cursor falls inside an activity's time range. All three sources (Strava, Apple Health, on-ring) are shown for today; past days show Strava-only via Supabase.
+
+**Files created:**
+- `src/utils/activityMatching.ts` — Pure utilities: `findActivitiesForDay`, `findActivitiesStartingInHour`, `findActivityAtTime` (range-based lookup)
+- `src/components/home/ActivityInfoSheet.tsx` — `@gorhom/bottom-sheet` modal showing activity details; Strava-only "View full activity" nav button
+- `src/hooks/useHistoricalStravaActivities.ts` — Fetches 30 days of Strava activities from Supabase, returns `Map<YYYY-MM-DD, UnifiedActivity[]>` for the detail chart day navigator
+
+**Files modified:**
+- `src/components/home/DailyHeartRateCard.tsx` — Replaced Strava-only orange-dot pin with unified `activitiesByHour` map (all sources). Pin renders real Ionicon in activity color with +N badge for multi-activity hours. Pan release tap detection uses `lastSetHrIndexRef` + `activitiesByHourRef` to avoid stale closure; tap opens `ActivityInfoSheet`
+- `app/detail/heart-rate-detail.tsx` — `ContinuousHRLine` gains `activities`, `dayDateISO`, `onActivityPress` props. Adds absoluteFill pin overlay with `pointerEvents="box-none"` so Pressable icons work without breaking pan drag. Tooltip extended to show activity icon+name when drag cursor is within a workout range. `HeartRateDetailScreen` wires `useHistoricalStravaActivities` + merges with today's `unifiedActivities`
+- `src/i18n/locales/en.json` / `es.json` — Added `activity_popup` namespace (start_time, duration, avg_hr, max_hr, distance, view_full)
+
+**Key notes:**
+- Pan responder on HR overview card: removed `onStartShouldSetPanResponderCapture` so child Pressables aren't swallowed; kept `onMoveShouldSetPanResponderCapture` so drags still work
+- Activity tap in the overview card is detected via `lastSetHrIndexRef` (written synchronously in `handleTouchRef`) to avoid stale-closure issues with pan responder created in `useRef`
+- `formatDuration`/`formatDistance` in `ActivityInfoSheet` use existing utils: `formatDurationHm` from `src/utils/time.ts` and `formatDistance` from `src/utils/ringData/steps.ts`
+- Historical HK/ring workouts are only available for today — not stored in Supabase; past-day chart shows Strava only (acceptable gap, documented)
+
+---
+
+## 2026-04-21: Coach Chat — Markdown Rendering + Scroll Fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Problems:**
+1. AI responses with `**bold**` markers rendered as literal `**text**` instead of bold.
+2. Numbered lists and multi-paragraph responses (containing `\n`) ran together as a single word-wrapped line with no visual structure.
+3. Dragging to scroll the chat message list produced errors (caused by `TouchableWithoutFeedback` wrapping the entire screen including the `ScrollView`).
+
+**Fixes:**
+- Added `parseInline(line)` helper that splits a text line into `InlineSpan[]` objects (bold/plain), detecting `**...**` patterns.
+- Rewrote `AnimatedAIText` to split the full response on `\n` first, then per-line detect numbered list prefixes (`1. `, `2. `, etc.) and parse inline spans. Words are flattened from spans with a sequential `wordIndex` so the stagger animation flows continuously across the whole response.
+- Updated `AnimatedWord` to accept a `bold` prop; applies `fontWeight: '700'` when set.
+- Added `listLine`, `aiTextInner`, `boldText` style entries to `msgStyles`.
+- Removed `TouchableWithoutFeedback` wrapper around the full screen. The header is now a `TouchableOpacity` (pressing it dismisses keyboard). Added `keyboardDismissMode="on-drag"` to the messages `ScrollView` so the keyboard dismisses naturally on scroll.
+
+**User-visible:** Bold text in Coach responses renders in bold. Numbered lists are visually separated with proper line breaks. Scrolling the chat works without errors.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
 ## 2026-04-20: Sleep Detail — Stage Rows Redesign + Chart Reorder
 
 **Source:** Claude Code — Macbook Pro

@@ -962,5 +962,13 @@
     "no_data": "No training data this week",
     "dominant_zone": "{{pct}}% in {{zone}}",
     "past_7_days": "Past 7 days"
+  },
+  "activity_popup": {
+    "start_time": "Start",
+    "duration": "Duration",
+    "avg_hr": "Avg HR",
+    "max_hr": "Max HR",
+    "distance": "Distance",
+    "view_full": "View full activity"
   }
 }

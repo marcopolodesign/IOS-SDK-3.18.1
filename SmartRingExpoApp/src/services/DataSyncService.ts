@@ -232,6 +232,8 @@ class DataSyncService {
       const raw = await service.getContinuousHeartRateRaw();
       const records: any[] = raw?.records ?? [];
 
+      const ringOffsetMs = await service.getRingOffsetMs();
+
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -244,7 +246,7 @@ class DataSyncService {
         const arr: number[] = record.arrayDynamicHR ?? [];
         arr.forEach((hr, idx) => {
           if (hr <= 0) return;
-          const ts = new Date(startMs + idx * 60_000);
+          const ts = new Date(startMs + idx * 60_000 + ringOffsetMs);
           const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
           if (dateStr !== todayStr) return;
           readings.push({

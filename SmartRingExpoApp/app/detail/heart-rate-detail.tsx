@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Dimensions,
   PanResponder,
+  Pressable,
 } from 'react-native';
 import Reanimated, {
   useSharedValue,
@@ -16,14 +17,19 @@ import Reanimated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { monotoneCubicPath } from '../../src/utils/chartMath';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { LiveHeartRateCard } from '../../src/components/home/LiveHeartRateCard';
+import { ActivityInfoSheet } from '../../src/components/home/ActivityInfoSheet';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DayHRData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
+import { useHistoricalStravaActivities } from '../../src/hooks/useHistoricalStravaActivities';
+import { findActivitiesForDay, findActivityAtTime } from '../../src/utils/activityMatching';
+import type { UnifiedActivity } from '../../src/types/activity.types';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
 
 const COLLAPSE_END = 80;
@@ -32,7 +38,7 @@ const DAY_ENTRIES = buildDayNavigatorLabels(30);
 const SCREEN_WIDTH = Dimensions.get('window').width;
 // CHART_W accounts for chartContainer marginHorizontal (md) + paddingHorizontal (sm) both sides
 const CHART_W = SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2;
-const CHART_H = 234;
+const CHART_H = 175;
 const PAD_LEFT = 34;
 const PAD_V = 16;
 const TOOLTIP_W = 88;
@@ -98,11 +104,22 @@ function buildTodayHRFromContext(
 
 // ─── Fit-to-screen continuous HR line chart with drag-to-scrub ────────────────
 function ContinuousHRLine({
-  points, restingHR, peakHR, isToday,
+  points, restingHR, peakHR, isToday, activities, dayDateISO, onActivityPress,
 }: {
-  points: DayHRData['minutePoints']; restingHR: number; peakHR: number; isToday?: boolean;
+  points: DayHRData['minutePoints'];
+  restingHR: number;
+  peakHR: number;
+  isToday?: boolean;
+  activities: UnifiedActivity[];
+  dayDateISO: string;
+  onActivityPress: (a: UnifiedActivity) => void;
 }) {
-  const [tooltip, setTooltip] = useState<{ svgX: number; heartRate: number; timeMinutes: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    svgX: number;
+    heartRate: number;
+    timeMinutes: number;
+    activity: UnifiedActivity | null;
+  } | null>(null);
   const layoutWidthRef = useRef(0);
   const handleTouchRef = useRef<(x: number) => void>(() => {});
 
@@ -148,15 +165,16 @@ function ContinuousHRLine({
       const dist = Math.abs(toX(p.timeMinutes) - svgX);
       if (dist < nearestDist) { nearestDist = dist; nearest = p; }
     }
-    setTooltip({ svgX: toX(nearest.timeMinutes), heartRate: nearest.heartRate, timeMinutes: nearest.timeMinutes });
+    const dayStartMs = new Date(dayDateISO + 'T00:00:00').getTime();
+    const activity = findActivityAtTime(activities, dayStartMs + nearest.timeMinutes * 60_000);
+    setTooltip({ svgX: toX(nearest.timeMinutes), heartRate: nearest.heartRate, timeMinutes: nearest.timeMinutes, activity });
   };
 
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder:        () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponder:         () => true,
-      onMoveShouldSetPanResponderCapture:  () => true,
+      onStartShouldSetPanResponder:       () => true,
+      onMoveShouldSetPanResponder:        () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant:     e => handleTouchRef.current(e.nativeEvent.locationX),
       onPanResponderMove:      e => handleTouchRef.current(e.nativeEvent.locationX),
       onPanResponderRelease:   ()  => setTooltip(null),
@@ -186,14 +204,53 @@ function ContinuousHRLine({
   const maxHour = Math.ceil(maxMinute / 60);
   const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24].filter(h => h <= maxHour);
 
+  // Activity icon pins: positioned using % of CHART_W to avoid needing pixel layout
+  const activityPins = useMemo(() => {
+    const dayStart = new Date(dayDateISO + 'T00:00:00');
+    return activities.map(a => {
+      const startMs = new Date(a.startDate).getTime();
+      const startMin = Math.round((startMs - dayStart.getTime()) / 60_000);
+      if (startMin < 0 || startMin > maxMinute) return null;
+      const svgX = toX(startMin);
+      const leftPct = (svgX / CHART_W) * 100;
+      return { a, leftPct, svgX };
+    }).filter(Boolean) as Array<{ a: UnifiedActivity; leftPct: number; svgX: number }>;
+  }, [activities, dayDateISO, maxMinute]);
+
   return (
-    <View
-      style={chartStyles.chartWrapper}
-      onLayout={e => { layoutWidthRef.current = e.nativeEvent.layout.width; }}
-      {...pan.panHandlers}
-    >
+    <View style={chartStyles.outerWrapper}>
+      {/* Activity icon pins overlay — sits above the chart, passes through touches except on pins */}
+      <View style={[StyleSheet.absoluteFill, { zIndex: 5 }]} pointerEvents="box-none">
+        {activityPins.map(({ a, leftPct }) => (
+          <Pressable
+            key={a.id}
+            onPress={() => onActivityPress(a)}
+            style={[chartStyles.pinContainer, { left: `${leftPct}%` as any }]}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <View style={[chartStyles.pinCircle, { backgroundColor: `${a.color}28` }]}>
+              <Ionicons name={a.icon as any} size={11} color={a.color} />
+            </View>
+            <View style={[chartStyles.pinStem, { backgroundColor: a.color }]} />
+          </Pressable>
+        ))}
+      </View>
+
+      <View
+        style={chartStyles.chartWrapper}
+        onLayout={e => { layoutWidthRef.current = e.nativeEvent.layout.width; }}
+        {...pan.panHandlers}
+      >
       {tooltip && (
         <View style={[chartStyles.tooltip, { left: tooltipLeft }]}>
+          {tooltip.activity && (
+            <View style={chartStyles.tooltipActivity}>
+              <Ionicons name={tooltip.activity.icon as any} size={10} color={tooltip.activity.color} />
+              <Text style={[chartStyles.tooltipActivityName, { color: tooltip.activity.color }]} numberOfLines={1}>
+                {tooltip.activity.name}
+              </Text>
+            </View>
+          )}
           <Text style={chartStyles.tooltipValue}>{tooltip.heartRate} bpm</Text>
           <Text style={chartStyles.tooltipTime}>{formatTimeFromMinutes(tooltip.timeMinutes)}</Text>
         </View>
@@ -267,11 +324,15 @@ function ContinuousHRLine({
           </SvgText>
         ))}
       </Svg>
+      </View>
     </View>
   );
 }
 
 const chartStyles = StyleSheet.create({
+  outerWrapper: {
+    position: 'relative',
+  },
   chartWrapper: {
     position: 'relative',
   },
@@ -299,16 +360,56 @@ const chartStyles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     marginTop: 1,
   },
+  tooltipActivity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 3,
+  },
+  tooltipActivityName: {
+    fontSize: 9,
+    fontFamily: fontFamily.demiBold,
+    maxWidth: 66,
+  },
+  pinContainer: {
+    position: 'absolute',
+    top: 0,
+    alignItems: 'center',
+    transform: [{ translateX: -9 }],
+  },
+  pinCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinStem: {
+    width: 1.5,
+    height: PAD_V,
+    opacity: 0.6,
+  },
 });
 
 // ─── Screen ────────────────────────────────────────────────────────────────────
 export default function HeartRateDetailScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedActivity, setSelectedActivity] = useState<UnifiedActivity | null>(null);
   const { data, isLoading } = useMetricHistory<DayHRData>('heartRate', { initialDays: 7, fullDays: 30 });
   const homeData = useHomeDataContext();
+  const historicalActivities = useHistoricalStravaActivities();
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
   const todayKey = DAY_ENTRIES[0]?.dateKey;
+
+  // Activities for the selected day: today uses unified (all sources), past days use Strava history
+  const dayActivities = useMemo(() => {
+    if (!selectedDateKey) return [];
+    if (selectedIndex === 0) {
+      return findActivitiesForDay(homeData.unifiedActivities, selectedDateKey);
+    }
+    return historicalActivities.get(selectedDateKey) ?? [];
+  }, [selectedDateKey, selectedIndex, homeData.unifiedActivities, historicalActivities]);
 
   // Live ring data for today — computed independently of selectedIndex so the
   // trend bar for today doesn't jump when navigating to a different day.
@@ -385,6 +486,11 @@ export default function HeartRateDetailScreen() {
 
   return (
     <View style={styles.container}>
+      <ActivityInfoSheet
+        activity={selectedActivity}
+        visible={!!selectedActivity}
+        onClose={() => setSelectedActivity(null)}
+      />
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
         <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
@@ -475,6 +581,9 @@ export default function HeartRateDetailScreen() {
                   restingHR={dayData!.restingHR}
                   peakHR={dayData!.peakHR}
                   isToday={selectedIndex === 0}
+                  activities={dayActivities}
+                  dayDateISO={selectedDateKey ?? todayKey}
+                  onActivityPress={setSelectedActivity}
                 />
               </View>
             )}

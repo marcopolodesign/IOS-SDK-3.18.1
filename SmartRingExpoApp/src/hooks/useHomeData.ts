@@ -1618,6 +1618,10 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const isRecordFromTargetDate = (rec: any): boolean => {
         return getRecordDateStr(rec) === targetDateStr;
       };
+
+      // Correct drifted RTC: ring timestamps are off by this many ms (positive = ring is behind)
+      const ringOffsetMs = await UnifiedSmartRingService.getRingOffsetMs().catch(() => 0);
+
       const parseX3DateToMinutes = (value?: string): number | undefined => {
         if (!value || typeof value !== 'string') return undefined;
         const [datePart, timePart] = value.trim().split(/\s+/);
@@ -1625,20 +1629,25 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         const [y, m, d] = datePart.split('.').map(Number);
         const [hh, mm, ss] = (timePart || '00:00:00').split(':').map(Number);
         if ([y, m, d, hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
-        const ts = new Date(y, m - 1, d, hh, mm, ss);
-        if (!Number.isFinite(ts.getTime()) || ts.getTime() <= 0) return undefined;
-        return ts.getHours() * 60 + ts.getMinutes();
+        const epochMs = new Date(y, m - 1, d, hh, mm, ss).getTime();
+        if (!Number.isFinite(epochMs) || epochMs <= 0) return undefined;
+        const corrected = new Date(epochMs + ringOffsetMs);
+        return corrected.getHours() * 60 + corrected.getMinutes();
+      };
+      const tsToMinutes = (ts: number): number => {
+        if (ts > 1e10) {
+          const corrected = new Date(ts + ringOffsetMs);
+          return corrected.getHours() * 60 + corrected.getMinutes();
+        }
+        return Math.round(ts / 60);
       };
       for (const rec of allRecords) {
         if (!isRecordFromTargetDate(rec)) continue;
         const arr = Array.isArray(rec.arrayDynamicHR)
           ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
           : [];
-        // startTimestamp: if > 1e10 it's epoch ms, else treat as seconds-since-midnight
         const ts = rec.startTimestamp;
-        const startMin = typeof ts === 'number'
-          ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
-          : (parseX3DateToMinutes(rec.date) ?? 0);
+        const startMin = typeof ts === 'number' ? tsToMinutes(ts) : (parseX3DateToMinutes(rec.date) ?? 0);
         arr.forEach((v: number, idx: number) => {
           if (v > 0) {
             samples.push(v);
@@ -1670,9 +1679,7 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
             ? rec.arrayDynamicHR.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
             : [];
           const ts = rec.startTimestamp;
-          const startMin = typeof ts === 'number'
-            ? (ts > 1e10 ? new Date(ts).getHours() * 60 + new Date(ts).getMinutes() : Math.round(ts / 60))
-            : (parseX3DateToMinutes(rec.date) ?? 0);
+          const startMin = typeof ts === 'number' ? tsToMinutes(ts) : (parseX3DateToMinutes(rec.date) ?? 0);
           arr.forEach((v: number, idx: number) => {
             const minute = startMin + idx;
             if (v > 0 && !coveredMinutes.has(minute)) {
