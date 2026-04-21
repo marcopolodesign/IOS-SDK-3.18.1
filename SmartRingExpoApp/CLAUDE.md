@@ -110,6 +110,16 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Recent Changes
 
+### 2026-04-21: Sentry Monitor — Optimized Routine + Auto-Merge + EAS Skill
+
+**Merged:** PR #2 — `Array.isArray` guard on `event.breadcrumbs?.values` in `beforeSend` (`app/_layout.tsx:21`). Fixes Sentry 7406743701 / 7408046962.
+
+**Added `scripts/sentry-monitor.sh`:** Optimized daily monitor with server-side 24 h filter, hard-coded project slug, idempotent branch creation, pull-before-commit (no more conflicts). Connection/sleep issues (matching `connect|disconnect|ble|sleep|hypnogram|…`) are flagged but never auto-merged. Safe fixes go: `sentry/fix-{id}` → PR into `sentry-fixes` → auto-merge → `sentry-fixes` merges to `main` → EAS update.
+
+**Branch strategy:** `sentry-fixes` is the integration branch. Note: rename to `sentry` after deleting the stale `sentry/fix-7408046962` remote branch (GitHub UI → Branches → delete).
+
+**Added `.claude/skills/eas-update.md`:** `/eas-update` skill that installs `eas-cli`, checks `EXPO_TOKEN`, and runs `eas update --branch production`. To enable for remote/web sessions, add `EXPO_TOKEN` to `.claude/settings.json` env block (see skill file for setup steps).
+
 ### 2026-04-20: Sleep Hypnogram — Trim Leading/Trailing Awake + Sync Ring Clock
 
 **Problem:** Hypnogram showed inflated per-stage minute labels (e.g. "20/30 min" in the Awake lane) and BEDTIME was ~20 min earlier than the user's real bedtime, with the offset varying each night.

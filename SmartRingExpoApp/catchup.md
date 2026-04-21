@@ -3849,3 +3849,30 @@ Readiness score ring, illness watch, last run context cards. FAB → AIChatScree
 ## 2026-03-04: Battery Charging State in Header
 
 Native bridge extracts `isCharging` from X3 SDK `dicData`. ⚡ bolt shown in HomeHeader when charging.
+
+---
+
+## 2026-04-21: Sentry monitor — optimized routine + auto-merge + EAS update skill
+
+**What changed:**
+
+1. **PR #2 merged to main** — `Array.isArray` guard on `event.breadcrumbs?.values` in `beforeSend` (`app/_layout.tsx:21`). Fixes Sentry issues 7406743701 and 7408046962.
+
+2. **`sentry-fixes` integration branch created** — all future Sentry auto-fixes flow through `sentry/fix-{id}` → `sentry-fixes` → `main` instead of directly to main. Blocked by a Git namespace constraint: `sentry/fix-7408046962` (old branch) prevents creating `refs/heads/sentry`; using `sentry-fixes` until that stale branch is deleted from GitHub.
+
+3. **`scripts/sentry-monitor.sh`** — new optimised monitoring script:
+   - Server-side 24 h filter (`lastSeen:>yesterday`) — no client-side filtering
+   - Hard-coded slug `focus-app` — slug discovery step removed
+   - Idempotency: skips branch creation if `sentry/fix-{id}` already exists remotely
+   - `git pull --rebase` before every report commit — prevents merge conflicts
+   - **Connection/sleep issues** (matching `connect|disconnect|ble|sleep|hypnogram|…`) flagged only, never auto-merged
+   - Clean fixes: create branch → commit → push → `gh pr create --base sentry-fixes` → `gh pr merge --squash --auto`
+   - After all fixes, if no flagged issues: merge `sentry-fixes` → `main`, run `eas update`
+
+4. **`.claude/skills/eas-update.md`** — new `/eas-update` skill. Installs `eas-cli` if missing, checks `EXPO_TOKEN`, runs `eas update --branch production --non-interactive`. Includes full setup instructions for adding `EXPO_TOKEN` to `.claude/settings.json` for remote (web) sessions.
+
+**Files created:**
+- `scripts/sentry-monitor.sh`
+- `.claude/skills/eas-update.md`
+
+**Source:** Claude Code — automated sentry monitor session
