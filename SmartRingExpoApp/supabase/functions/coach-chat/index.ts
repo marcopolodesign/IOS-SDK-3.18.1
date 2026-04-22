@@ -452,14 +452,45 @@ Guidelines:
 IMPORTANT: Always respond with a valid JSON object in this exact format:
 {
   "message": "your full response here",
-  "follow_ups": ["short question 1", "short question 2", "short question 3"]
+  "follow_ups": ["short question 1", "short question 2", "short question 3"],
+  "artifact": { "type": "..." }
 }
 
 Rules for follow_ups:
 - Exactly 2-3 natural follow-up questions the user might want to ask next
 - Each question must be under 8 words
 - Derive them from what you discussed in your response
-- Never repeat the user's current question`;
+- Never repeat the user's current question
+
+Rules for artifact (OPTIONAL — omit the field entirely for short factual answers):
+Only include "artifact" when a visual genuinely adds information the text cannot convey.
+Named artifact types (no data field needed — the app renders the full card automatically):
+  "sleep_hypnogram"      → last night's sleep stages chart
+  "readiness_score"      → readiness ring (score + recommendation)
+  "readiness_breakdown"  → readiness component breakdown (HRV/sleep/HR/load)
+  "illness_watch"        → illness-watch signal card (5 body signals)
+  "last_run"             → last run/workout context card (effort verdict, body state)
+  "training_insights"    → HR zone distribution + training load donut
+  "daily_timeline"       → today's chronological activity/sleep timeline
+  "nap"                  → today's nap session card
+  "heart_rate"           → today's hourly heart rate chart
+  "sleep_trend"          → 7-day sleep duration trend
+  "sleep_debt"           → sleep debt gauge
+  "steps"                → today's step gauge
+
+Generative artifact types (you supply the data from the snapshot above — NEVER invent values):
+  { "type": "bar_chart",  "data": { "points": [{"label":"Mon","value":62},...], "title":"...", "unit":"ms", "accent":"#6B8EFF", "maxValue":100 } }
+  { "type": "line_chart", "data": { "points": [62,58,71,...], "title":"...", "unit":"ms", "accent":"#6B8EFF" } }
+  { "type": "stat_grid",  "data": { "cells": [{"label":"HRV","value":"62","unit":"ms","accent":"#6B8EFF"},...], "title":"..." } }
+  { "type": "gauge",      "data": { "value": 7200, "goal": 10000, "label": "STEPS", "message": "72% of daily goal" } }
+
+Generative rules:
+- Max 7 points for line_chart, 10 for bar_chart, 6 cells for stat_grid
+- bar_chart labels: short date labels ("Mon", "Tue") or metric names
+- accent hex suggestions: blue #6B8EFF, orange #FF753F, red #AC0D0D, amber #FFB84D
+- For trend charts (HRV, temperature, sleep score over days), use bar_chart or line_chart
+- For a quick multi-metric snapshot (SpO2 + temp + stress), use stat_grid
+- Omit "artifact" entirely if the answer is a simple yes/no, short fact, or advice-only`;
 
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY secret not set');
@@ -494,36 +525,50 @@ Rules for follow_ups:
 
     let reply: string = rawText;
     let followUps: string[] = [];
+    let claudeArtifact: { type: string; data?: unknown } | undefined;
     try {
       // Claude may wrap the JSON in a code fence — strip it first
       const jsonStr = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
       const parsed = JSON.parse(jsonStr);
       if (typeof parsed.message === 'string') reply = parsed.message;
       if (Array.isArray(parsed.follow_ups)) followUps = parsed.follow_ups.slice(0, 3);
+      if (parsed.artifact && typeof parsed.artifact.type === 'string') {
+        claudeArtifact = parsed.artifact;
+      }
     } catch {
       // Non-JSON fallback: use raw text as message, no follow-ups
       reply = rawText || "I'm having trouble responding right now. Please try again.";
     }
 
-    // Attach the most relevant artifact based on what the user asked about
-    const msgLower = message.toLowerCase();
-    const latestSleepTotal = latestSleep
-      ? (latestSleep.deep_min ?? 0) + (latestSleep.light_min ?? 0) + (latestSleep.rem_min ?? 0)
-      : 0;
+    // Trust Claude-emitted artifact when present; fall back to keyword matching
+    let artifact = claudeArtifact;
 
-    const artifactChecks: { type: string; keywords: string[]; guard?: boolean }[] = [
-      { type: 'sleep_hypnogram', keywords: ['sleep', 'slept', 'last night', 'rem', 'deep sleep', 'sleep stage', 'nap', 'woke', 'bedtime', 'hypnogram', 'how long did i sleep'], guard: latestSleepTotal > 0 },
-      { type: 'readiness_score', keywords: ['readiness', 'focus score', 'recovery score', 'ready to train', 'score breakdown', 'why is my score', 'my score'], guard: readiness != null },
-      { type: 'heart_rate', keywords: ['heart rate', 'hr trend', 'bpm', 'pulse', 'resting heart', 'heart rate today', 'my heart'] },
-      { type: 'sleep_trend', keywords: ['sleep trend', 'sleep this week', 'weekly sleep', '7 day sleep', 'sleep average', 'sleep history'] },
-      { type: 'sleep_debt', keywords: ['sleep debt', 'sleep deficit', 'catch up on sleep', 'owe sleep', 'how much sleep do i owe'] },
-      { type: 'steps', keywords: ['steps today', 'step count', 'step goal', 'how many steps', 'activity today', 'daily steps'] },
-    ];
+    if (!artifact) {
+      const msgLower = message.toLowerCase();
+      const latestSleepTotal = latestSleep
+        ? (latestSleep.deep_min ?? 0) + (latestSleep.light_min ?? 0) + (latestSleep.rem_min ?? 0)
+        : 0;
 
-    const matched = artifactChecks.find(a =>
-      (a.guard === undefined || a.guard) && a.keywords.some(kw => msgLower.includes(kw))
-    );
-    const artifact = matched ? { type: matched.type } : undefined;
+      const artifactChecks: { type: string; keywords: string[]; guard?: boolean }[] = [
+        { type: 'sleep_hypnogram',     keywords: ['sleep', 'slept', 'last night', 'rem', 'deep sleep', 'sleep stage', 'woke', 'bedtime', 'hypnogram', 'how long did i sleep'], guard: latestSleepTotal > 0 },
+        { type: 'readiness_breakdown', keywords: ['why my score', 'why is my readiness', 'readiness breakdown', 'what\'s dragging', 'components', 'what\'s pulling down'], guard: readiness != null },
+        { type: 'readiness_score',     keywords: ['readiness', 'focus score', 'recovery score', 'ready to train', 'score breakdown', 'my score'], guard: readiness != null },
+        { type: 'illness_watch',       keywords: ['sick', 'illness', 'feeling off', 'immune', 'fighting something', 'fever', 'getting sick'] },
+        { type: 'last_run',            keywords: ['last run', 'last workout', 'how was my run', 'yesterday\'s training', 'last training'] },
+        { type: 'training_insights',   keywords: ['hr zones', 'heart rate zones', 'training zones', 'training load', 'zone distribution'] },
+        { type: 'daily_timeline',      keywords: ['today\'s events', 'chronology', 'what happened today', 'my day', 'daily timeline'] },
+        { type: 'nap',                 keywords: ['my nap', 'napping', 'did i nap', 'nap today'] },
+        { type: 'heart_rate',          keywords: ['heart rate', 'hr trend', 'bpm', 'pulse', 'resting heart', 'heart rate today', 'my heart'] },
+        { type: 'sleep_trend',         keywords: ['sleep trend', 'sleep this week', 'weekly sleep', '7 day sleep', 'sleep average', 'sleep history'] },
+        { type: 'sleep_debt',          keywords: ['sleep debt', 'sleep deficit', 'catch up on sleep', 'owe sleep', 'how much sleep do i owe'] },
+        { type: 'steps',               keywords: ['steps today', 'step count', 'step goal', 'how many steps', 'activity today', 'daily steps'] },
+      ];
+
+      const matched = artifactChecks.find(a =>
+        (a.guard === undefined || a.guard) && a.keywords.some(kw => msgLower.includes(kw))
+      );
+      if (matched) artifact = { type: matched.type };
+    }
 
     return new Response(JSON.stringify({ message: reply, artifact, followUps }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },

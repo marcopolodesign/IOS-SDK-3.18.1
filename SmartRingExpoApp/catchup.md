@@ -4,6 +4,53 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-21: V8 Sleep Fix — Correct SDK Pagination Protocol (mode:2 after page of 50)
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** `getSleepWithActivity` timed out on every sync. The ring sends 50 sleep windows (one per BLE packet, all `dataEnd=0`) then goes silent — `dataEnd=1` never arrives and the 20s watchdog fires.
+
+**Root cause (confirmed from V8 SDK demo `sleepHistoryData.m`):** The SDK uses explicit two-phase pagination. After receiving a full page of 50 items with `end==NO`, the client must send `getSleepDetailsAndActivityWithMode:2` to request the next page (or signal readiness). The ring then responds with `dataEnd=1` (or more data). Our `V8Bridge.m` handler only waited for `dataEnd=1` passively and never sent `mode:2` — the ring was waiting for us while we waited for it.
+
+**Fix:**
+- After each `DetailSleepAndActivityData_V8` packet, when `accumulatedSleepActivityData.count % 50 == 0 && !dataEnd`, send `getSleepDetailsAndActivityWithMode:2` (mirrors exact SDK demo logic)
+- `dataEnd=1` resolves immediately as before
+- Added a 3s idle timer as a safety net (fires if ring goes silent after `mode:2` or sends a partial page without `dataEnd`)
+- Idle timer and watchdog both call `clearPendingDataRequest` which cancels all timers atomically
+
+**User-visible:** Sleep data now populates on every sync. Expected log: `page complete (50 items) — requesting mode:2` → `fetch complete (dataEnd=1) — total records=50`.
+
+**Files modified:** `ios/V8Bridge/V8Bridge.m`
+
+---
+
+## 2026-04-21: Coach Chat — Expanded Artifacts (Track A + Track B)
+
+**Source:** Claude Code — Macbook Pro
+
+**Feature:** The AI Coach can now render 6 new pre-built card artifacts and 4 new generative visualization types, chosen by Claude per-response (only when a visual genuinely adds value).
+
+**Track A — New named artifact types (reuse existing cards):**
+- `illness_watch` → `IllnessWatchCard` (5-signal illness watch)
+- `readiness_breakdown` → `ReadinessCard` (HRV/sleep/HR/load component bars)
+- `last_run` → `LastRunContextCard` (effort verdict + body state retrospective)
+- `training_insights` → `TrainingInsightsCard` (HR zone donut + load)
+- `daily_timeline` → `DailyTimelineCard` (today's full chronology)
+- `nap` → `NapCard` (today's nap session)
+
+**Track B — Generative artifact types (Claude emits structured data, app renders via generic primitives):**
+- `bar_chart` → `BarChartArtifact` (SVG bar chart with tap-to-select)
+- `line_chart` → `LineChartArtifact` (wraps `HeartRateChart`)
+- `stat_grid` → `StatGridArtifact` (wraps `MetricsGrid`)
+- `gauge` → `GaugeArtifact` (wraps `HeroLinearGauge`)
+
+**Keyword fallback preserved:** If Claude doesn't emit an `artifact` field, the existing keyword-matching logic fires as a fallback (so behavior is never worse than before).
+
+**Files created:** `src/components/chat/GenerativeArtifacts.tsx`
+**Files modified:** `src/screens/AIChatScreen.tsx`, `supabase/functions/coach-chat/index.ts`
+
+---
+
 ## 2026-04-21: Ring Clock Offset Correction for HR Timestamps
 
 **Source:** Claude Code — Macbook Pro

@@ -36,7 +36,8 @@ import { stravaService } from '../services/StravaService';
 import { useHomeDataContext } from '../context/HomeDataContext';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { useSleepDebt } from '../hooks/useSleepDebt';
-import type { ReadinessScore, IllnessWatch, ReadinessRecommendation } from '../types/focus.types';
+import type { HomeData } from '../hooks/useHomeData';
+import type { ReadinessScore, IllnessWatch, ReadinessRecommendation, FocusBaselines, LastRunContext } from '../types/focus.types';
 import type { SleepDebtState } from '../types/sleepDebt.types';
 import { SleepHypnogram } from '../components/home/SleepHypnogram';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
@@ -44,6 +45,14 @@ import { DailyHeartRateCard } from '../components/home/DailyHeartRateCard';
 import { DailySleepTrendCard } from '../components/home/DailySleepTrendCard';
 import { SleepDebtGauge } from '../components/home/SleepDebtGauge';
 import { HeroLinearGauge } from '../components/home/HeroLinearGauge';
+import { IllnessWatchCard } from '../components/focus/IllnessWatchCard';
+import { ReadinessCard } from '../components/focus/ReadinessCard';
+import { LastRunContextCard } from '../components/focus/LastRunContextCard';
+import { TrainingInsightsCard } from '../components/home/TrainingInsightsCard';
+import DailyTimelineCard from '../components/home/DailyTimelineCard';
+import NapCard from '../components/home/NapCard';
+import { BarChartArtifact, LineChartArtifact, StatGridArtifact, GaugeArtifact } from '../components/chat/GenerativeArtifacts';
+import type { BarChartData, LineChartData, StatGridData, GaugeData } from '../components/chat/GenerativeArtifacts';
 import { spacing, fontSize, fontFamily } from '../theme/colors';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -88,9 +97,14 @@ function UpArrowIcon({ color = 'white' }: { color?: string }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Artifact = {
-  type: 'sleep_hypnogram' | 'readiness_score' | 'heart_rate' | 'sleep_trend' | 'sleep_debt' | 'steps';
-};
+type Artifact =
+  | { type: 'sleep_hypnogram' | 'readiness_score' | 'heart_rate' | 'sleep_trend' | 'sleep_debt' | 'steps'
+           | 'illness_watch' | 'readiness_breakdown' | 'last_run' | 'training_insights'
+           | 'daily_timeline' | 'nap' }
+  | { type: 'bar_chart';  data: BarChartData }
+  | { type: 'line_chart'; data: LineChartData }
+  | { type: 'stat_grid';  data: StatGridData }
+  | { type: 'gauge';      data: GaugeData };
 
 type Message = {
   id: string;
@@ -461,10 +475,25 @@ type MessageBubbleProps = {
   sleepDebt: SleepDebtState;
   steps: number;
   readiness: ReadinessScore | null;
+  illness: IllnessWatch | null;
+  baselines: FocusBaselines | null;
+  lastRun: LastRunContext | null;
+  focusIsLoading: boolean;
+  unifiedActivities: HomeData['unifiedActivities'];
+  stravaActivities: HomeData['stravaActivities'];
+  activitySessions: HomeData['activitySessions'];
+  todayNaps: HomeData['todayNaps'];
+  totalNapMinutesToday: number;
 };
 
-function ArtifactView({ artifact, sleep, allSessions, sleepDebt, steps, readiness }: MessageBubbleProps & { artifact: Artifact }) {
+function ArtifactView(props: MessageBubbleProps & { artifact: Artifact }) {
+  const { artifact, sleep, allSessions, sleepDebt, steps, readiness,
+    illness, baselines, lastRun, focusIsLoading,
+    unifiedActivities, stravaActivities, activitySessions, todayNaps, totalNapMinutesToday,
+  } = props;
+
   switch (artifact.type) {
+    // ── Legacy named ────────────────────────────────────────────────────────
     case 'sleep_hypnogram':
       return sleep.segments.length > 0 ? <SleepArtifactCard sleep={sleep} allSessions={allSessions} /> : null;
     case 'readiness_score':
@@ -477,12 +506,68 @@ function ArtifactView({ artifact, sleep, allSessions, sleepDebt, steps, readines
       return sleepDebt.isReady ? <SleepDebtArtifactCard debtMin={sleepDebt.totalDebtMin} category={sleepDebt.category} /> : null;
     case 'steps':
       return steps > 0 ? <StepsArtifactCard steps={steps} /> : null;
+
+    // ── Track A: new named ───────────────────────────────────────────────────
+    case 'illness_watch':
+      return illness ? (
+        <View style={artifactStyles.selfContained}>
+          <IllnessWatchCard illness={illness} isLoading={focusIsLoading} />
+        </View>
+      ) : null;
+    case 'readiness_breakdown':
+      return readiness ? (
+        <View style={artifactStyles.selfContained}>
+          <ReadinessCard readiness={readiness} baselines={baselines} isLoading={focusIsLoading} />
+        </View>
+      ) : null;
+    case 'last_run':
+      return lastRun ? (
+        <View style={artifactStyles.selfContained}>
+          <LastRunContextCard lastRun={lastRun} isLoading={focusIsLoading} hasStrava={stravaActivities.length > 0} />
+        </View>
+      ) : null;
+    case 'training_insights':
+      return unifiedActivities.length > 0 || stravaActivities.length > 0 ? (
+        <View style={artifactStyles.selfContained}>
+          <TrainingInsightsCard unifiedActivities={unifiedActivities} stravaActivities={stravaActivities} />
+        </View>
+      ) : null;
+    case 'daily_timeline':
+      return (
+        <View style={artifactStyles.selfContained}>
+          <DailyTimelineCard
+            sleep={sleep}
+            activitySessions={activitySessions}
+            manualEntries={[]}
+            unifiedActivities={unifiedActivities}
+            todayNaps={todayNaps}
+          />
+        </View>
+      );
+    case 'nap':
+      return todayNaps.length > 0 ? (
+        <View style={artifactStyles.selfContained}>
+          <NapCard naps={todayNaps} totalMinutes={totalNapMinutesToday} />
+        </View>
+      ) : null;
+
+    // ── Track B: generative ──────────────────────────────────────────────────
+    case 'bar_chart':
+      return <BarChartArtifact data={artifact.data} />;
+    case 'line_chart':
+      return <LineChartArtifact data={artifact.data} />;
+    case 'stat_grid':
+      return <StatGridArtifact data={artifact.data} />;
+    case 'gauge':
+      return <GaugeArtifact data={artifact.data} />;
+
     default:
       return null;
   }
 }
 
-function MessageBubble({ message, sleep, allSessions, sleepDebt, steps, readiness }: MessageBubbleProps) {
+function MessageBubble(props: MessageBubbleProps) {
+  const { message } = props;
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -501,7 +586,7 @@ function MessageBubble({ message, sleep, allSessions, sleepDebt, steps, readines
     <View style={msgStyles.rowAI}>
       <AnimatedAIText text={message.text} />
       {message.artifact && (
-        <ArtifactView artifact={message.artifact} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={steps} readiness={readiness} />
+        <ArtifactView {...props} artifact={message.artifact} />
       )}
       <AnimatedFadeIn delay={footerDelay} style={msgStyles.aiFooter}>
         <AIIcon size={32} color="white" />
@@ -754,7 +839,24 @@ export function AIChatScreen() {
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
           >
             {messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} sleep={sleep} allSessions={allSessions} sleepDebt={sleepDebt} steps={homeData.activity.steps} readiness={focusState.readiness} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                sleep={sleep}
+                allSessions={allSessions}
+                sleepDebt={sleepDebt}
+                steps={homeData.activity.steps}
+                readiness={focusState.readiness}
+                illness={focusState.illness}
+                baselines={focusState.baselines}
+                lastRun={focusState.lastRun}
+                focusIsLoading={focusState.isLoading}
+                unifiedActivities={homeData.unifiedActivities}
+                stravaActivities={homeData.stravaActivities}
+                activitySessions={homeData.activitySessions}
+                todayNaps={homeData.todayNaps}
+                totalNapMinutesToday={homeData.totalNapMinutesToday}
+              />
             ))}
             {isTyping && <TypingIndicator />}
             {(() => {

@@ -1440,9 +1440,10 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
 }
 
 - (void)handleSleepData:(DeviceData_X3 *)parsed {
+    NSLog(@"[SLEEP_RAW] dataEnd=%d dicData=%@", parsed.dataEnd, parsed.dicData);
     if (parsed.dicData) {
-        // Extract the arrayDetailSleepData from dicData (matches demo implementation)
         NSArray *arrayDetailSleepData = parsed.dicData[@"arrayDetailSleepData"];
+        NSLog(@"[SLEEP_RAW] arrayDetailSleepData count=%lu items=%@", (unsigned long)arrayDetailSleepData.count, arrayDetailSleepData);
         if (arrayDetailSleepData && arrayDetailSleepData.count > 0) {
             [self.accumulatedSleepData addObjectsFromArray:arrayDetailSleepData];
         }

@@ -45,6 +45,7 @@ static NSString *const kV8PairedDeviceNameKey = @"V8PairedDeviceName";
 @property (nonatomic, assign) DATATYPE_V8 pendingDataType;
 @property (nonatomic, strong) NSTimer *pendingDataWatchdogTimer;
 @property (nonatomic, assign) NSTimeInterval pendingDataTimeoutInterval;
+@property (nonatomic, strong) NSTimer *sleepActivityIdleTimer;
 
 // Connection stability
 @property (nonatomic, assign) BOOL isDisconnecting;
@@ -156,6 +157,7 @@ RCT_EXPORT_MODULE();
 
 - (void)clearPendingDataRequest {
     [self invalidatePendingDataWatchdog];
+    [self invalidateSleepActivityIdleTimer];
     self.pendingDataResolver = nil;
     self.pendingDataRejecter = nil;
     self.pendingDataType = DataError_V8;
@@ -184,6 +186,35 @@ RCT_EXPORT_MODULE();
         [self.pendingDataWatchdogTimer invalidate];
         self.pendingDataWatchdogTimer = nil;
     }
+}
+
+- (void)resetSleepActivityIdleTimer {
+    if (self.sleepActivityIdleTimer) {
+        [self.sleepActivityIdleTimer invalidate];
+        self.sleepActivityIdleTimer = nil;
+    }
+    self.sleepActivityIdleTimer = [NSTimer scheduledTimerWithTimeInterval:3.0
+                                                                    target:self
+                                                                  selector:@selector(sleepActivityIdleTimerFired:)
+                                                                  userInfo:nil
+                                                                   repeats:NO];
+}
+
+- (void)invalidateSleepActivityIdleTimer {
+    if (self.sleepActivityIdleTimer) {
+        [self.sleepActivityIdleTimer invalidate];
+        self.sleepActivityIdleTimer = nil;
+    }
+}
+
+- (void)sleepActivityIdleTimerFired:(NSTimer *)timer {
+    (void)timer;
+    if (!self.pendingDataResolver || self.pendingDataType != DetailSleepAndActivityData_V8) return;
+    NSUInteger count = self.accumulatedSleepActivityData.count;
+    NSLog(@"[V8SleepActivity] idle timeout — resolving with %lu accumulated records", (unsigned long)count);
+    self.pendingDataResolver(@{@"data": [self.accumulatedSleepActivityData copy]});
+    [self clearPendingDataRequest];
+    [self.accumulatedSleepActivityData removeAllObjects];
 }
 
 - (void)clearAccumulatedDataBuffers {
@@ -1040,18 +1071,29 @@ RCT_EXPORT_METHOD(stopManualMeasurement:(int)dataType
             }
             if (items) [self.accumulatedSleepActivityData addObjectsFromArray:items];
 
-            // Resolve ONLY when SDK signals end of stream (dataEnd=1).
-            // The band sends one window per packet (~1 packet/window, 4-hour windows).
-            // items.count is always 1 per packet — do NOT use it as a pagination signal.
             if (dataEnd) {
-                NSLog(@"[V8SleepActivity] fetch complete — total records=%lu", (unsigned long)self.accumulatedSleepActivityData.count);
+                // Ring signals end of transfer — resolve.
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8SleepActivity] fetch complete (dataEnd=1) — total records=%lu", (unsigned long)self.accumulatedSleepActivityData.count);
                 if (self.pendingDataResolver && self.pendingDataType == DetailSleepAndActivityData_V8) {
                     self.pendingDataResolver(@{@"data": [self.accumulatedSleepActivityData copy]});
                     [self clearPendingDataRequest];
                     [self.accumulatedSleepActivityData removeAllObjects];
                 }
+            } else if (self.accumulatedSleepActivityData.count % 50 == 0) {
+                // Full page received (50 items) — request next page / signal completion.
+                // Ring responds with more data or dataEnd=1. This is the correct SDK protocol
+                // per the V8 demo: getSleepDetailsAndActivityWithMode:2 after every full page.
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8SleepActivity] page complete (%lu items) — requesting mode:2", (unsigned long)self.accumulatedSleepActivityData.count);
+                NSMutableData *cmd = [[BleSDK_V8 sharedManager] getSleepDetailsAndActivityWithMode:2 withStartDate:nil];
+                [self writeCommand:cmd];
+                // Safety idle timer: if ring goes silent after mode:2, resolve after 3s.
+                [self resetSleepActivityIdleTimer];
+            } else {
+                // Partial page — still accumulating, reset idle timer as safety net.
+                [self resetSleepActivityIdleTimer];
             }
-            // If !dataEnd: more packets are coming — just accumulate and wait.
             break;
         }
 
