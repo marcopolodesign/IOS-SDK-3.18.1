@@ -80,21 +80,9 @@ class StravaService {
       });
 
       const authUrl = `${STRAVA_AUTH_URL}?${params.toString()}`;
-
-      console.log('🔗 Strava OAuth Debug:');
-      console.log('  Client ID:', STRAVA_CLIENT_ID || '192408');
-      console.log('  Redirect URI:', callbackUri);
-      console.log('  Return URL:', returnUrl);
-      console.log('  Auth URL:', authUrl);
-
       // Open browser for OAuth
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
-      
-      console.log('  Result type:', result.type);
-
       if (result.type === 'success' && result.url) {
-        console.log('  Result URL:', result.url);
-        
         // Parse the URL to extract code
         const url = new URL(result.url);
         const code = url.searchParams.get('code');
@@ -105,7 +93,6 @@ class StravaService {
         }
 
         if (code) {
-          console.log('  Got authorization code!');
           return await this.exchangeCodeForTokens(code);
         }
 
@@ -238,14 +225,9 @@ class StravaService {
   private async loadTokensFromDatabase() {
     const userId = await this.getCurrentUserId();
     if (!userId) {
-      console.log('[StravaService] loadTokensFromDatabase: no authenticated user');
       return;
     }
-    console.log('[StravaService] loadTokensFromDatabase: userId =', userId);
-
     try {
-      console.log('[StravaService] Querying strava_tokens for user:', userId);
-      
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Query timeout after 10s')), 10000)
@@ -258,12 +240,8 @@ class StravaService {
         .single();
       
       const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as any;
-
-      console.log('[StravaService] Query result - error:', error?.message, 'data:', !!data);
-
       if (error || !data) {
         this._isConnected = false;
-        console.log('[StravaService] No tokens found, not connected');
         return;
       }
 
@@ -276,12 +254,8 @@ class StravaService {
       };
 
       this._isConnected = true;
-      console.log('[StravaService] Tokens loaded, connected!');
-
       // Try to get athlete info
-      console.log('[StravaService] Getting athlete info...');
       await this.getAthlete();
-      console.log('[StravaService] Athlete loaded:', this._athlete?.firstname);
     } catch (e) {
       console.error('[StravaService] Error loading tokens:', e);
       reportError(e, { op: 'strava.loadTokens' });
@@ -295,8 +269,6 @@ class StravaService {
       console.error('[StravaService] saveTokensToDatabase: no userId or tokens');
       return false;
     }
-    console.log('[StravaService] saveTokensToDatabase: saving for userId =', userId);
-
     try {
       const { error } = await supabase
         .from('strava_tokens')
@@ -428,7 +400,6 @@ class StravaService {
     userId: string,
     onProgress?: (synced: number, total: number) => void
   ): Promise<{ synced: number; failed: number }> {
-    console.log('[StravaService] syncAllActivityDetails: checking for unfetched activities');
     // Find activities without detail
     const { data: pending, error } = await supabase
       .from('strava_activities')
@@ -443,11 +414,8 @@ class StravaService {
       return { synced: 0, failed: 0 };
     }
     if (!pending || pending.length === 0) {
-      console.log('[StravaService] syncAllActivityDetails: all activities already have details');
       return { synced: 0, failed: 0 };
     }
-    console.log('[StravaService] syncAllActivityDetails: fetching details for', pending.length, 'activities');
-
     let synced = 0;
     let failed = 0;
     const total = pending.length;
@@ -455,7 +423,6 @@ class StravaService {
     for (let i = 0; i < pending.length; i++) {
       const activityId = pending[i].id;
       try {
-        console.log(`[StravaService] detail fetch ${i + 1}/${total}: activity ${activityId}`);
         const { detail, zones } = await this.getActivityDetail(activityId);
 
         if (!detail) {
@@ -493,8 +460,6 @@ class StravaService {
         await new Promise(r => setTimeout(r, 1000));
       }
     }
-
-    console.log(`[StravaService] syncAllActivityDetails complete: synced=${synced} failed=${failed}`);
     return { synced, failed };
   }
 
@@ -509,9 +474,6 @@ class StravaService {
       console.error('[StravaService] syncActivitiesToSupabase: no valid token');
       return { success: false, count: 0 };
     }
-
-    console.log('[StravaService] syncActivitiesToSupabase: fetching last', days, 'days for user', userId);
-
     try {
       const after = new Date();
       after.setDate(after.getDate() - days);
@@ -533,9 +495,6 @@ class StravaService {
           }
         }
       }
-
-      console.log('[StravaService] syncActivitiesToSupabase: fetched', allActivities.length, 'activities');
-
       if (allActivities.length === 0) {
         return { success: true, count: 0 };
       }
@@ -565,8 +524,6 @@ class StravaService {
         console.error('Error syncing Strava activities:', error);
         return { success: false, count: 0 };
       }
-
-      console.log('[StravaService] syncActivitiesToSupabase: upserted', allActivities.length, 'activities');
       return { success: true, count: allActivities.length };
     } catch (e) {
       console.error('[StravaService] syncActivitiesToSupabase error:', e);
@@ -633,7 +590,6 @@ class StravaService {
       }
       return await this.syncActivitiesToSupabase(days);
     } catch (error) {
-      console.log('[StravaService] backgroundSync error (non-fatal):', error);
       reportError(error, { op: 'strava.backgroundSync' }, 'warning');
       return { success: false, count: 0 };
     }
@@ -644,9 +600,7 @@ class StravaService {
   // ============================================
 
   async reload() {
-    console.log('[StravaService] reload() called');
     await this.loadTokensFromDatabase();
-    console.log('[StravaService] reload() complete');
   }
 }
 

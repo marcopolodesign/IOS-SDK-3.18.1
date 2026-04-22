@@ -82,7 +82,6 @@ class HealthKitPermissions {
       this._hasRequestedAuthorization = true;
       return true;
     } catch (error) {
-      console.log('[HealthKit] Error requesting authorization:', error);
       reportError(error, { op: 'healthKit.requestAuth' }, 'warning');
       return false;
     }

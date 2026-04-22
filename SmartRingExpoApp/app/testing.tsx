@@ -194,7 +194,6 @@ export default function TestingScreen() {
       // Heart rate (continuous, like demo)
       try {
         const hrRaw = await JstyleService.getContinuousHeartRate();
-        console.log('RAW_HEART', hrRaw);
         const samples: number[] = [];
         for (const rec of hrRaw.records || []) {
           const arr: number[] = rec.arrayDynamicHR || [];
@@ -211,13 +210,11 @@ export default function TestingScreen() {
       } catch (hrErr) {
         setHeartRate(null);
         setHeartStatus(`Heart error: ${String(hrErr)}`);
-        console.log('RAW_HEART_ERROR', hrErr);
       }
 
       // HRV (demo-style)
       try {
         const hrvNorm = await JstyleService.getHRVDataNormalized();
-        console.log('RAW_HRV', hrvNorm);
         const cleaned = hrvNorm.filter(h => (h.sdnn ?? 0) > 0);
         if (cleaned.length > 0) {
           const latest = cleaned[cleaned.length - 1];
@@ -231,7 +228,6 @@ export default function TestingScreen() {
       } catch (hrvErr) {
         setHRV(null);
         setHRVStatus(`HRV error: ${String(hrvErr)}`);
-        console.log('RAW_HRV_ERROR', hrvErr);
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to fetch sleep');

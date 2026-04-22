@@ -44,7 +44,6 @@ export function useAuth() {
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('[useAuth] Auth state changed:', _event, !!session);
       setSession(session);
       setIsLoading(false);
       if (session?.user) {
@@ -67,27 +66,21 @@ export function useAuth() {
   }, [session?.user?.id]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    console.log('[useAuth] signIn called');
     const result = await signInWithEmail(email, password);
-    console.log('[useAuth] signIn result:', result.success);
     return result;
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, displayName?: string) => {
-    console.log('[useAuth] signUp called');
     const result = await signUpWithEmail(email, password, displayName);
-    console.log('[useAuth] signUp result:', result.success);
     return result;
   }, []);
 
   const signOut = useCallback(async () => {
-    console.log('[useAuth] signOut called');
     const result = await authSignOut();
     return result;
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
-    console.log('[useAuth] signInWithGoogle called');
     return authSignInWithGoogle();
   }, []);
 

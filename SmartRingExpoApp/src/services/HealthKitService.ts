@@ -49,7 +49,6 @@ class HealthKitService {
       }
       return success;
     } catch (error) {
-      console.log('[HealthKit] Initialization error:', error);
       return false;
     }
   }

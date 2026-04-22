@@ -601,21 +601,18 @@ export function StyledRingScreen() {
   
   // Start HR measurement
   const startHRMeasurement = useCallback(async () => {
-    console.log('💓 [RingScreen] Starting HR measurement...');
     setIsMeasuringHR(true);
     setLiveHR(null);
     setHrProgress(0);
     
     // Set up listener for HR data
     hrListenerRef.current = UnifiedSmartRingService.onHeartRateReceived((data) => {
-      console.log('💓 [RingScreen] HR data received:', data);
       if (data.heartRate > 0) {
         setLiveHR(data.heartRate);
         setHrProgress(prev => Math.min(prev + 15, 100));
         // Save as last measured result
         setLastMeasuredHR(data.heartRate);
         setLastMeasuredTime(new Date());
-        console.log('💓 [RingScreen] Final HR saved:', data.heartRate);
         // Keep showing for a moment then stop
         setTimeout(() => {
           stopHRMeasurement();
@@ -627,7 +624,6 @@ export function StyledRingScreen() {
     try {
       await UnifiedSmartRingService.measureHeartRate();
     } catch (error) {
-      console.log('💓 [RingScreen] HR measurement error:', error);
       Alert.alert('Measurement Failed', 'Could not start heart rate measurement. Please try again.');
       stopHRMeasurement();
     }
@@ -635,7 +631,6 @@ export function StyledRingScreen() {
     // Timeout after 45 seconds
     hrTimeoutRef.current = setTimeout(() => {
       if (isMeasuringHR) {
-        console.log('💓 [RingScreen] HR measurement timeout');
         stopHRMeasurement();
       }
     }, 45000);
@@ -643,7 +638,6 @@ export function StyledRingScreen() {
   
   // Stop HR measurement
   const stopHRMeasurement = useCallback(() => {
-    console.log('💓 [RingScreen] Stopping HR measurement');
     setIsMeasuringHR(false);
     
     if (hrListenerRef.current) {
@@ -674,14 +668,11 @@ export function StyledRingScreen() {
   
   // Fetch sleep data
   const fetchSleepData = useCallback(async () => {
-    console.log('😴 [RingScreen] Fetching sleep data...');
     setIsLoadingSleep(true);
     setSleepError(false);
     
     try {
       const result = await UnifiedSmartRingService.getSleepData();
-      console.log('😴 [RingScreen] Sleep data received:', result);
-      
       if (result) {
         const totalSleep = (result.deep || 0) + (result.light || 0) + (result.rem || 0);
         setSleepData({
@@ -694,7 +685,6 @@ export function StyledRingScreen() {
         });
       }
     } catch (error) {
-      console.log('😴 [RingScreen] Sleep data error:', error);
       setSleepError(true);
     } finally {
       setIsLoadingSleep(false);
@@ -743,7 +733,6 @@ export function StyledRingScreen() {
       
       // If we have hasConnectedDevice but not isConnected yet, wait for auto-reconnect
       if (hasConnectedDevice && !isConnected && isAutoConnecting) {
-        console.log('📱 Waiting for auto-reconnect to complete...');
         return;
       }
 
@@ -768,7 +757,6 @@ export function StyledRingScreen() {
         // Fetch data sequentially (matching success screen pattern exactly)
         // Battery first
         const batteryResult = await UnifiedSmartRingService.getBattery().catch((err) => {
-          console.log('Battery fetch failed:', err);
           return null;
         });
 
@@ -781,7 +769,6 @@ export function StyledRingScreen() {
 
         // Steps second
         const stepsResult = await UnifiedSmartRingService.getSteps().catch((err) => {
-          console.log('Steps fetch failed:', err);
           return null;
         });
 
@@ -802,7 +789,6 @@ export function StyledRingScreen() {
             setIsLoadingSleep(true);
             try {
               const sleepResult = await UnifiedSmartRingService.getSleepData();
-              console.log('😴 Initial sleep data:', sleepResult);
               if (mounted && sleepResult) {
                 const totalSleep = (sleepResult.deep || 0) + (sleepResult.light || 0) + (sleepResult.rem || 0);
                 setSleepData({
@@ -815,7 +801,6 @@ export function StyledRingScreen() {
                 });
               }
             } catch (sleepErr) {
-              console.log('😴 Sleep data fetch failed:', sleepErr);
               if (mounted) setSleepError(true);
             } finally {
               if (mounted) setIsLoadingSleep(false);
@@ -830,7 +815,6 @@ export function StyledRingScreen() {
           setInitialDataError(true);
         }
       } catch (error) {
-        console.log('Failed to fetch initial device data:', error);
         if (mounted) {
           setInitialDataError(true);
         }
@@ -864,11 +848,9 @@ export function StyledRingScreen() {
 
   const handleConnect = async (mac: string) => {
     setConnectingMac(mac);
-    console.log('🔗 [StyledRingScreen] Starting connection to:', mac);
     try {
       await connect(mac);
     } catch (error: any) {
-      console.log('❌ [StyledRingScreen] Connection error:', error?.message);
       const errorMessage = error?.message || 'Connection failed';
       const isTimeout = errorMessage.toLowerCase().includes('timeout');
       

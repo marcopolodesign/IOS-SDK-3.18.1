@@ -121,7 +121,6 @@ export const useHealthData = (): UseHealthDataReturn => {
       const data = await UnifiedSmartRingService.getHRVData();
       setHRV(data);
     } catch (error) {
-      console.log('HRV data not available');
       reportError(error, { op: 'healthData.fetchHeartRate' }, 'warning');
     } finally {
       setIsLoading(false);
@@ -134,7 +133,6 @@ export const useHealthData = (): UseHealthDataReturn => {
       const data = await UnifiedSmartRingService.getStressData();
       setStress(data);
     } catch (error) {
-      console.log('Stress data not available');
       reportError(error, { op: 'healthData.fetchSteps' }, 'warning');
     } finally {
       setIsLoading(false);
@@ -147,7 +145,6 @@ export const useHealthData = (): UseHealthDataReturn => {
       const data = await UnifiedSmartRingService.getTemperature();
       setTemperature(data);
     } catch (error) {
-      console.log('Temperature data not available');
       reportError(error, { op: 'healthData.fetchSleep' }, 'warning');
     } finally {
       setIsLoading(false);

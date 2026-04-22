@@ -16,8 +16,6 @@ export interface StepsInfo {
  * @returns Steps, calories, and distance
  */
 export async function getSteps(): Promise<StepsInfo> {
-  console.log('👟 [RingData] Fetching steps...');
-  
   const result = await UnifiedSmartRingService.getSteps();
   
   const info: StepsInfo = {
@@ -26,8 +24,6 @@ export async function getSteps(): Promise<StepsInfo> {
     distance: result.distance ?? 0,
     timestamp: Date.now(),
   };
-  
-  console.log(`👟 [RingData] Steps: ${info.steps}, Calories: ${info.calories}, Distance: ${info.distance}m`);
   return info;
 }
 

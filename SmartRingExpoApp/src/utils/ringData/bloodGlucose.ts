@@ -19,8 +19,6 @@ export interface BloodGlucoseInfo {
  * @returns Array of blood glucose readings
  */
 export async function getBloodGlucose(dayIndex: number = 0): Promise<BloodGlucoseInfo[]> {
-  console.log(`🩸 [RingData] Fetching blood glucose for day ${dayIndex}...`);
-  
   try {
     const data = await UnifiedSmartRingService.getBloodGlucose(dayIndex);
     

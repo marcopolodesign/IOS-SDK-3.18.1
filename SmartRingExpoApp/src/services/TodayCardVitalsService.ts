@@ -123,7 +123,6 @@ class TodayCardVitalsService {
           partial.temperatureC = validTemps[validTemps.length - 1];
         }
       } catch (error) {
-        console.log('[TodayCardVitalsService] temperature fetch failed:', error);
         reportError(error, { op: 'todayCard.fetchTemperature' }, 'warning');
       }
     }
@@ -144,7 +143,6 @@ class TodayCardVitalsService {
           partial.lastSpo2 = values[values.length - 1];
         }
       } catch (error) {
-        console.log('[TodayCardVitalsService] spo2 fetch failed:', error);
         reportError(error, { op: 'todayCard.fetchSpO2' }, 'warning');
       }
     }
@@ -166,7 +164,6 @@ class TodayCardVitalsService {
         return this.fetchDeviceVitals(missing);
       }
     } catch (error) {
-      console.log('[TodayCardVitalsService] connection status check failed:', error);
       reportError(error, { op: 'todayCard.connectionCheck' }, 'warning');
     }
 
@@ -199,11 +196,8 @@ class TodayCardVitalsService {
       if (getCardDataStatusFromVitals(parsedVitals) === 'idle') {
         return null;
       }
-
-      console.log('[TodayCardVitalsService] Loaded cached vitals');
       return parsedVitals;
     } catch (error) {
-      console.log('[TodayCardVitalsService] Failed to load cached vitals:', error);
       reportError(error, { op: 'todayCard.loadCache' }, 'warning');
       return null;
     }
@@ -213,9 +207,7 @@ class TodayCardVitalsService {
     try {
       if (getCardDataStatusFromVitals(vitals) === 'idle') return;
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(vitals));
-      console.log('[TodayCardVitalsService] Saved cached vitals');
     } catch (error) {
-      console.log('[TodayCardVitalsService] Failed to save cached vitals:', error);
       reportError(error, { op: 'todayCard.saveCache' }, 'warning');
     }
   }
@@ -228,22 +220,17 @@ class TodayCardVitalsService {
     this.inFlightHydration = (async () => {
       const mergedStart = this.mergeVitals(options.currentVitals, options.cachedVitals);
       let working = { ...mergedStart };
-      console.log(
-        `[TodayCardVitalsService] hydration_start reason=${options.reason} source=${options.cachedVitals ? 'cache+state' : 'state-only'}`
-      );
 
       let isConnected = false;
       try {
         const connection = await UnifiedSmartRingService.isConnected();
         isConnected = !!connection.connected;
       } catch (error) {
-        console.log('[TodayCardVitalsService] connection check failed:', error);
         reportError(error, { op: 'todayCard.hydrationCheck' }, 'warning');
       }
 
       if (!isConnected) {
         const missingDisconnected = getMissingVitalKeys(working);
-        console.log('[TodayCardVitalsService] returning cached/state vitals (ring disconnected)');
         return {
           vitals: working,
           status: getCardDataStatusFromVitals(working),
@@ -261,20 +248,9 @@ class TodayCardVitalsService {
           await this.sleep(delay);
         }
 
-        console.log(
-          `[TodayCardVitalsService] reason=${options.reason} attempt=${index + 1} missing_before=${missingBefore.join(',')}`
-        );
-
         const fresh = await this.fetchMissingVitals(missingBefore);
-        console.log(
-          `[TodayCardVitalsService] reason=${options.reason} attempt=${index + 1} fresh_keys=${Object.keys(fresh).join(',') || 'none'}`
-        );
         working = this.applyFreshVitals(working, fresh);
         const missingAfter = getMissingVitalKeys(working);
-
-        console.log(
-          `[TodayCardVitalsService] reason=${options.reason} attempt=${index + 1} missing_after=${missingAfter.join(',') || 'none'}`
-        );
       }
 
       const status = getCardDataStatusFromVitals(working);
@@ -282,9 +258,7 @@ class TodayCardVitalsService {
 
       if (working.updatedAt !== mergedStart.updatedAt) {
         await this.saveCachedVitals(working);
-        console.log('[TodayCardVitalsService] hydration completed with fresh vitals');
       } else {
-        console.log('[TodayCardVitalsService] hydration completed using cache/state only');
       }
 
       return {

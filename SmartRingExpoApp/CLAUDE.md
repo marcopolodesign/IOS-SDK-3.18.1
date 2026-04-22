@@ -27,7 +27,14 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## SDK Reference Rule
 
-> **IMPORTANT:** When implementing SDK features, fixing data issues, or adding new ring data types, **ALWAYS check the X3 demo project** at `IOS (X3)/Ble SDK Demo/` and the native bridge files at `ios/JstyleBridge/` for reference implementation patterns before writing code. The demo project contains working examples for all data types (sleep, steps, heart rate, HRV, SpO2, temperature, battery).
+> **CRITICAL — USE THE CORRECT REFERENCE FOLDER PER DEVICE:**
+>
+> | Device | Native Bridge | SDK Demo Reference |
+> |--------|---------------|-------------------|
+> | **Jstyle/X3 Ring** | `ios/JstyleBridge/JstyleBridge.m` | `/Users/mataldao/Local/Focus/IOS (X3)/Ble SDK Demo/` |
+> | **V8 Band** | `ios/V8Bridge/V8Bridge.m` | `/Users/mataldao/Local/Focus/V8 IOS/Ble SDK Demo/` |
+>
+> **NEVER cross-reference these.** `NewBle.m` / `IOS (X3)/` is the Jstyle/X3 ring. `V8Bridge.m` / `V8 IOS/` is the V8 band. They have different SDKs, different BLE protocols, and different APIs. Always check the correct demo folder before writing or fixing any native bridge code.
 
 ## Figma
 

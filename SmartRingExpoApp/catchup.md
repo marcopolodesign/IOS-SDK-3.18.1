@@ -4,6 +4,160 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-22: AI Coach — Persistent User Memory
+
+**Source:** Claude Code — Macbook Pro
+
+**What was built:** The AI coach now remembers facts about the user across sessions — training goals, coaching preferences, recurring patterns — similar to how `catchup.md` captures project context.
+
+**Architecture:**
+
+1. **`coach_memories` table** (migration `20260423_coach_memories.sql`) — Supabase table with `(user_id, key)` primary key, RLS enabled. Each row is a `key: value` fact like `training_goal: "marathon in October 2026"`.
+
+2. **`coach-memory-extract` edge function** — Called fire-and-forget when the user leaves the Coach screen (if ≥2 AI responses exchanged). Sends the conversation to Claude Haiku with an extraction prompt, gets back up to 3 key-value facts, and upserts them to `coach_memories`.
+
+3. **`coach-chat` updated** — Loads `coach_memories` for the user in the existing `Promise.all` block (11th parallel query, zero added latency). Injects memories as a "What I know about you from past conversations" section in the system prompt, above the biometric data.
+
+4. **`AIChatScreen.tsx` updated** — Added memory extraction trigger in `useFocusEffect` cleanup: fires `coach-memory-extract` if the session had ≥2 AI responses. Uses a ref set synchronously during render (not via `useEffect`) to safely read messages at cleanup time.
+
+**Simplify fixes applied:**
+- Moved memories query from sequential (before `req.json()`) into the `Promise.all` block — eliminates ~100ms per-request waterfall.
+- Removed `useEffect` syncing `messagesRef` — set ref synchronously in render body instead.
+
+**Files created:** `supabase/functions/coach-memory-extract/index.ts`, `supabase/migrations/20260423_coach_memories.sql`
+**Files modified:** `supabase/functions/coach-chat/index.ts`, `src/screens/AIChatScreen.tsx`
+**Deployed:** `coach-chat`, `coach-memory-extract` (both on project `pxuemdkxdjuwxtupeqoa`)
+
+---
+
+## 2026-04-22: V8 HR Fetch — Date-Scoped Query + Timeout Fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** `getContinuousHR` timed out every sync (`V8 getContinuousHR timed out after 10000ms`). The ring was dumping its full HR history (2800+ records) because `withStartDate:nil` requests all-time data. At 7 records/packet the transfer took well over 10 seconds.
+
+**Root cause:** `V8Bridge.m` called `GetContinuousHRDataWithMode:0 withStartDate:nil` — the V8 SDK sends all stored records from the beginning of time. V8 SDK supports a `withStartDate:` filter (confirmed in `V8 IOS/Ble SDK Demo/heartRateHistoryData.m:173`).
+
+**Fix:**
+- `ios/V8Bridge/V8Bridge.m`: Pass `withStartDate:` = 2 days ago (formatted `YYYY.MM.dd`). Limits transfer to ~2880 records max instead of open-ended history.
+- `src/services/V8Service.ts`: Increased `getContinuousHR` timeout from 10s → 30s as a safety buffer.
+
+**Also:** Updated `CLAUDE.md` SDK Reference Rule — added a table clearly separating V8 Band (`V8 IOS/Ble SDK Demo/`) from Jstyle/X3 Ring (`IOS (X3)/Ble SDK Demo/`) reference folders. These must never be cross-referenced.
+
+**Requires native rebuild** (V8Bridge.m changed).
+
+---
+
+## 2026-04-22: AI Coach Screen — Animated Background
+
+**Source:** Claude Code — Macbook Pro
+
+**Changes:**
+
+Added subtle continuous background animation to the AI Coach screen (`src/screens/AIChatScreen.tsx`):
+- **Floating blob:** The Figma blob SVG now drifts slowly (±22px X, ±16px Y) on a 7.2s `withRepeat` loop using `Easing.inOut(Easing.sin)` — wrapped in `Reanimated.View`.
+- **Gradient overlay pulse:** A second `LinearGradient` (diagonal, deep red ↔ black) fades in/out on a 9.8s loop (opacity 0 → 0.55), cross-fading with the base gradient to create an organic shifting color effect.
+- Both animations start immediately on mount and run indefinitely with `withRepeat(-1, true)`.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`
+
+---
+
+## 2026-04-21: AI Coach Chat — Expanded Artifacts + Generative UI + Follow-Up Grounding
+
+**Source:** Claude Code — Macbook Pro
+
+**Changes:**
+
+1. **Markdown rendering in chat** — `AnimatedAIText` now parses `**bold**` spans inline and renders list items (`1. 2. 3.`) with animated number prefix. Scroll errors fixed by removing `TouchableWithoutFeedback` wrapper and using `keyboardDismissMode="on-drag"` instead.
+
+2. **Follow-up question chips** — After each AI response, Claude now returns `follow_ups: string[]` (max 3). Chips render in an animated row below the AI bubble, using `AnimatedFadeIn` timed to appear after text animation completes.
+
+3. **Follow-up grounding fix** — Added CRITICAL constraint to system prompt: Claude may only suggest follow-ups about data it has (HRV, sleep, HR, SpO2, body temp, steps, Strava, readiness, illness, naps). Never pain/aches/mood/nutrition/hydration.
+
+4. **Generative artifacts (Track B)** — Claude can now emit a typed `artifact` field with a data payload in its JSON response. New file `src/components/chat/GenerativeArtifacts.tsx` wraps existing chart primitives:
+   - `bar_chart` → SVG bar chart with tap-select
+   - `line_chart` → `HeartRateChart` wrapper
+   - `stat_grid` → `MetricsGrid` wrapper
+   - `gauge` → `HeroLinearGauge` wrapper
+
+5. **Named artifact types (Track A)** — Wired 6 new pre-built cards: `illness_watch`, `readiness_breakdown`, `last_run`, `training_insights`, `daily_timeline`, `nap`. Added keyword triggers in edge function `artifactChecks`. Dual-path: Claude-emitted artifact trusted first; keyword fallback preserved.
+
+6. **Artifact + footer animation** — All artifacts, the AI icon, and follow-up chips animate in via `AnimatedFadeIn` after `textAnimationDelay(text)` — computed from actual word count to fire precisely when the last word lands.
+
+7. **Artifact styling** — Unified `rgba(255,255,255,0.2)` background, no borders, `borderRadius: 16`, same frame across all artifact types.
+
+8. **Input style in chat mode** — After first message: removed outer `inputWrapper` border, reduced border-radius to `20`.
+
+**Files modified:**
+- `src/screens/AIChatScreen.tsx` — `parseInline`, `AnimatedFadeIn`, `AnimatedAIText` rewrite, `Artifact` union type, `ArtifactView` switch, `FollowUpChips`, input style split, `MessageBubbleProps` extended
+- `src/components/chat/GenerativeArtifacts.tsx` — **NEW** — 4 generative artifact components
+- `supabase/functions/coach-chat/index.ts` — system prompt extended (JSON schema, follow-up grounding), `follow_ups` parsing, generative artifact schema, extended `artifactChecks`, dual-path artifact selection
+
+---
+
+## 2026-04-22: Console.log + NSLog Cleanup — All Debug Logging Removed
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Removed all `console.log` calls from 35 JS/TS files (leaving `src/utils/ringData/heartRate.ts` untouched) and removed all `NSLog` statements from 3 native iOS files, keeping only the 6 `[V8HR]` and `[V8HRV]` tagged NSLogs in `V8Bridge.m` for ongoing HR pagination debugging.
+
+**Files modified:**
+- `src/services/V8Service.ts` — removed [V8Sleep], [V8SleepActivity], [V8PPI] logs and cancelled-request log
+- `src/services/UnifiedSmartRingService.ts` — removed all debug/status logs (scan errors, reconnect warnings, method entry logs)
+- `src/services/JstyleService.ts` — removed module load, cancelPendingDataRequest, autoReconnect timing, and steps history error logs
+- `src/services/StravaService.ts` — removed all OAuth debug and sync status logs (46 lines)
+- `src/services/DataSyncService.ts` — removed all periodic sync and per-record sync logs
+- `src/services/HealthKitService.ts` — removed initialization error log
+- `src/services/ReadinessService.ts` — removed `__DEV__` readiness/illness score logs
+- `src/services/MorningSleepReconnectTrigger.ts` — removed multi-line reconnect complete log
+- `src/services/NotificationService.ts` — removed push token verification/token logs
+- `src/services/TodayCardVitalsService.ts` — removed hydration start, retry attempt, and result logs
+- `src/services/AuthService.ts` — removed all auth flow logs (sign in/up/out/profile)
+- `src/services/HealthKit/HealthKitDataFetchers.ts` — removed 6 error logs
+- `src/services/HealthKit/HealthKitSleepProcessor.ts` — removed sleep fetch error log
+- `src/services/HealthKit/HealthKitPermissions.ts` — removed authorization error log
+- `src/services/HealthKit/HealthKitSubscriptions.ts` — removed subscription error log
+- `src/services/HealthKit/HealthKitWorkoutFetcher.ts` — removed workout fetch error log
+- `src/hooks/useHealthData.ts` — removed HRV/stress/temperature unavailable logs
+- `src/hooks/useAuth.ts` — removed auth state change logs (commented-out lines left as-is)
+- `src/hooks/useFocusData.ts` — removed all [FocusData] debug logs and removed unused logQueryError helper
+- `src/hooks/useMetricHistory.ts` — removed sleep history query logs and ring fallback error logs
+- `src/hooks/useSmartRing.ts` — removed raw device bridge log and all metric fetch status logs
+- `src/utils/ringData/sleep.ts` — removed fetch and stage breakdown logs
+- `src/utils/ringData/spo2.ts` — removed fetch log
+- `src/utils/ringData/battery.ts` — removed fetch log
+- `src/utils/ringData/steps.ts` — removed fetch log
+- `src/utils/ringData/bloodGlucose.ts` — removed fetch log
+- `src/utils/ringData/customSleepAnalysis.ts` — removed analysis start logs
+- `src/screens/StyledRingScreen.tsx` — removed HR measurement, sleep fetch, battery/steps, and connect logs
+- `src/context/OnboardingContext.tsx` — removed debug useEffect that logged full context state on every change
+- `app/(onboarding)/connect.tsx` — removed all step/scan/device debug logs and multi-line state dumps
+- `app/(auth)/login.tsx` — removed navigation log
+- `app/detail/sleep-detail.tsx` — removed selectedIndex/data debug logs
+- `app/testing.tsx` — removed RAW_HEART and RAW_HRV logs
+- `scripts/backfill-sleep-scores.ts` — removed all backfill progress logs
+- `ios/V8Bridge/V8Bridge.m` — removed idle timeout NSLog, all [V8Sleep] NSLogs (packet/raw/complete/next-page), all [V8SleepActivity] NSLogs, all [V8PPI] NSLogs; kept the 6 [V8HR] and [V8HRV] tagged NSLogs
+- `ios/JstyleBridge/JstyleBridge.m` — removed [SLEEP_RAW] dataEnd and arrayDetailSleepData NSLogs, removed notification error NSLog
+- `ios/JstyleBridge/NewBle.m` — removed [BLE] writeLogs NSLog, all 7 "Could not find service/characteristic" and CoreBluetooth state NSLogs
+
+**Key notes:**
+- `src/utils/ringData/heartRate.ts` was intentionally left untouched (8 console.logs preserved)
+- `console.error` and `console.warn` calls were NOT removed — only `console.log`
+- Multi-line console.log calls (spanning multiple lines) were handled individually to avoid breaking surrounding logic
+
+---
+
+## 2026-04-22: Coach Chat — Artifacts Animate After Text + Unified Style
+
+**Source:** Claude Code — Macbook Pro
+
+Artifacts now fade in after the word-by-word text animation finishes — wrapped in `<AnimatedFadeIn delay={footerDelay}>` just like the AI icon and follow-up chips. All artifact card styles unified: `backgroundColor: 'rgba(255,255,255,0.2)'`, no border, `borderRadius: 16`. Applied to `artifactStyles.card`, `artifactStyles.selfContained` in `AIChatScreen.tsx` and `styles.card` in `GenerativeArtifacts.tsx`.
+
+**Files modified:** `src/screens/AIChatScreen.tsx`, `src/components/chat/GenerativeArtifacts.tsx`
+
+---
+
 ## 2026-04-22: V8 HR Fix — Same Pagination Bug as Sleep (DynamicHR_V8 + HRVData_V8)
 
 **Source:** Claude Code — Macbook Pro

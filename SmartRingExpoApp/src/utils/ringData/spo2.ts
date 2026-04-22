@@ -14,16 +14,12 @@ export interface SpO2Info {
  * @returns Blood oxygen saturation percentage
  */
 export async function getSpO2(): Promise<SpO2Info> {
-  console.log('🫁 [RingData] Fetching SpO2...');
-  
   const result = await UnifiedSmartRingService.getSpO2();
   
   const info: SpO2Info = {
     spo2: result.spo2 ?? 0,
     timestamp: Date.now(),
   };
-  
-  console.log(`🫁 [RingData] SpO2: ${info.spo2}%`);
   return info;
 }
 

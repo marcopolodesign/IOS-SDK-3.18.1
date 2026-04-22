@@ -36,8 +36,6 @@ const BATCH = 500;
 const MIN_TOTAL_MINUTES = 60;
 
 async function run() {
-  console.log('[backfill] Starting sleep_score backfill for night sessions...');
-
   let offset = 0;
   let totalUpdated = 0;
 
@@ -56,9 +54,6 @@ async function run() {
     }
 
     if (!data || data.length === 0) break;
-
-    console.log(`[backfill] Batch offset=${offset}: ${data.length} rows`);
-
     const updates: { id: string; sleep_score: number }[] = [];
     for (const row of data) {
       const deep = row.deep_min ?? 0;
@@ -67,7 +62,6 @@ async function run() {
       const awake = row.awake_min ?? 0;
 
       if (deep + light + rem < MIN_TOTAL_MINUTES) {
-        console.log(`  skip id=${row.id} (total ${deep + light + rem}m < ${MIN_TOTAL_MINUTES}m)`);
         continue;
       }
 
@@ -76,7 +70,6 @@ async function run() {
 
       if (offset === 0 && updates.length <= 5) {
         // Dry-run preview for first batch
-        console.log(`  preview id=${row.id}: deep=${deep} light=${light} rem=${rem} awake=${awake} → score=${score}`);
       }
     }
 
@@ -91,13 +84,9 @@ async function run() {
     }
 
     totalUpdated += updates.length;
-    console.log(`  updated ${updates.length} rows in this batch (total so far: ${totalUpdated})`);
-
     if (data.length < BATCH) break;
     offset += BATCH;
   }
-
-  console.log(`[backfill] Done. Total rows updated: ${totalUpdated}`);
 }
 
 run().catch(err => {

@@ -51,7 +51,6 @@ class HealthKitSleepProcessor {
       result = await this.querySleepWindow(sevenDaysAgo, now);
       return result;
     } catch (error) {
-      console.log('[HealthKit] Error fetching sleep data:', error);
       reportError(error, { op: 'healthKit.fetchLatestSleep' }, 'warning');
       return null;
     }

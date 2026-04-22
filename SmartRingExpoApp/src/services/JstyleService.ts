@@ -41,7 +41,6 @@ try {
     eventEmitter = new NativeEventEmitter(JstyleBridge);
   }
 } catch (error) {
-  console.log('JstyleBridge native module not available');
   reportError(new Error('JstyleBridge native module unavailable'), { op: 'moduleLoad' }, 'warning');
 }
 
@@ -159,7 +158,6 @@ class JstyleService {
       );
       await this.sleep(150);
     } catch (error) {
-      console.log(`[JstyleService] cancelPendingDataRequest failed after ${operationName} ${reason}:`, error);
       reportError(error, { op: 'cancelPendingDataRequest' }, 'warning');
     }
   }
@@ -380,7 +378,6 @@ class JstyleService {
     const t0 = Date.now();
     const result = await withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')
       .catch(() => ({ success: false, message: 'autoReconnect timed out' }));
-    console.log(`[sync] jstyle.native.autoReconnect ${Date.now() - t0}ms success=${result.success}`);
     return result;
   }
 
@@ -544,7 +541,6 @@ class JstyleService {
           calories: Number(e.calories ?? 0),
         }));
     } catch (e) {
-      console.log('[JstyleService] getAllDailyStepsHistory error:', e);
       reportError(e, { op: 'getAllDailyStepsHistory' }, 'warning');
       return [];
     }
@@ -805,7 +801,6 @@ class JstyleService {
     try {
       await withNativeTimeout(JstyleBridge.enableAutoHRMonitoring(), 5000, 'enableAutoHRMonitoring');
     } catch (e) {
-      console.log('⚠️ [JstyleService] enableAutoHRMonitoring failed:', e);
       reportError(e, { op: 'enableAutoHRMonitoring' }, 'warning');
     }
   }

@@ -64,13 +64,9 @@ const SLEEP_TYPE_NAMES = ['None', 'Awake', 'Light', 'Deep', 'REM', 'Unweared'];
  * @returns Detailed sleep information
  */
 export async function getSleep(dayIndex: number = 0): Promise<SleepInfo> {
-  console.log(`😴 [RingData] Fetching sleep data for day ${dayIndex}...`);
-
   const rawData = await UnifiedSmartRingService.getSleepData();
 
   // Log raw data
-  console.log('😴 [RingData] Raw sleep segments:', rawData.sleepSegments?.length || 0);
-  
   // Process segments with type names
   const segments: SleepSegment[] = rawData.sleepSegments.map(s => ({
     ...s,
@@ -103,9 +99,6 @@ export async function getSleep(dayIndex: number = 0): Promise<SleepInfo> {
     timestamp: rawData.timestamp,
     dayIndex,
   };
-  
-  console.log(`😴 [RingData] Sleep: Total=${info.totalSleepMinutes}m, Deep=${deepMinutes}m, Light=${lightMinutes}m, REM=${remMinutes}m, Awake=${awakeMinutes}m`);
-  
   return info;
 }
 
@@ -115,15 +108,12 @@ export async function getSleep(dayIndex: number = 0): Promise<SleepInfo> {
  * @returns Array of sleep info for each day
  */
 export async function getSleepHistory(days: number = 7): Promise<SleepInfo[]> {
-  console.log(`😴 [RingData] Fetching ${days} days of sleep history...`);
-  
   const results: SleepInfo[] = [];
   for (let i = 0; i < Math.min(days, 7); i++) {
     try {
       const sleepData = await getSleep(i);
       results.push(sleepData);
     } catch (err) {
-      console.log(`😴 [RingData] Failed to get sleep for day ${i}:`, err);
     }
   }
   

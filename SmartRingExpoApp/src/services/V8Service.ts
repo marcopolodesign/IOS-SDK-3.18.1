@@ -37,7 +37,6 @@ try {
     eventEmitter = new NativeEventEmitter(V8Bridge);
   }
 } catch (error) {
-  console.log('V8Bridge native module not available');
 }
 
 /**
@@ -78,7 +77,6 @@ async function cancelPendingNativeRequest(label: string): Promise<void> {
     );
     await new Promise(r => setTimeout(r, 150));
   } catch (e) {
-    console.log(`[V8Service] cancelPendingDataRequest failed after ${label}:`, e);
   }
 }
 
@@ -340,7 +338,6 @@ const V8Service = {
           startTimestamp: parseV8Date(session.startTime_SleepData),
         }));
         _sleepRecordsCache = mergeV8SleepWindows(raw);
-        console.log(`[V8Sleep] windows raw=${raw.length} merged=${_sleepRecordsCache.length}`);
       }
 
       if (_sleepRecordsCache.length === 0) {
@@ -417,7 +414,6 @@ const V8Service = {
       if (!_sleepRecordsCache) {
         // Use getSleepWithActivity (type 81) — returns all 4-hour overlapping windows
         const result = await V8Bridge.getSleepWithActivity();
-        console.log('[V8Sleep] raw bridge result count:', (result.data || []).length);
         const rawRecords = (result.data || []).map((session: any) => ({
           arraySleepQuality: session.arraySleepQuality || [],
           sleepUnitLength: Number(session.sleepUnitLength) || 1,
@@ -425,21 +421,6 @@ const V8Service = {
           totalSleepTime: Number(session.totalSleepTime) || 0,
         }));
         _sleepRecordsCache = mergeV8SleepWindows(rawRecords);
-        console.log(`[V8Sleep] windows raw=${rawRecords.length} merged=${_sleepRecordsCache.length}`);
-        _sleepRecordsCache.forEach((r, i) => {
-          const q: number[] = r.arraySleepQuality;
-          const counts = { deep: 0, light: 0, rem: 0, awake: 0, other: 0 };
-          q.forEach((v: number) => {
-            if (v === 1) counts.deep++;
-            else if (v === 2) counts.light++;
-            else if (v === 3) counts.rem++;
-            else if (v === 0) counts.awake++;
-            else counts.other++;
-          });
-          const start = new Date(r.startTimestamp).toISOString();
-          console.log(`[V8Sleep] merged[${i}] start=${start} totalSleepTime=${r.totalSleepTime} quality.length=${q.length}`);
-          console.log(`[V8Sleep] merged[${i}] deep=${counts.deep} light=${counts.light} rem=${counts.rem} awake(0)=${counts.awake} other=${counts.other}`);
-        });
       }
       return { records: _sleepRecordsCache, timestamp: Date.now() };
     }, 30000, 'getSleepDataRaw');
@@ -452,7 +433,6 @@ const V8Service = {
   async getSleepWithActivityRaw(): Promise<any[]> {
     return enqueueNativeCall(async () => {
       const result = await V8Bridge.getSleepWithActivity();
-      console.log('[V8SleepActivity] raw bridge result count:', (result?.data || []).length);
       return result?.data ?? [];
     }, 30000, 'getSleepWithActivityRaw');
   },
@@ -460,7 +440,6 @@ const V8Service = {
   async getPPIDataRaw(): Promise<any[]> {
     return enqueueNativeCall(async () => {
       const result = await V8Bridge.getPPIData();
-      console.log('[V8PPI] raw bridge result count:', (result?.data || []).length);
       return result?.data ?? [];
     }, 20000, 'getPPIDataRaw');
   },
@@ -483,7 +462,7 @@ const V8Service = {
         }
       }
       return records;
-    }, 10000, 'getContinuousHR');
+    }, 30000, 'getContinuousHR');
   },
 
   async getHRVDataNormalized(): Promise<HRVData[]> {

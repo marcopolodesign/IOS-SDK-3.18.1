@@ -69,15 +69,12 @@ class DataSyncService {
     this._syncInterval = setInterval(() => {
       this.syncAllData();
     }, intervalMs);
-
-    console.log(`Started periodic sync every ${intervalMs / 1000} seconds`);
   }
 
   stopPeriodicSync() {
     if (this._syncInterval) {
       clearInterval(this._syncInterval);
       this._syncInterval = null;
-      console.log('Stopped periodic sync');
     }
   }
 
@@ -100,7 +97,6 @@ class DataSyncService {
     // when sync is triggered immediately after a connection event that hasn't settled yet.
     const connectionStatus = await UnifiedSmartRingService.isConnected();
     if (!connectionStatus.connected) {
-      console.log('[Sync] Skipping syncAllData — ring not connected');
       return { success: false, error: 'NOT_CONNECTED' };
     }
 
@@ -157,7 +153,6 @@ class DataSyncService {
       this.notifyListeners();
 
       addBreadcrumb('sync', 'syncAllData completed');
-      console.log('Data sync completed successfully');
       return { success: true };
     } catch (e) {
       const error = e as Error;
@@ -292,7 +287,6 @@ class DataSyncService {
 
       if (historicalReadings.length > 0) {
         await supabaseService.insertStepsReadings(historicalReadings);
-        console.log(`[Sync] Wrote ${historicalReadings.length} historical daily step records`);
       }
 
       // Today: write hourly readings for fine-grained aggregation
@@ -348,7 +342,6 @@ class DataSyncService {
       return;
     }
     if (rawRecords.length === 0) {
-      console.log('[Sync] No raw sleep records from ring');
       return;
     }
 
@@ -484,7 +477,6 @@ class DataSyncService {
         });
 
         if (matching.length === 0) {
-          console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}): no blocks ending on this date`);
           continue;
         }
 
@@ -498,19 +490,14 @@ class DataSyncService {
         // Duration gate — ring sometimes reports 20-25h cumulative sessions
         const durationHours = (block.end - block.start) / (1000 * 60 * 60);
         if (durationHours > 14) {
-          console.log(`[Sync] Sleep day ${dayIndex}: skipping — implausible duration ${durationHours.toFixed(1)}h`);
           continue;
         }
 
         const { deep, light, rem, awake } = computeStageMins(block);
 
         if (deep === 0 && light === 0 && rem === 0) {
-          console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}): skipping — no sleep stages`);
           continue;
         }
-
-        console.log(`[DataSync] sleep day ${dayIndex} (${targetDateStr}): deep=${deep} light=${light} rem=${rem} awake=${awake} start=${startTime.toISOString()}`);
-
         // Classify as night or nap
         const totalSleepMin = deep + light + rem;
         const priorNightEnd = await supabaseService.getLatestNightSessionEndTime(userId);
@@ -557,14 +544,11 @@ class DataSyncService {
                 .update({ resting_hr: restingHR })
                 .eq('user_id', userId)
                 .eq('start_time', overlappingSession.start_time);
-              console.log(`[Sync] Sleep day ${dayIndex}: back-filled resting_hr=${restingHR} on existing session`);
             }
-            console.log(`[Sync] Sleep day ${dayIndex}: skipping ${classification.sessionType} — existing has ${existingTotalMin}min >= new ${totalSleepMin}min`);
             continue;
           }
 
           // New data is more complete — replace the stale session
-          console.log(`[Sync] Sleep day ${dayIndex}: replacing existing (${existingTotalMin}min) with new (${totalSleepMin}min)`);
           if (overlappingSession.start_time !== startTimeIso) {
             await supabaseService.deleteSleepSession(userId, overlappingSession.start_time);
           }
@@ -608,7 +592,6 @@ class DataSyncService {
         await supabaseService.insertSleepSession(sessionPayload);
         // Track in-memory so subsequent loop iterations can detect overlap with this session
         nightSessions.push(sessionPayload as any);
-        console.log(`[Sync] Sleep day ${dayIndex} (${targetDateStr}) synced: ${deep}d + ${light}l + ${rem}r = ${totalSleepMin}min`);
       } catch (e) {
         console.error(`Error syncing sleep data for day ${dayIndex}:`, e);
       }
@@ -679,7 +662,6 @@ class DataSyncService {
     try {
       const bpData = await service.getBloodPressure();
       if (bpData) {
-        console.log('[Sync] BP data:', bpData);
         await supabaseService.insertBloodPressureReadings([{
           user_id: userId,
           systolic: bpData.systolic,
@@ -701,7 +683,6 @@ class DataSyncService {
     try {
       const sportRecords = await service.getSportData();
       if (sportRecords && sportRecords.length > 0) {
-        console.log('[Sync] Sport records:', sportRecords.length, 'records');
         const records = sportRecords.map(record => ({
           user_id: userId,
           sport_type: record.type.toString(),

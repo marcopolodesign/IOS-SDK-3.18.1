@@ -59,7 +59,6 @@ class UnifiedSmartRingService {
    * Used when the native SDK doesn't emit events (e.g., after autoReconnect)
    */
   emitConnectionState(state: ConnectionState): void {
-    console.log('📱 [UnifiedService] Emitting connection state:', state);
     this.jsConnectionListeners.forEach(callback => {
       try {
         callback(state);
@@ -111,7 +110,6 @@ class UnifiedSmartRingService {
    * Called by useSmartRing when connecting to a device with a known sdkType
    */
   setConnectedSDKType(type: SDKType, deviceType?: DeviceType): void {
-    console.log('📱 [UnifiedService] Setting connected SDK type:', type);
     this.connectedSDKType = type;
     this.connectedDeviceType = deviceType ?? (type === 'v8' ? 'band' : type === 'jstyle' ? 'ring' : null);
     if (type === 'jstyle' || type === 'v8') {
@@ -165,7 +163,6 @@ class UnifiedSmartRingService {
     if (JstyleService.isAvailable()) {
       scanPromises.push(
         JstyleService.scan(duration).catch(err => {
-          console.log('⚠️ Jstyle scan error:', err.message);
         })
       );
     }
@@ -173,7 +170,6 @@ class UnifiedSmartRingService {
     if (V8Service.isAvailable()) {
       scanPromises.push(
         V8Service.scan(duration).catch(err => {
-          console.log('⚠️ V8 scan error:', err.message);
         })
       );
     }
@@ -340,7 +336,6 @@ class UnifiedSmartRingService {
             };
           }
         } catch (e) {
-          console.log('⚠️ Jstyle isConnected check failed:', e);
         }
       }
 
@@ -360,7 +355,6 @@ class UnifiedSmartRingService {
             };
           }
         } catch (e) {
-          console.log('⚠️ V8 isConnected check failed:', e);
         }
       }
 
@@ -375,7 +369,7 @@ class UnifiedSmartRingService {
               addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'jstyle' });
               if (result.deviceId) setRingContext(result.deviceId, 'jstyle');
               setTimeout(() => this.emitConnectionState('connected'), 50);
-              JstyleService.setTime().catch(e => console.log('[Unified] setTime on reconnect failed:', e));
+              JstyleService.setTime().catch(() => {});
               V8Service.forgetPairedDevice().catch(() => {});
               return result;
             }
@@ -383,7 +377,6 @@ class UnifiedSmartRingService {
             this.connectedSDKType = 'none';
           }
         } catch (e) {
-          console.log('⚠️ Jstyle autoReconnect failed:', e);
           reportError(e, { op: 'autoReconnect.jstyle' });
         }
       }
@@ -408,7 +401,6 @@ class UnifiedSmartRingService {
             this.connectedSDKType = 'none';
           }
         } catch (e) {
-          console.log('⚠️ V8 autoReconnect failed:', e);
           reportError(e, { op: 'autoReconnect.v8' });
         }
       }
@@ -540,7 +532,6 @@ class UnifiedSmartRingService {
       if (this.isV8()) return await V8Service.getSleepByDay(dayIndex);
       return await JstyleService.getSleepByDay(dayIndex);
     } catch (e) {
-      console.log('getSleepByDay error', e);
       return null;
     }
   }
@@ -581,7 +572,6 @@ class UnifiedSmartRingService {
         return Math.round(values[values.length - 1]);
       }
     } catch (error) {
-      console.log('⚠️ getRespiratoryRateNightly sleepHRV failed:', error);
     }
 
     try {
@@ -593,7 +583,6 @@ class UnifiedSmartRingService {
         return Math.round(values[values.length - 1]);
       }
     } catch (error) {
-      console.log('⚠️ getRespiratoryRateNightly OSA/EOV failed:', error);
     }
 
     try {
@@ -674,25 +663,17 @@ class UnifiedSmartRingService {
 
   startSpO2Monitoring(): void {
     if (this.connectedSDKType === 'v8') {
-      V8Service.startSpO2Measuring().catch(err => {
-        console.log('⚠️ V8 startSpO2 error:', err.message);
-      });
+      V8Service.startSpO2Measuring().catch(() => {});
     } else if (this.connectedSDKType === 'jstyle') {
-      JstyleService.startSpO2Measuring().catch(err => {
-        console.log('⚠️ Jstyle startSpO2 error:', err.message);
-      });
+      JstyleService.startSpO2Measuring().catch(() => {});
     }
   }
 
   stopSpO2Monitoring(): void {
     if (this.connectedSDKType === 'v8') {
-      V8Service.stopSpO2Measuring().catch(err => {
-        console.log('⚠️ V8 stopSpO2 error:', err.message);
-      });
+      V8Service.stopSpO2Measuring().catch(() => {});
     } else if (this.connectedSDKType === 'jstyle') {
-      JstyleService.stopSpO2Measuring().catch(err => {
-        console.log('⚠️ Jstyle stopSpO2 error:', err.message);
-      });
+      JstyleService.stopSpO2Measuring().catch(() => {});
     }
   }
 
@@ -772,7 +753,6 @@ class UnifiedSmartRingService {
   // ========== Device ==========
 
   findDevice(): void {
-    console.log('🔔 Find device triggered');
   }
 
   async factoryReset(): Promise<{ success: boolean }> {
@@ -944,7 +924,6 @@ class UnifiedSmartRingService {
    */
   async getSleepDataRaw(): Promise<{ records: any[]; timestamp?: number }> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getSleepDataRaw via ${this.connectedSDKType}`);
     if (this.isV8()) {
       // Return raw SDK records so deriveFromRaw() can parse them
       return await V8Service.getSleepDataRaw();
@@ -958,7 +937,6 @@ class UnifiedSmartRingService {
    */
   async getContinuousHeartRateRaw(): Promise<{ records: any[]; timestamp?: number }> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getContinuousHeartRateRaw via ${this.connectedSDKType}`);
     if (this.isV8()) {
       const hrData = await V8Service.getContinuousHeartRate();
       // Group V8 flat records by date into Jstyle-compatible {date, arrayDynamicHR, startTimestamp}
@@ -994,7 +972,6 @@ class UnifiedSmartRingService {
    */
   async getSingleHeartRateRaw(): Promise<{ records: any[]; timestamp?: number }> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getSingleHeartRateRaw via ${this.connectedSDKType}`);
     if (this.isV8()) {
       return { records: [], timestamp: Date.now() };
     }
@@ -1006,7 +983,6 @@ class UnifiedSmartRingService {
    */
   async getHRVDataNormalizedArray(): Promise<HRVData[]> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getHRVDataNormalizedArray via ${this.connectedSDKType}`);
     if (this.isV8()) {
       return await V8Service.getHRVDataNormalized();
     }
@@ -1018,7 +994,6 @@ class UnifiedSmartRingService {
    */
   async getSpO2DataNormalizedArray(): Promise<SpO2Data[]> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getSpO2DataNormalizedArray via ${this.connectedSDKType}`);
     if (this.isV8()) {
       return await V8Service.getSpO2DataNormalized();
     }
@@ -1030,7 +1005,6 @@ class UnifiedSmartRingService {
    */
   async getTemperatureDataNormalizedArray(): Promise<TemperatureData[]> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getTemperatureDataNormalizedArray via ${this.connectedSDKType}`);
     if (this.isV8()) {
       return await V8Service.getTemperatureDataNormalized();
     }
@@ -1042,7 +1016,6 @@ class UnifiedSmartRingService {
    */
   async getSpO2DataRaw(): Promise<{ records: any[] }> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] getSpO2DataRaw via ${this.connectedSDKType}`);
     if (this.isV8()) {
       const normalized = await V8Service.getSpO2DataNormalized();
       // Wrap V8 normalized array into the raw record shape TodayCardVitalsService expects
@@ -1063,10 +1036,9 @@ class UnifiedSmartRingService {
    */
   async startHeartRateMeasuring(): Promise<{ success: boolean }> {
     this.ensureConnected();
-    console.log(`📱 [UnifiedService] startHeartRateMeasuring via ${this.connectedSDKType}`);
     if (this.isV8()) {
       // Start realtime stream first (provides continuous HR), then manual measurement as fallback
-      try { await V8Service.startRealTimeData(); } catch (e) { console.log('[UnifiedService] V8 startRealTimeData error:', e); }
+      try { await V8Service.startRealTimeData(); } catch (e) {}
       return await V8Service.startHeartRateMeasuring();
     }
     const result = await JstyleService.startHeartRateMeasuring();
@@ -1077,7 +1049,6 @@ class UnifiedSmartRingService {
    * Stop heart rate measurement — routes to correct SDK
    */
   async stopHeartRateMeasuring(): Promise<void> {
-    console.log(`📱 [UnifiedService] stopHeartRateMeasuring via ${this.connectedSDKType}`);
     if (this.isV8()) {
       // V8 manual measurement auto-stops after duration
       return;
@@ -1089,9 +1060,8 @@ class UnifiedSmartRingService {
    * Stop real-time data stream
    */
   async stopRealTimeData(): Promise<void> {
-    console.log(`📱 [UnifiedService] stopRealTimeData via ${this.connectedSDKType}`);
     if (this.isV8()) {
-      try { await V8Service.stopRealTimeData(); } catch (e) { console.log('[UnifiedService] V8 stopRealTimeData error:', e); }
+      try { await V8Service.stopRealTimeData(); } catch (e) {}
       return;
     }
     await JstyleService.stopRealTimeData();

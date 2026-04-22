@@ -35,18 +35,14 @@ export interface SignInResult {
 // ============================================
 
 export async function signInWithEmail(email: string, password: string): Promise<SignInResult> {
-  console.log('[Auth] signInWithEmail called');
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
   if (error) {
-    console.log('[Auth] signIn error:', error.message);
     return { success: false, error: error.message };
   }
-
-  console.log('[Auth] signIn success, session:', !!data.session);
   return {
     success: true,
     user: data.user,
@@ -55,7 +51,6 @@ export async function signInWithEmail(email: string, password: string): Promise<
 }
 
 export async function signUpWithEmail(email: string, password: string, displayName?: string): Promise<SignUpResult> {
-  console.log('[Auth] signUpWithEmail called');
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -65,34 +60,26 @@ export async function signUpWithEmail(email: string, password: string, displayNa
   });
 
   if (error) {
-    console.log('[Auth] signUp error:', error.message);
     return { success: false, error: error.message };
   }
 
   // If no session, email confirmation is required
   if (data.user && !data.session) {
-    console.log('[Auth] signUp needs email confirmation');
     return {
       success: true,
       user: data.user,
       needsEmailConfirmation: true,
     };
   }
-
-  console.log('[Auth] signUp success');
   return { success: true, user: data.user ?? undefined };
 }
 
 export async function signOut(): Promise<{ success: boolean; error?: string }> {
-  console.log('[Auth] signOut called');
   const { error } = await supabase.auth.signOut();
 
   if (error) {
-    console.log('[Auth] signOut error:', error.message);
     return { success: false, error: error.message };
   }
-
-  console.log('[Auth] signOut success');
   return { success: true };
 }
 
@@ -186,7 +173,6 @@ export async function signInWithGoogle(): Promise<SignInResult> {
 // ============================================
 
 export async function getProfile(userId: string): Promise<Profile | null> {
-  console.log('[Auth] getProfile for:', userId);
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
@@ -194,11 +180,8 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     .single();
 
   if (error) {
-    console.log('[Auth] getProfile error:', error.message);
     return null;
   }
-
-  console.log('[Auth] getProfile success');
   return data;
 }
 

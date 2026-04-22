@@ -56,10 +56,6 @@ async function runMorningSleepSync(): Promise<void> {
       syncResult.latestSession,
     );
 
-    console.log('[MorningSleepReconnect] sleep sync complete on ring reconnect', {
-      totalMin: syncResult.latestSession.totalMin,
-      score: syncResult.latestSession.sleepScore,
-    });
   } catch (e) {
     reportError(e, { op: 'morningSleepReconnect.runSync' });
   }

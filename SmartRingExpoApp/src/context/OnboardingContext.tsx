@@ -39,13 +39,11 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   // Listen for live connection state changes
   useEffect(() => {
     const unsubscribe = UnifiedSmartRingService.onConnectionStateChanged((state) => {
-      console.log('📱 OnboardingContext: Connection state changed to:', state);
       setIsDeviceCurrentlyConnected(state === 'connected');
     });
 
     // Check initial connection status and proactively reconnect early
     UnifiedSmartRingService.isConnected().then((status) => {
-      console.log('📱 OnboardingContext: Initial connection status:', status.connected);
       setIsDeviceCurrentlyConnected(status.connected);
       // Fire-and-forget early reconnect so ring is ready before fetchData starts
       if (!status.connected) {
@@ -57,26 +55,20 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   }, []);
 
   const loadDeviceState = useCallback(async () => {
-    console.log('📱 OnboardingContext: Loading device state...');
     try {
       // First check AsyncStorage (app's storage)
       const [deviceConnected, mac] = await Promise.all([
         OnboardingStorage.getDeviceConnected(),
         OnboardingStorage.getPairedDeviceMac(),
       ]);
-      console.log('📱 OnboardingContext: AsyncStorage deviceConnected=', deviceConnected, 'mac=', mac);
-      
       // Also check the SDK's native storage (UserDefaults)
       // This handles the case where SDK has a device but AsyncStorage was cleared
       let sdkHasPaired = false;
       try {
         const sdkResult = await UnifiedSmartRingService.getPairedDevice();
         sdkHasPaired = sdkResult.hasPairedDevice;
-        console.log('📱 OnboardingContext: SDK hasPairedDevice=', sdkHasPaired, 'device=', sdkResult.device?.name);
-        
         // If SDK has a paired device but AsyncStorage doesn't, sync them
         if (sdkHasPaired && sdkResult.device && !deviceConnected) {
-          console.log('📱 OnboardingContext: Syncing SDK paired device to AsyncStorage');
           await OnboardingStorage.setDeviceConnected(true);
           await OnboardingStorage.setPairedDeviceMac(sdkResult.device.mac);
           setHasConnectedDevice(true);
@@ -84,7 +76,6 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
           return; // Early return, state is set
         }
       } catch (sdkError) {
-        console.log('📱 OnboardingContext: SDK check failed (expected on non-iOS):', sdkError);
         reportError(sdkError, { op: 'onboarding.deviceCheck' }, 'warning');
       }
       
@@ -95,7 +86,6 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       console.error('Failed to load device state:', error);
       reportError(error, { op: 'onboarding.loadDeviceState' });
     } finally {
-      console.log('📱 OnboardingContext: Device loading complete');
       setDeviceLoading(false);
     }
   }, []);
@@ -121,7 +111,6 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     try {
       await UnifiedSmartRingService.forgetPairedDevice();
     } catch (error) {
-      console.log('📱 OnboardingContext: Failed to forget SDK device:', error);
       reportError(error, { op: 'onboarding.forgetDevice' }, 'warning');
     }
     setHasConnectedDevice(false);
@@ -147,17 +136,6 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const canAccessMainApp = isAuthenticated && hasConnectedDevice;
   const needsAuth = !isAuthenticated;
   const needsDeviceSetup = isAuthenticated && !hasConnectedDevice;
-
-  // Debug logging for auth state changes
-  useEffect(() => {
-    console.log('🔄 OnboardingContext state:', {
-      authLoading,
-      deviceLoading,
-      isLoading,
-      isAuthenticated,
-      hasConnectedDevice,
-    });
-  }, [authLoading, deviceLoading, isLoading, isAuthenticated, hasConnectedDevice]);
 
   const value: OnboardingContextValue = {
     isLoading,

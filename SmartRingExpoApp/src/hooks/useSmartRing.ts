@@ -130,16 +130,13 @@ export const useSmartRing = (): UseSmartRingReturn => {
   // Function to fetch all metrics from the ring (including battery)
   const fetchMetrics = useCallback(async () => {
     try {
-      console.log('📊 Fetching metrics from ring...');
       setIsLoadingMetrics(true);
 
       // Fetch battery first - this is critical for the UI
       try {
         const batteryData = await UnifiedSmartRingService.getBattery();
         setBattery(batteryData.battery);
-        console.log('✅ Battery:', batteryData.battery + '%');
       } catch (err: any) {
-        console.log('⚠️ Could not fetch battery:', err.message);
         reportError(err, { op: 'smartRing.fetch', metric: 'battery' }, 'warning');
       }
 
@@ -152,9 +149,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
           calories: stepsData.calories,
           distance: stepsData.distance,
         }));
-        console.log('✅ Steps:', stepsData.steps);
       } catch (err: any) {
-        console.log('⚠️ Could not fetch steps:', err.message);
         reportError(err, { op: 'smartRing.fetch', metric: 'steps' }, 'warning');
       }
 
@@ -162,9 +157,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       try {
         const hrData = await UnifiedSmartRingService.getHeartRate();
         setMetrics(prev => ({ ...prev, heartRate: hrData.heartRate }));
-        console.log('✅ Heart Rate (24hr):', hrData.heartRate);
       } catch (err: any) {
-        console.log('⚠️ Could not fetch heart rate:', err.message);
         reportError(err, { op: 'smartRing.fetch', metric: 'hr' }, 'warning');
       }
 
@@ -172,9 +165,7 @@ export const useSmartRing = (): UseSmartRingReturn => {
       try {
         const spo2Data = await UnifiedSmartRingService.getSpO2();
         setMetrics(prev => ({ ...prev, spo2: spo2Data.spo2 }));
-        console.log('✅ SpO2:', spo2Data.spo2);
       } catch (err: any) {
-        console.log('⚠️ Could not fetch SpO2:', err.message);
         reportError(err, { op: 'smartRing.fetch', metric: 'spo2' }, 'warning');
       }
 
@@ -189,7 +180,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
       // }
 
     } catch (error) {
-      console.log('❌ Error fetching metrics:', error);
       reportError(error, { op: 'smartRing.fetchMetrics' });
     } finally {
       setIsLoadingMetrics(false);
@@ -202,7 +192,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
     if (status.connected) {
       await fetchMetrics();
     } else {
-      console.log('⚠️ Cannot refresh metrics - not connected');
     }
   }, [fetchMetrics]);
 
@@ -210,7 +199,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
     // Check initial connection state on mount
     // This is critical for components that mount after connection is already established
     UnifiedSmartRingService.isConnected().then(async (status) => {
-      console.log('📱 [useSmartRing] Initial connection check:', status.connected);
       if (status.connected) {
         setConnectionState('connected');
         // Also populate connectedDevice from paired device info
@@ -225,7 +213,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
     const unsubConnection = UnifiedSmartRingService.onConnectionStateChanged((state) => {
       const now = Date.now();
-      console.log('📱 [useSmartRing] Connection state event:', state);
       setConnectionState(state);
 
       if (state === 'connected') {
@@ -258,10 +245,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
     });
 
     const unsubDevice = UnifiedSmartRingService.onDeviceDiscovered((device) => {
-      console.log('🔎 [useSmartRing] RAW device from bridge:', JSON.stringify({
-        name: device.name, mac: device.mac, id: device.id,
-        sdkType: device.sdkType, deviceType: device.deviceType,
-      }));
       setDevices((prev) => {
         // Ensure prev is always an array
         const deviceList = Array.isArray(prev) ? prev : [];
@@ -305,7 +288,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
     // Listen for real-time heart rate (from setStartSingleHR / receiveHeartRate delegate)
     const unsubHeartRate = UnifiedSmartRingService.onHeartRateReceived((data) => {
-      console.log('💓 Real-time heart rate received:', data.heartRate);
       if (data.heartRate > 0) {
         setMetrics(prev => ({ ...prev, heartRate: data.heartRate }));
       }
@@ -313,7 +295,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
     // Listen for real-time SpO2 (from setStartSpO2 / receiveSpO2 delegate)
     const unsubSpO2 = UnifiedSmartRingService.onSpO2Received((data) => {
-      console.log('🫁 Real-time SpO2 received:', data.spo2);
       if (data.spo2 > 0) {
         setMetrics(prev => ({ ...prev, spo2: data.spo2 }));
       }
@@ -321,7 +302,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
 
     // Listen for real-time steps (from receiveSteps delegate)
     const unsubSteps = UnifiedSmartRingService.onStepsReceived((data) => {
-      console.log('👟 Real-time steps received:', data.steps);
       setMetrics(prev => ({
         ...prev,
         steps: data.steps,
@@ -359,48 +339,37 @@ export const useSmartRing = (): UseSmartRingReturn => {
   }, []);
 
   const connect = useCallback(async (mac: string): Promise<boolean> => {
-    console.log('🔗 [useSmartRing] connect() called with MAC:', mac);
-
     const device = devices.find((d) => d.mac === mac);
     if (!device) {
-      console.log('❌ [useSmartRing] Device not found in devices list');
       return false;
     }
 
     // Determine SDK type and device type, then set on the unified service
     const sdkType = device.sdkType || 'jstyle' as 'jstyle' | 'v8';
     const deviceType = device.deviceType;
-    console.log('🔗 [useSmartRing] Device sdkType:', sdkType, 'deviceType:', deviceType);
     UnifiedSmartRingService.setConnectedSDKType(sdkType, deviceType);
 
     try {
       // Jstyle native bridge expects the CoreBluetooth peripheral UUID (device.id),
       // not the MAC address.
       const connectId = device.id;
-      console.log('🔗 [useSmartRing] Calling UnifiedSmartRingService.connect() with:', connectId);
       const startTime = Date.now();
 
       const result = await UnifiedSmartRingService.connect(connectId, sdkType, deviceType);
 
       const elapsed = Date.now() - startTime;
-      console.log(`🔗 [useSmartRing] connect() returned after ${elapsed}ms:`, result);
-      
       if (result.success) {
         // CRITICAL: Set both connectedDevice AND connectionState
         setConnectedDevice(device);
         setConnectionState('connected');
-        console.log('✅ [useSmartRing] Connection successful! UI should now show connected state.');
-
         // Note: SDK is usually busy syncing after connection
         // Data fetching is skipped here - user can manually refresh later
         // when the SDK is no longer busy
 
         return true;
       }
-      console.log('❌ [useSmartRing] Connection returned false');
       return false;
     } catch (error) {
-      console.log('❌ [useSmartRing] Connection failed:', error);
       reportError(error, { op: 'smartRing.connect' });
       return false;
     }
@@ -419,17 +388,14 @@ export const useSmartRing = (): UseSmartRingReturn => {
     hasPairedDevice: boolean;
     device: DeviceInfo | null;
   }> => {
-    console.log('🔍 Checking for previously paired device...');
     try {
       const result = await UnifiedSmartRingService.getPairedDevice();
       if (result.hasPairedDevice && result.device) {
-        console.log('✅ Found paired device:', result.device.name);
         // Add to devices list for connect() to find it
         setDevices([result.device]);
       }
       return result;
     } catch (error) {
-      console.log('⚠️ Error checking for paired device:', error);
       reportError(error, { op: 'smartRing.checkPairedDevice' }, 'warning');
       return { hasPairedDevice: false, device: null };
     }
@@ -441,14 +407,12 @@ export const useSmartRing = (): UseSmartRingReturn => {
     success: boolean;
     device: DeviceInfo | null;
   }> => {
-    console.log('🔄 Attempting auto-connect to paired device...');
     setIsAutoConnecting(true);
 
     try {
       // If the OS already re-established the BLE link, avoid kicking off a second reconnect
       const nativeStatus = await UnifiedSmartRingService.isConnected();
       if (nativeStatus.connected) {
-        console.log('📶 Already connected at native level - skipping autoReconnect');
         const { hasPairedDevice, device } = await checkForPairedDevice();
         if (hasPairedDevice && device) {
           setConnectedDevice(device);
@@ -461,13 +425,9 @@ export const useSmartRing = (): UseSmartRingReturn => {
       const { hasPairedDevice, device } = await checkForPairedDevice();
 
       if (!hasPairedDevice) {
-        console.log('📱 No paired device found for auto-connect');
         setIsAutoConnecting(false);
         return { success: false, device: null };
       }
-
-      console.log('🔗 Auto-reconnecting to paired device...');
-
       // Use native auto-reconnect which handles everything:
       // 1. Gets saved UUID from UserDefaults
       // 2. Retrieves peripheral using retrievePeripheralsWithIdentifiers
@@ -475,8 +435,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
       const result = await UnifiedSmartRingService.autoReconnect();
 
       if (result.success) {
-        console.log('✅ Auto-reconnect successful!');
-        
         // Build connected device info from result or paired device info
         const connectedDeviceInfo: DeviceInfo = device || {
           id: result.deviceId || '',
@@ -484,24 +442,16 @@ export const useSmartRing = (): UseSmartRingReturn => {
           name: result.deviceName || 'Focus Ring',
           rssi: -50,
         };
-        
-        console.log('📱 Setting connected device:', connectedDeviceInfo.name);
-        console.log('📱 [DEBUG] Before setConnectedDevice, current connectionState:', connectionState);
         setConnectedDevice(connectedDeviceInfo);
         setConnectionState('connected');
-        console.log('📱 [DEBUG] After setConnectionState("connected"), state should update soon');
-        
         return { success: true, device: connectedDeviceInfo };
       } else {
-        console.log('❌ Auto-reconnect failed:', result.message);
         return { success: false, device };
       }
     } catch (error) {
-      console.log('❌ Auto-connect error:', error);
       reportError(error, { op: 'smartRing.autoConnect' });
       return { success: false, device: null };
     } finally {
-      console.log('📱 [DEBUG] autoConnect finally block - setting isAutoConnecting to false');
       setIsAutoConnecting(false);
     }
   }, [checkForPairedDevice]);
@@ -509,11 +459,9 @@ export const useSmartRing = (): UseSmartRingReturn => {
   // Trigger a real-time heart rate measurement
   // Result will come via onHeartRateReceived event listener
   const measureHeartRate = useCallback(async (): Promise<void> => {
-    console.log('💓 Starting real-time heart rate measurement...');
     try {
       await UnifiedSmartRingService.measureHeartRate();
     } catch (error) {
-      console.log('❌ Failed to start heart rate measurement:', error);
       reportError(error, { op: 'smartRing.measureHR' }, 'warning');
     }
   }, []);
@@ -521,18 +469,15 @@ export const useSmartRing = (): UseSmartRingReturn => {
   // Trigger a real-time SpO2 measurement
   // Result will come via onSpO2Received event listener
   const measureSpO2 = useCallback(async (): Promise<void> => {
-    console.log('🫁 Starting real-time SpO2 measurement...');
     try {
       UnifiedSmartRingService.startSpO2Monitoring();
     } catch (error) {
-      console.log('❌ Failed to start SpO2 measurement:', error);
       reportError(error, { op: 'smartRing.measureSpO2' }, 'warning');
     }
   }, []);
 
   // Forget/clear the paired device from SDK memory
   const forgetDevice = useCallback(async (): Promise<void> => {
-    console.log('🗑️ Forgetting paired device...');
     await UnifiedSmartRingService.forgetPairedDevice();
     setConnectedDevice(null);
     setDevices([]);
@@ -546,7 +491,6 @@ export const useSmartRing = (): UseSmartRingReturn => {
       distance: null,
     });
     setConnectionState('disconnected');
-    console.log('✅ Device forgotten, state cleared');
   }, []);
 
   // Cleanup interval on unmount

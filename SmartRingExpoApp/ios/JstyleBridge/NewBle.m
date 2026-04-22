@@ -16,7 +16,6 @@
 
 // No-op replacement for demo's file-based logging
 static inline void writeLogs(NSString *msg, NSString *file) {
-    NSLog(@"[BLE] %@", msg);
 }
 
 #define UserDefaults [NSUserDefaults standardUserDefaults]
@@ -144,13 +143,11 @@ static void (^BLE_Block_Receive)(Byte* _Nullable buf,int length);
     CBService * service  = [self FindServiceFromUUID:serviceUUID Peripheral:p];
     if(!service)
     {
-        NSLog(@"Could not find service with UUID %@ on peripheral",serviceUUID);
         return;
     }
     CBCharacteristic * characteristic = [self findCharacteristicFromUUID:characteristicUUID service:service];
     if(!characteristic)
     {
-        NSLog(@"Could not find characteristic with UUID %@ on service with UUID %@ on peripheral",serviceUUID,characteristicUUID);
         return;
     }
     [p writeValue:data forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
@@ -170,13 +167,11 @@ static void (^BLE_Block_Receive)(Byte* _Nullable buf,int length);
     CBService * service  = [self FindServiceFromUUID:serviceUUID Peripheral:p];
     if(!service)
     {
-        NSLog(@"Could not find service with UUID %@ on peripheral",serviceUUID);
         return;
     }
     CBCharacteristic * characteristic = [self findCharacteristicFromUUID:characteristicUUID service:service];
     if(!characteristic)
     {
-        NSLog(@"Could not find characteristic with UUID %@ on service with UUID %@ on peripheral",serviceUUID,characteristicUUID);
         return;
     }
     [p writeValue:data forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
@@ -211,13 +206,11 @@ static void (^BLE_Block_Receive)(Byte* _Nullable buf,int length);
    CBService * service  = [self FindServiceFromUUID:serviceUUID Peripheral:p];
     if(!service)
     {
-        NSLog(@"Could not find service with UUID %@ on peripheral",serviceUUID);
         return;
     }
     CBCharacteristic * characteristic = [self findCharacteristicFromUUID:characteristicUUID service:service];
     if(!characteristic)
     {
-        NSLog(@"Could not find characteristic with UUID %@ on service with UUID %@ on peripheral",serviceUUID,characteristicUUID);
         return;
     }
    [p setNotifyValue:on forCharacteristic:characteristic];
@@ -277,7 +270,6 @@ static void (^BLE_Block_Receive)(Byte* _Nullable buf,int length);
 }
 
 - (void)centralManagerDidUpdateState:(nonnull CBCentralManager *)central {
-    NSLog(@"Status of CoreBluetooth central manager changed %@",[self centralManagerStateToString:central.state]);
 }
 
 - (void)centralManager:(CBCentralManager *)central willRestoreState:(NSDictionary<NSString *, id> *)dict

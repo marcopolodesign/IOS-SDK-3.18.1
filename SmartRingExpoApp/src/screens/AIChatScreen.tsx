@@ -22,6 +22,7 @@ import Reanimated, {
   useAnimatedStyle,
   withDelay,
   withTiming,
+  withRepeat,
   Easing,
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -249,10 +250,8 @@ function StepsArtifactCard({ steps }: { steps: number }) {
 
 const artifactStyles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
     overflow: 'hidden',
     paddingHorizontal: 12,
     paddingVertical: spacing.sm,
@@ -266,6 +265,9 @@ const artifactStyles = StyleSheet.create({
     alignItems: 'center',
   },
   selfContained: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 16,
+    overflow: 'hidden',
     marginTop: 8,
   },
 });
@@ -586,7 +588,9 @@ function MessageBubble(props: MessageBubbleProps) {
     <View style={msgStyles.rowAI}>
       <AnimatedAIText text={message.text} />
       {message.artifact && (
-        <ArtifactView {...props} artifact={message.artifact} />
+        <AnimatedFadeIn delay={footerDelay}>
+          <ArtifactView {...props} artifact={message.artifact} />
+        </AnimatedFadeIn>
       )}
       <AnimatedFadeIn delay={footerDelay} style={msgStyles.aiFooter}>
         <AIIcon size={32} color="white" />
@@ -711,10 +715,18 @@ export function AIChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const initialQueryFired = useRef(false);
 
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+
   useFocusEffect(useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     return () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const aiCount = messagesRef.current.filter(m => m.role === 'ai').length;
+      if (aiCount >= 2) {
+        const payload = messagesRef.current.map(m => ({ role: m.role, content: m.text }));
+        supabase.functions.invoke('coach-memory-extract', { body: { messages: payload } }).catch(() => null);
+      }
     };
   }, []));
 
@@ -725,6 +737,33 @@ export function AIChatScreen() {
     () => buildInsightText(homeData.strain, homeData.sleepScore, homeData.readiness),
     [homeData.strain, homeData.sleepScore, homeData.readiness]
   );
+
+  // ── Animated bg ──────────────────────────────────────────────────────────────
+  const blobFloat = useSharedValue(0);
+  const overlayOpacity = useSharedValue(0);
+  useEffect(() => {
+    blobFloat.value = withRepeat(
+      withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+    overlayOpacity.value = withRepeat(
+      withTiming(0.55, { duration: 9800, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+  }, []);
+
+  const blobAnimStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: blobFloat.value * 22 },
+      { translateY: blobFloat.value * -16 },
+    ],
+  }));
+  const overlayAnimStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
+  }));
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
     async (textOverride?: string) => {
@@ -779,13 +818,24 @@ export function AIChatScreen() {
       end={{ x: 1, y: 0.63 }}
       style={styles.gradient}
     >
+      {/* Animated overlay gradient — shifts between two orientations */}
+      <Reanimated.View style={[StyleSheet.absoluteFill, overlayAnimStyle]} pointerEvents="none">
+        <LinearGradient
+          colors={['rgba(180,15,15,0.55)', '#000000', 'rgba(60,0,0,0.4)']}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Reanimated.View>
+
       {/* Figma blob shapes — positioned top-right, 90% screen height */}
-      <SvgXml
-        xml={BLOB_SVG}
-        width={BLOB_WIDTH}
-        height={BLOB_HEIGHT}
-        style={styles.blob}
-      />
+      <Reanimated.View style={[styles.blob, blobAnimStyle]} pointerEvents="none">
+        <SvgXml
+          xml={BLOB_SVG}
+          width={BLOB_WIDTH}
+          height={BLOB_HEIGHT}
+        />
+      </Reanimated.View>
 
       <SafeAreaView style={styles.safeArea} edges={[]}>
         {/* Header */}

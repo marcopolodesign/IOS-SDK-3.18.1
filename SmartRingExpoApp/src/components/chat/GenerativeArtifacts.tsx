@@ -154,10 +154,8 @@ export function GaugeArtifact({ data }: { data: GaugeData }) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
     overflow: 'hidden',
     paddingHorizontal: CARD_PADDING,
     paddingVertical: spacing.md,

@@ -171,8 +171,6 @@ const THRESHOLDS = {
  * Get comprehensive sleep analysis combining ring data with custom insights
  */
 export async function getCustomSleepAnalysis(dayIndex: number = 0): Promise<CustomSleepAnalysis> {
-  console.log('🧠 [CustomSleep] Starting comprehensive analysis...');
-  
   // 1. Get ring's native classification
   const ringData = await getSleep(dayIndex);
   
@@ -208,8 +206,6 @@ async function classifySleepStages(
   hrData: Awaited<ReturnType<typeof getOvernightHeartRate>>,
   ringData: SleepInfo
 ): Promise<CustomSleepStage[]> {
-  console.log('🧠 [CustomSleep] Classifying stages using custom algorithm...');
-  
   if (hrData.count === 0) {
     return [];
   }

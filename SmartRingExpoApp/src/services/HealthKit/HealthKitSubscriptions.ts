@@ -30,7 +30,6 @@ class HealthKitSubscriptions {
         const sub = subscribeToChanges(type as any, () => cb?.());
         this.subscriptions.push(sub);
       } catch (error) {
-        console.log(`[HealthKit] Error subscribing to ${type} changes:`, error);
         reportError(error, { op: 'healthKit.subscription.setup' }, 'warning');
       }
     }

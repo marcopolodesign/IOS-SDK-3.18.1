@@ -14,7 +14,7 @@ Sentry.init({
   },
   enableAutoSessionTracking: true,
   attachScreenshot: true,
-  debug: __DEV__,
+  debug: false,
   enabled: true,
   beforeSend(event) {
     // Strip any auth tokens or sensitive strings from breadcrumb data

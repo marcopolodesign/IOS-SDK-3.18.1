@@ -24,8 +24,6 @@ async function saveTokenToSupabase(token: string): Promise<boolean> {
     .select('token')
     .eq('token', token)
     .single();
-
-  console.log('[PushToken] verification:', saved ? 'saved ✓' : 'not found ✗');
   return !!saved;
 }
 
@@ -53,9 +51,6 @@ async function setup(): Promise<void> {
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-
-  console.log('[PushToken] token:', token);
-
   // Register background sleep notification task
   registerBackgroundSleepTask().catch(e => {
     console.warn('[BackgroundSleep] Registration failed:', e);

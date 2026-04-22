@@ -205,7 +205,6 @@ function parseSegmentsFromJson(
 async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string, DaySleepData>> {
   // Extend by 1 day so we catch sessions that started the night before the window
   const since = nDaysAgo(days + 1);
-  console.log('[useMetricHistory] fetchSleepHistory: querying since', since.toISOString(), 'userId', userId);
   const { data, error } = await supabase
     .from('sleep_sessions')
     .select('*')
@@ -213,8 +212,6 @@ async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string,
     .eq('session_type', 'night')
     .gte('start_time', since.toISOString())
     .order('start_time', { ascending: false });
-
-  console.log('[useMetricHistory] fetchSleepHistory: rows returned =', data?.length ?? 0, 'error =', error?.message ?? null);
   if (error || !data || data.length === 0) return new Map();
 
   const map = new Map<string, DaySleepData>();
@@ -222,7 +219,6 @@ async function fetchSleepHistory(userId: string, days = 30): Promise<Map<string,
     // Key by end_time (wake-up date) so a sleep that starts at 11 PM Apr 3
     // and ends at 7 AM Apr 4 is shown under Apr 4 — the day the user woke up.
     const dateKey = toDateStr(row.end_time ?? row.start_time);
-    console.log('[useMetricHistory] sleep row: start_time=', row.start_time, '→ dateKey=', dateKey, 'deep=', row.deep_min, 'light=', row.light_min);
     if (map.has(dateKey)) continue; // keep most recent per day
 
     const deepMin = row.deep_min || 0;
@@ -569,7 +565,6 @@ async function fetchSleepFromRing(): Promise<Map<string, DaySleepData>> {
       });
     }
   } catch (e) {
-    console.log('[useMetricHistory] sleep ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'sleep' }, 'warning');
   }
   return map;
@@ -601,7 +596,6 @@ async function fetchHRFromRing(): Promise<Map<string, DayHRData>> {
       });
     }
   } catch (e) {
-    console.log('[useMetricHistory] HR ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'hr' }, 'warning');
   }
   return map;
@@ -626,7 +620,6 @@ async function fetchHRVFromRing(): Promise<Map<string, DayHRVData>> {
       });
     }
   } catch (e) {
-    console.log('[useMetricHistory] HRV ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'hrv' }, 'warning');
   }
   return map;
@@ -654,7 +647,6 @@ async function fetchSpO2FromRing(): Promise<Map<string, DaySpO2Data>> {
       });
     }
   } catch (e) {
-    console.log('[useMetricHistory] SpO2 ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'spo2' }, 'warning');
   }
   return map;
@@ -682,7 +674,6 @@ async function fetchTemperatureFromRing(): Promise<Map<string, DayTemperatureDat
       });
     }
   } catch (e) {
-    console.log('[useMetricHistory] temperature ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'temperature' }, 'warning');
   }
   return map;
@@ -723,7 +714,6 @@ async function fetchActivityFromRing(): Promise<Map<string, DayActivityData>> {
       }
     }
   } catch (e) {
-    console.log('[useMetricHistory] activity ring fallback error', e);
     reportError(e, { op: 'metricHistory.ringFallback', metric: 'activity' }, 'warning');
   }
   return map;
@@ -845,14 +835,12 @@ export function useMetricHistory<T>(
         }
 
         if (!cancelled) {
-          console.log(`[useMetricHistory] (${type}) loaded ${result.size} days:`, Array.from(result.keys()));
           cacheRef.current = result as Map<string, T>;
           cacheIsCompleteRef.current = true;
           setData(result as Map<string, T>);
           setIsLoading(false);
         }
       } catch (e) {
-        console.log(`[useMetricHistory] (${type}) error:`, (e as Error).message);
         reportError(e, { op: 'metricHistory.loadAll' });
         if (!cancelled) {
           setError((e as Error).message);

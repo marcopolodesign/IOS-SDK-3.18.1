@@ -1440,10 +1440,8 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
 }
 
 - (void)handleSleepData:(DeviceData_X3 *)parsed {
-    NSLog(@"[SLEEP_RAW] dataEnd=%d dicData=%@", parsed.dataEnd, parsed.dicData);
     if (parsed.dicData) {
         NSArray *arrayDetailSleepData = parsed.dicData[@"arrayDetailSleepData"];
-        NSLog(@"[SLEEP_RAW] arrayDetailSleepData count=%lu items=%@", (unsigned long)arrayDetailSleepData.count, arrayDetailSleepData);
         if (arrayDetailSleepData && arrayDetailSleepData.count > 0) {
             [self.accumulatedSleepData addObjectsFromArray:arrayDetailSleepData];
         }
@@ -1740,7 +1738,6 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
                                                                           content:content
                                                                           trigger:nil];
     [center addNotificationRequest:request withCompletionHandler:^(NSError *error) {
-        if (error) NSLog(@"JstyleBridge: Notification error: %@", error);
     }];
 }
 

@@ -16,8 +16,6 @@ export default function LoginScreen() {
 
     if (isAuthenticated) {
       hasNavigated.current = true;
-      console.log('🚀 LoginScreen: Authenticated, navigating...', { hasConnectedDevice });
-
       // Use setTimeout to ensure state has settled before navigation
       setTimeout(() => {
         if (hasConnectedDevice) {

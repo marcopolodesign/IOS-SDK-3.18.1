@@ -100,7 +100,6 @@ export function useFocusData(): FocusState {
   const hasDataRef = useRef(false);
 
   const load = useCallback(async (skipCache = false) => {
-    console.log(`[FocusData] load() called, skipCache=${skipCache}`);
     if (!hasDataRef.current) setIsLoading(true);
     setError(null);
 
@@ -112,7 +111,6 @@ export function useFocusData(): FocusState {
           if (raw) {
             const cache = JSON.parse(raw) as CachedFocusState;
             if (isCacheValid(cache) && cache.readiness != null && cache.illness != null) {
-              console.log(`[FocusData] Cache HIT, valid=true, cachedAt=${new Date(cache.cachedAt).toISOString()}`);
               setReadiness(cache.readiness);
               setIllness(cache.illness);
               setLastRun(cache.lastRun);
@@ -130,7 +128,6 @@ export function useFocusData(): FocusState {
                   try {
                     const home = JSON.parse(raw) as { lastNightSleep?: { restingHR?: number } };
                     if ((home?.lastNightSleep?.restingHR ?? 0) > 0) {
-                      console.log('[FocusData] restingHR now available in home_data_cache, triggering background refresh');
                       load(true);
                     }
                   } catch {}
@@ -138,10 +135,8 @@ export function useFocusData(): FocusState {
               }
               return;
             } else {
-              console.log(`[FocusData] Cache invalid/empty, fetching fresh (cachedAt=${new Date(cache.cachedAt).toISOString()}, readiness=${cache.readiness != null})`);
             }
           } else {
-            console.log('[FocusData] Cache MISS or expired, fetching fresh (no cache found)');
           }
         } catch {}
       }
@@ -154,7 +149,6 @@ export function useFocusData(): FocusState {
         supabase.auth.getSession(),
       ]);
       const user = session?.user ?? null;
-      console.log(`[FocusData] Auth user=${user?.id ?? null} (null = not signed in)`);
       setBaselines(earlyBaselines);
       if (!user) {
         setIsLoading(false);
@@ -165,7 +159,6 @@ export function useFocusData(): FocusState {
       // 3. Bootstrap baselines from history on first ever load
       let storedBaselines = earlyBaselines;
       if (storedBaselines.daysLogged === 0 && storedBaselines.updatedAt === null) {
-        console.log('[FocusData] Bootstrap needed (daysLogged=0), fetching 14-day history...');
         storedBaselines = await bootstrapBaselinesFromSupabase(userId);
         setBaselines(storedBaselines);
       }
@@ -213,15 +206,6 @@ export function useFocusData(): FocusState {
           AsyncStorage.getItem('home_data_cache'),
         ]);
 
-      // Log per-query errors
-      const logQueryError = (name: string, r: PromiseSettledResult<{ data: unknown; error: { message: string } | null }>) => {
-        if (r.status === 'rejected') console.log(`[FocusData] ${name} query error:`, r.reason);
-        else if (r.value.error) console.log(`[FocusData] ${name} error:`, r.value.error.message);
-      };
-      logQueryError('hrv_readings', hrvResult);
-      logQueryError('sleep_sessions', sleepResult);
-      logQueryError('temperature_readings', tempResult);
-      logQueryError('heart_rate_readings', hrResult);
 
       const hrv =
         hrvResult.status === 'fulfilled'
@@ -260,7 +244,6 @@ export function useFocusData(): FocusState {
           const cached = homeCache?.lastNightSleep?.restingHR;
           if (cached && cached > 0) {
             restingHR = cached;
-            console.log(`[FocusData] restingHR from home_data_cache: ${restingHR}`);
           }
         }
       } catch {}
@@ -271,12 +254,7 @@ export function useFocusData(): FocusState {
           hrResult.status === 'fulfilled'
             ? (hrResult.value.data?.[0]?.heart_rate ?? null)
             : null;
-        console.log(`[FocusData] restingHR fallback from Supabase: ${restingHR}`);
       }
-
-      console.log(`[FocusData] Supabase results → hrv=${hrv}, sleepScore=${sleepScore}, sleepMin=${sleepMinutes}, restingHR=${restingHR}, temps=${temps.length} readings`);
-      console.log(`[FocusData] Baselines → hrv=[${storedBaselines.hrv.join(',')}] restingHR=[${storedBaselines.restingHR.join(',')}] daysLogged=${storedBaselines.daysLogged}`);
-
       // 5. Update baselines if new day
       const updatedBaselines = updateBaselines(storedBaselines, {
         hrv,
@@ -315,7 +293,6 @@ export function useFocusData(): FocusState {
 
       if (serverScore) {
         computedIllness = mapServerScoreToIllnessWatch(serverScore);
-        console.log(`[FocusData] illness from server: score=${serverScore.score}, status=${serverScore.status}, date=${serverScore.score_date}`);
       } else {
         // Fallback: client-side computation before first cron run
         computedIllness = computeIllnessWatch({
@@ -325,12 +302,7 @@ export function useFocusData(): FocusState {
           baselines: updatedBaselines,
         });
         computedIllness.score = 0;
-        console.log('[FocusData] illness from client fallback (no server score yet)');
       }
-
-      console.log(`[FocusData] computeReadiness score=${computedReadiness.score}, illness status=${computedIllness.status}, lastRun=${computedLastRun?.runDate ?? null}`);
-      console.log(`[FocusData] Components → hrv=${computedReadiness.components.hrv} sleep=${computedReadiness.components.sleep} restingHR=${computedReadiness.components.restingHR} trainingLoad=${computedReadiness.components.trainingLoad}`);
-
       setReadiness(computedReadiness);
       setIllness(computedIllness);
       setLastRun(computedLastRun);
@@ -344,14 +316,11 @@ export function useFocusData(): FocusState {
         cachedAt: Date.now(),
       };
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
-      console.log('[FocusData] Cache saved');
     } catch (e) {
-      console.log('[FocusData] ERROR:', e instanceof Error ? e.message : e);
       reportError(e, { op: 'focusData.fetch' });
       setError(e instanceof Error ? e.message : 'Failed to load focus data');
     } finally {
       setIsLoading(false);
-      console.log('[FocusData] load() complete → isLoading=false');
     }
   }, []);
 

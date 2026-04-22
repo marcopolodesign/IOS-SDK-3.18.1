@@ -90,6 +90,7 @@ serve(async (req: Request) => {
       stressResult,
       profileResult,
       todayStepsResult,
+      memoriesResult,
     ] = await Promise.all([
       // Last 7 sleep sessions (full nightly breakdown)
       supabase
@@ -176,6 +177,14 @@ serve(async (req: Request) => {
         .select('steps')
         .eq('user_id', user.id)
         .gte('recorded_at', twentyFourHoursAgo),
+
+      // Persistent user memories from past conversations
+      supabase
+        .from('coach_memories')
+        .select('key, value')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(20),
     ]);
 
     const sleepSessions = sleepResult.data ?? [];
@@ -188,6 +197,7 @@ serve(async (req: Request) => {
     const latestStress = stressResult.data;
     const profile = profileResult.data;
     const todayStepRows = todayStepsResult.data ?? [];
+    const memories = memoriesResult.data ?? [];
     const latestDay = dailies[0] ?? null;
     const latestSleep = sleepSessions[0] ?? null;
 
@@ -437,9 +447,13 @@ serve(async (req: Request) => {
       : 'No health data synced yet.';
 
     // ── System prompt ─────────────────────────────────────────────────────────
+    const memoriesSection = memories.length > 0
+      ? `\nWhat I know about you from past conversations:\n${memories.map(m => `  • ${m.key.replace(/_/g, ' ')}: ${m.value}`).join('\n')}`
+      : '';
+
     const systemPrompt = `You are a personal health coach for a smart ring app called Focus. You have access to the user's full biometric data from their smart ring and Strava.
 
-${healthContext}
+${healthContext}${memoriesSection}
 
 Guidelines:
 - Answer questions using the specific data above — always cite actual numbers
@@ -461,6 +475,7 @@ Rules for follow_ups:
 - Each question must be under 8 words
 - Derive them from what you discussed in your response
 - Never repeat the user's current question
+- CRITICAL: Only suggest questions you can actually answer from the data snapshot above (HRV, sleep stages/score/debt, resting HR, SpO2, body temperature, stress, steps, Strava activities, readiness score/components, illness signals, naps, training load). Never suggest questions about data you don't have — no pain, aches, mood, nutrition, hydration, weight, or anything not in the snapshot.
 
 Rules for artifact (OPTIONAL — omit the field entirely for short factual answers):
 Only include "artifact" when a visual genuinely adds information the text cannot convey.

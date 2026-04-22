@@ -51,8 +51,6 @@ const CUSTOM_BEZIER = Easing.bezier(0.4, 0, 0, 1);
 const STAGGER_DURATION = 600;
 
 export default function ConnectScreen() {
-  console.log('🔵 [ConnectScreen] Component rendering...');
-
   const { t } = useTranslation();
   const params = useLocalSearchParams<{ deviceType?: string }>();
   const deviceType: DeviceType = (params.deviceType as DeviceType) || 'ring';
@@ -77,15 +75,6 @@ export default function ConnectScreen() {
     const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     setActiveDeviceIndex(index);
   }, []);
-
-  console.log('🔵 [ConnectScreen] Current state:', {
-    step,
-    scanComplete,
-    isScanning,
-    devicesCount: devices.length,
-    devices: devices.map(d => ({ name: d.name, mac: d.mac })),
-    connectingDevice: connectingDevice?.name || null,
-  });
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -138,7 +127,6 @@ export default function ConnectScreen() {
   }));
 
   useEffect(() => {
-    console.log('🟡 [ConnectScreen] Step changed to:', step);
   }, [step]);
 
   // Cleanup scan timeout on unmount
@@ -152,18 +140,12 @@ export default function ConnectScreen() {
   }, []);
 
   useEffect(() => {
-    console.log('🟢 [ConnectScreen] Devices updated:', {
-      count: devices.length,
-      devices: devices.map(d => ({ name: d.name, mac: d.mac, id: d.id })),
-    });
   }, [devices]);
 
   useEffect(() => {
-    console.log('🔍 [ConnectScreen] isScanning changed to:', isScanning);
   }, [isScanning]);
 
   useEffect(() => {
-    console.log('✅ [ConnectScreen] scanComplete changed to:', scanComplete);
   }, [scanComplete]);
 
   // Welcome stagger entrance (Reanimated)
@@ -222,7 +204,6 @@ export default function ConnectScreen() {
   }, [step]);
 
   const transitionTo = (newStep: ConnectionStep) => {
-    console.log('🔄 [ConnectScreen] transitionTo called:', { from: step, to: newStep });
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -255,7 +236,6 @@ export default function ConnectScreen() {
   // stop the scan after 800ms (to catch nearby companion devices) and show the list.
   useEffect(() => {
     if (devices.length > 0 && step === 'scanning') {
-      console.log('🟢 [ConnectScreen] Device found during scan — stopping early in 800ms');
       if (scanTimeoutRef.current) {
         clearTimeout(scanTimeoutRef.current);
         scanTimeoutRef.current = null;
@@ -270,24 +250,21 @@ export default function ConnectScreen() {
   }, [devices, step]);
 
   const handleScan = () => {
-    console.log('🔍 [ConnectScreen] handleScan START');
     setScanComplete(false);
     transitionTo('scanning');
 
     // Fire scan without awaiting — devices arrive via onDeviceDiscovered events.
-    scan(7).catch(err => { console.log('⚠️ [ConnectScreen] scan error:', err); reportError(err, { op: 'onboarding.scan' }, 'warning'); });
+    scan(7).catch(err => { reportError(err, { op: 'onboarding.scan' }, 'warning'); });
 
     // Fallback: after 7 s, show whatever was found (or nothing).
     if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     scanTimeoutRef.current = setTimeout(() => {
-      console.log('🔍 [ConnectScreen] scan fallback timeout — transitioning to devices');
       setScanComplete(true);
       transitionTo('devices');
     }, 7000);
   };
 
   const handleConnect = async (device: DeviceInfo) => {
-    console.log('🔗 [ConnectScreen] handleConnect START', device);
     setConnectingDevice(device);
     transitionTo('connecting');
 
@@ -313,7 +290,6 @@ export default function ConnectScreen() {
         );
       }
     } catch (error) {
-      console.log('❌ [ConnectScreen] Connection ERROR:', error);
       reportError(error, { op: 'onboarding.connect' });
       Alert.alert(
         'Connection Error',
@@ -330,18 +306,10 @@ export default function ConnectScreen() {
   const getDeviceImage = (d: DeviceInfo | null | undefined) =>
     isX6Device(d) ? X6_MOCK_IMG : isBandDevice(d) ? BAND_MOCK_IMG : CONNECT_MOCK_IMG;
 
-  console.log('🔎 [ConnectScreen] RAW devices from hook:', devices.map(d => ({
-    name: d.name, mac: d.mac, sdkType: d.sdkType, deviceType: d.deviceType, id: d.id,
-  })));
-
   const validDevices = devices.filter(d => {
     const hasValidMac = d.mac && d.mac.length > 0 && d.mac !== 'undefined' && d.mac !== 'null';
     return hasValidMac;
   });
-
-  console.log('🔎 [ConnectScreen] FILTERED validDevices (isBand=' + isBand + '):', validDevices.map(d => ({
-    name: d.name, mac: d.mac, sdkType: d.sdkType, deviceType: d.deviceType,
-  })));
 
   const renderWelcome = () => (
     <ImageBackground source={WELCOME_BG} style={styles.fullScreen} resizeMode="cover">

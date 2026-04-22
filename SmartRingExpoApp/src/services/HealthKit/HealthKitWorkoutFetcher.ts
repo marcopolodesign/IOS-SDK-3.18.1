@@ -89,7 +89,6 @@ class HealthKitWorkoutFetcher {
         };
       });
     } catch (error) {
-      console.log('[HealthKit] Error fetching workouts:', error);
       return [];
     }
   }

@@ -128,9 +128,6 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
     };
   }
   baselines = { ...baselines, updatedAt: today };
-
-  console.log(`[Bootstrap] daysLogged=${baselines.daysLogged}`);
-
   await saveBaselines(baselines);
   return baselines;
 }
@@ -325,9 +322,6 @@ export async function computeReadiness(
   params: ReadinessParams
 ): Promise<ReadinessScore> {
   const { userId, hrv, sleepScore, sleepMinutes, restingHR, baselines } = params;
-
-  console.log(`[Readiness] inputs: hrv=${hrv}, sleepScore=${sleepScore}, sleepMin=${sleepMinutes}, restingHR=${restingHR}, baselineDays=${baselines.daysLogged}`);
-
   const [tLoad] = await Promise.all([scoreTrainingLoadComponent(userId)]);
 
   const components: ReadinessComponents = {
@@ -338,7 +332,6 @@ export async function computeReadiness(
   };
 
   const score = computeWeightedScore(components);
-  if (__DEV__) console.log(`[Readiness] score=${score}, components=${JSON.stringify(components)}`);
 
   return {
     score,
@@ -434,7 +427,6 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
   const status: IllnessStatus =
     signalCount >= 3 ? 'SICK' : signalCount >= 1 ? 'WATCH' : 'CLEAR';
 
-  if (__DEV__) console.log(`[Illness] status=${status}, signals=${JSON.stringify(signals)}`);
 
   const details: IllnessWatchDetails = {
     hrvDelta: (() => {
@@ -508,8 +500,6 @@ export async function computeLastRunContext(
       .in('sport_type', ['Run', 'TrailRun'])
       .order('start_date', { ascending: false })
       .limit(1);
-
-    console.log(`[LastRun] lastRun=${activities?.[0]?.start_date?.slice(0, 10) ?? null} (null = no Strava data)`);
     if (!activities || activities.length === 0) return null;
 
     const act = activities[0];

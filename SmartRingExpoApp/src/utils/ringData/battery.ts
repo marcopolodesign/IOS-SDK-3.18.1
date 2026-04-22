@@ -15,8 +15,6 @@ export interface BatteryInfo {
  * @returns Battery level (0-100) and charging status
  */
 export async function getBattery(): Promise<BatteryInfo> {
-  console.log('🔋 [RingData] Fetching battery...');
-  
   const result = await UnifiedSmartRingService.getBattery();
   
   const info: BatteryInfo = {
@@ -24,8 +22,6 @@ export async function getBattery(): Promise<BatteryInfo> {
     isCharging: result.isCharging ?? false,
     timestamp: Date.now(),
   };
-  
-  console.log(`🔋 [RingData] Battery: ${info.level}%, Charging: ${info.isCharging}`);
   return info;
 }
 

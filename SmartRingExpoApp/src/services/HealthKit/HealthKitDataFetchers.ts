@@ -56,7 +56,6 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      console.log('[HealthKit] Error fetching heart rate:', error);
       reportError(error, { op: 'healthKit.fetchHeartRateData' }, 'warning');
       return null;
     }
@@ -91,7 +90,6 @@ class HealthKitDataFetchers {
 
       return { steps: total, samples: deduped, source: 'appleHealth' };
     } catch (error) {
-      console.log('[HealthKit] Error fetching steps:', error);
       reportError(error, { op: 'healthKit.fetchStepsData' }, 'warning');
       try {
         const recent = await getMostRecentQuantitySample('HKQuantityTypeIdentifierStepCount');
@@ -114,7 +112,6 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      console.log('[HealthKit] Error fetching HRV:', error);
       reportError(error, { op: 'healthKit.fetchHRVData' }, 'warning');
       return null;
     }
@@ -129,7 +126,6 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      console.log('[HealthKit] Error fetching SpO2:', error);
       reportError(error, { op: 'healthKit.fetchSpO2Data' }, 'warning');
       return null;
     }
@@ -153,7 +149,6 @@ class HealthKitDataFetchers {
 
       return { calories: Math.round(total), source: 'appleHealth' };
     } catch (error) {
-      console.log('[HealthKit] Error fetching active calories:', error);
       reportError(error, { op: 'healthKit.fetchActiveCaloriesData' }, 'warning');
       return { calories: 0, source: 'error' };
     }
@@ -177,7 +172,6 @@ class HealthKitDataFetchers {
 
       return { distanceM: Math.round(totalM), source: 'appleHealth' };
     } catch (error) {
-      console.log('[HealthKit] Error fetching distance:', error);
       reportError(error, { op: 'healthKit.fetchDistanceData' }, 'warning');
       return { distanceM: 0, source: 'error' };
     }
