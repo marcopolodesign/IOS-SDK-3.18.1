@@ -209,12 +209,27 @@ RCT_EXPORT_MODULE();
 
 - (void)sleepActivityIdleTimerFired:(NSTimer *)timer {
     (void)timer;
-    if (!self.pendingDataResolver || self.pendingDataType != DetailSleepAndActivityData_V8) return;
-    NSUInteger count = self.accumulatedSleepActivityData.count;
-    NSLog(@"[V8SleepActivity] idle timeout — resolving with %lu accumulated records", (unsigned long)count);
-    self.pendingDataResolver(@{@"data": [self.accumulatedSleepActivityData copy]});
+    if (!self.pendingDataResolver) return;
+    NSArray *resolveData = nil;
+    NSString *logTag = @"[V8Idle]";
+    if (self.pendingDataType == DetailSleepAndActivityData_V8) {
+        resolveData = [self.accumulatedSleepActivityData copy];
+        logTag = @"[V8SleepActivity]";
+        [self.accumulatedSleepActivityData removeAllObjects];
+    } else if (self.pendingDataType == DynamicHR_V8) {
+        resolveData = [self.accumulatedHRData copy];
+        logTag = @"[V8HR]";
+        [self.accumulatedHRData removeAllObjects];
+    } else if (self.pendingDataType == HRVData_V8) {
+        resolveData = [self.accumulatedHRVData copy];
+        logTag = @"[V8HRV]";
+        [self.accumulatedHRVData removeAllObjects];
+    } else {
+        return;
+    }
+    NSLog(@"%@ idle timeout — resolving with %lu accumulated records", logTag, (unsigned long)resolveData.count);
+    self.pendingDataResolver(@{@"data": resolveData});
     [self clearPendingDataRequest];
-    [self.accumulatedSleepActivityData removeAllObjects];
 }
 
 - (void)clearAccumulatedDataBuffers {
@@ -930,34 +945,50 @@ RCT_EXPORT_METHOD(stopManualMeasurement:(int)dataType
 
         case DynamicHR_V8: {
             NSArray *items = dicData[@"arrayContinuousHR"];
+            NSLog(@"[V8HR] packet — dataEnd=%d itemsInPacket=%lu accumulated=%lu", dataEnd, (unsigned long)items.count, (unsigned long)self.accumulatedHRData.count);
             if (items) [self.accumulatedHRData addObjectsFromArray:items];
 
-            if (dataEnd || items.count < 50) {
+            if (dataEnd) {
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8HR] fetch complete (dataEnd=1) — total records=%lu", (unsigned long)self.accumulatedHRData.count);
                 if (self.pendingDataResolver && self.pendingDataType == DynamicHR_V8) {
                     self.pendingDataResolver(@{@"data": [self.accumulatedHRData copy]});
                     [self clearPendingDataRequest];
                     [self.accumulatedHRData removeAllObjects];
                 }
-            } else {
+            } else if (self.accumulatedHRData.count % 50 == 0 && self.accumulatedHRData.count > 0) {
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8HR] page complete (%lu items) — requesting mode:2", (unsigned long)self.accumulatedHRData.count);
                 NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetContinuousHRDataWithMode:2 withStartDate:nil];
                 [self writeCommand:cmd];
+                [self resetSleepActivityIdleTimer];
+            } else {
+                [self resetSleepActivityIdleTimer];
             }
             break;
         }
 
         case HRVData_V8: {
             NSArray *items = dicData[@"arrayHrvData"];
+            NSLog(@"[V8HRV] packet — dataEnd=%d itemsInPacket=%lu accumulated=%lu", dataEnd, (unsigned long)items.count, (unsigned long)self.accumulatedHRVData.count);
             if (items) [self.accumulatedHRVData addObjectsFromArray:items];
 
-            if (dataEnd || items.count < 50) {
+            if (dataEnd) {
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8HRV] fetch complete (dataEnd=1) — total records=%lu", (unsigned long)self.accumulatedHRVData.count);
                 if (self.pendingDataResolver && self.pendingDataType == HRVData_V8) {
                     self.pendingDataResolver(@{@"data": [self.accumulatedHRVData copy]});
                     [self clearPendingDataRequest];
                     [self.accumulatedHRVData removeAllObjects];
                 }
-            } else {
+            } else if (self.accumulatedHRVData.count % 50 == 0 && self.accumulatedHRVData.count > 0) {
+                [self invalidateSleepActivityIdleTimer];
+                NSLog(@"[V8HRV] page complete (%lu items) — requesting mode:2", (unsigned long)self.accumulatedHRVData.count);
                 NSMutableData *cmd = [[BleSDK_V8 sharedManager] GetHRVDataWithMode:2 withStartDate:nil];
                 [self writeCommand:cmd];
+                [self resetSleepActivityIdleTimer];
+            } else {
+                [self resetSleepActivityIdleTimer];
             }
             break;
         }

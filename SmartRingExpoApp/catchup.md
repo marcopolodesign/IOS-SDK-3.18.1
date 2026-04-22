@@ -4,6 +4,25 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-22: V8 HR Fix — Same Pagination Bug as Sleep (DynamicHR_V8 + HRVData_V8)
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** No HR readings from last night — no HR card data, no resting HR, no HRV. `DynamicHR_V8` and `HRVData_V8` handlers in `V8Bridge.m` used `items.count < 50` to decide when to resolve. Since the ring sends 1 item per packet (1 day of continuous HR per BLE callback), `items.count = 1 < 50` always fires on the first packet. We'd resolve with only 1 day's data — whichever day the ring sends first (oldest). After date filtering, this showed as no data for last night.
+
+**Root cause confirmed from V8 SDK demo (`heartRateHistoryData.m`):** Same `count==50 && end==NO` → mode:2 pattern as sleep. Ring sends each day as a separate packet; client must track accumulated count and send mode:2 after every 50 packets, then await `dataEnd=YES`.
+
+**Fix (V8Bridge.m):**
+- `DynamicHR_V8`: removed `items.count < 50` early resolve; wait for `dataEnd=1`; send `GetContinuousHRDataWithMode:2` after every 50 accumulated items; 3s idle timer as safety net
+- `HRVData_V8`: same fix → `GetHRVDataWithMode:2` after 50 items; idle timer
+- `sleepActivityIdleTimerFired` updated to handle DynamicHR_V8 and HRVData_V8 in addition to DetailSleepAndActivityData_V8 (all share one idle timer since only one data request runs at a time)
+
+**User-visible:** HR card now shows last night's data. Resting HR in readiness score populates. HRV history loads.
+
+**Files modified:** `ios/V8Bridge/V8Bridge.m`
+
+---
+
 ## 2026-04-21: V8 Sleep Fix — Correct SDK Pagination Protocol (mode:2 after page of 50)
 
 **Source:** Claude Code — Macbook Pro
