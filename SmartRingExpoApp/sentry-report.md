@@ -90,3 +90,25 @@
 - **7406743701 / 7408046962** (`beforeSend` TypeError): Fix committed in branch `sentry/fix-7408046962`; PR #2 still open awaiting merge. Merge PR #2 and publish a new App Store build to fully resolve.
 - **7427443933** (Reanimated EXC_BAD_ACCESS): `reanimated::ReanimatedModuleProxy::performOperations` → `cloneShadowTreeWithNewPropsRecursive` (13 recursive levels) → `ShadowNode::clone` → `folly::dynamic::hash` → SIGSEGV. Likely a deeply nested animated subtree being mutated on every frame. Dev build only; not yet seen in production. Investigate which screen drives the 13-level recursion and flatten the animated tree or upgrade Reanimated.
 - Project slug: `focus-app`. `gh` CLI not available — PR creation handled via GitHub MCP (PR #2 already exists).
+
+## 2026-04-22
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7431794312 | Error: NOT_CONNECTED: No device connected (JstyleService) | warning | 2026-04-22T00:59:35Z | 2026-04-22T10:13:17Z | Needs manual review — intentional telemetry; `enqueueNativeCall` reports normalized NOT_CONNECTED at warning level. Expected runtime condition when ring is disconnected. |
+| 7431794260 | Error: HealthKit Code=5 "Authorization status is not determined" | warning | 2026-04-22T00:59:31Z | 2026-04-22T10:12:58Z | Needs manual review — HealthKit permissions not yet granted by user; expected runtime condition. Not a code bug. |
+| 7431794956 | Error: V8 getSleepDataRaw timed out after 30000ms | error | 2026-04-22T00:59:59Z | 2026-04-22T01:10:15Z | Skipped — V8Service is off-limits per project constraints. |
+| 7431794314 | Error: sleep_ring_empty (useHomeData) | warning | 2026-04-22T00:59:34Z | 2026-04-22T01:09:19Z | Needs manual review — intentional diagnostic at `useHomeData.ts:1531`; fires when ring returns 0 sleep records and Supabase fallback runs. Not a code bug. |
+| 7431795026 | TypeError: V8Bridge.getSleepWithActivity is not a function | error | 2026-04-22T00:59:59Z | 2026-04-22T01:02:05Z | Skipped — V8Service is off-limits per project constraints. |
+| 7431041612 | Error: syncTime timed out after 5000ms | warning | 2026-04-21T19:45:57Z | 2026-04-21T19:55:16Z | Needs manual review — expected BLE timeout when ring is slow to respond during time sync. Not a code bug. |
+| 7431013609 | TypeError: event.breadcrumbs.values.map is not a function (TodayLayout) | error | 2026-04-21T19:35:02Z | 2026-04-21T19:37:43Z | Root fix already applied in PR #2 (`Array.isArray` guard in `app/_layout.tsx:21`). Events are from pre-fix build. |
+| 7414141259 | TypeError: event.breadcrumbs.values.map is not a function (app/_layout) | error | 2026-04-15T13:50:19Z | 2026-04-21T19:34:51Z | Root fix already applied in PR #2. Escalating but no events from updated build. |
+| 7406743701 | TypeError: undefined is not a function (beforeSend) | error | 2026-04-13T00:32:01Z | 2026-04-21T19:45:44Z | Fix already in main (PR #2). Errors originate from old production build; will stop once updated build reaches App Store. |
+
+### 2026-04-22 Notes
+- 15 unresolved issues total; 9 seen within the last 24 h (cutoff 2026-04-21T10:22Z).
+- **5 genuinely new issues today (F, E, H, G, C):** All are either intentional warning-level telemetry (NOT_CONNECTED, sleep_ring_empty, HealthKit auth) or expected BLE timeouts (syncTime). None are auto-fixable — these are runtime conditions, not code bugs.
+- **V8 issues (H=7431794956, J=7431795026):** Skipped per project constraints — V8Service/V8Bridge are off-limits.
+- **Breadcrumbs/beforeSend issues (B, 8, 2):** Root fix applied in PR #2 (`Array.isArray` guard on `event.breadcrumbs?.values` in `app/_layout.tsx:21`). Events originate from old production build. Will resolve once updated build is distributed.
+- No auto-fixable issues found today. No branches or PRs created.
+- `gh` CLI not available — PR creation would be skipped regardless.
