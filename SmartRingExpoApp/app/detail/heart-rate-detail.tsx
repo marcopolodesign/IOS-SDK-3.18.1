@@ -182,7 +182,26 @@ function ContinuousHRLine({
     })
   ).current;
 
-  if (filtered.length < 2 || !linePath || !peakSample || !troughSample) return null;
+  if (filtered.length === 0) return null;
+
+  // Single-point fallback: render a dot + axis labels without a line
+  if (filtered.length === 1) {
+    const p = filtered[0];
+    const cx = toX(p.timeMinutes);
+    const cy = toY(p.heartRate);
+    return (
+      <View style={chartStyles.outerWrapper}>
+        <Svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
+          <Circle cx={cx} cy={cy} r={6} fill="#AB0D0D" />
+          <Circle cx={cx} cy={cy} r={3} fill="#FFFFFF" />
+          <SvgText x={cx} y={cy - 12} textAnchor="middle" fontSize={11} fill="rgba(255,255,255,0.7)">{p.heartRate} bpm</SvgText>
+          <SvgText x={cx} y={CHART_H - 4} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.4)">{formatTimeFromMinutes(p.timeMinutes)}</SvgText>
+        </Svg>
+      </View>
+    );
+  }
+
+  if (!linePath || !peakSample || !troughSample) return null;
 
   const firstX = linePts[0].x;
   const lastX = linePts[linePts.length - 1].x;
@@ -573,8 +592,8 @@ export default function HeartRateDetailScreen() {
               <Text style={styles.insightText}>{hrInsight(dayData)}</Text>
             </View>
 
-            {/* Line chart */}
-            {(dayData!.minutePoints?.length ?? dayData!.hourlyPoints.length) >= 2 && (
+            {/* Line chart — today allows 1+ points (X3 has sparse HR); past days require 2+ */}
+            {(dayData!.minutePoints?.length ?? dayData!.hourlyPoints.length) >= (selectedIndex === 0 ? 1 : 2) && (
               <View style={styles.chartContainer}>
                 <ContinuousHRLine
                   points={dayData!.minutePoints ?? dayData!.hourlyPoints.map(p => ({ timeMinutes: p.hour * 60, heartRate: p.heartRate }))}

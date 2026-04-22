@@ -224,35 +224,68 @@ class DataSyncService {
     syncId: string | null
   ) {
     try {
-      const raw = await service.getContinuousHeartRateRaw();
-      const records: any[] = raw?.records ?? [];
-
-      const ringOffsetMs = await service.getRingOffsetMs();
-
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
       const readings: Array<{ user_id: string; sync_id: string | null; heart_rate: number; recorded_at: string; source: string }> = [];
+      const coveredMinutes = new Set<number>();
 
-      for (const record of records) {
-        const startMs: number = record.startTimestamp ?? 0;
-        const arr: number[] = record.arrayDynamicHR ?? [];
-        arr.forEach((hr, idx) => {
-          if (hr <= 0) return;
-          const ts = new Date(startMs + idx * 60_000 + ringOffsetMs);
-          const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
-          if (dateStr !== todayStr) return;
-          readings.push({
-            user_id: userId,
-            sync_id: syncId,
-            heart_rate: hr,
-            recorded_at: ts.toISOString(),
-            source: 'smart_ring',
+      // 1. Continuous HR (primary — accurate for V8, may be empty for X3)
+      try {
+        const raw = await service.getContinuousHeartRateRaw();
+        for (const record of (raw?.records ?? [])) {
+          const startMs: number = record.startTimestamp ?? 0;
+          const arr: number[] = record.arrayDynamicHR ?? [];
+          arr.forEach((hr, idx) => {
+            if (hr <= 0) return;
+            const ts = new Date(startMs + idx * 60_000);
+            const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
+            if (dateStr !== todayStr) return;
+            const minute = ts.getHours() * 60 + ts.getMinutes();
+            if (coveredMinutes.has(minute)) return;
+            coveredMinutes.add(minute);
+            readings.push({ user_id: userId, sync_id: syncId, heart_rate: hr, recorded_at: ts.toISOString(), source: 'smart_ring' });
           });
-        });
-      }
+        }
+      } catch { /* empty for X3 — fall through to single HR */ }
+
+      // 2. Single HR (X3-specific: hourly spot-checks stored in arraySingleHR)
+      try {
+        const singleRaw = await service.getSingleHeartRateRaw();
+        for (const record of (singleRaw?.records ?? [])) {
+          const startMs: number = record.startTimestamp ?? 0;
+          const arr: number[] = record.arrayDynamicHR ?? [];
+          arr.forEach((hr, idx) => {
+            if (hr <= 0) return;
+            const ts = new Date(startMs + idx * 60_000);
+            const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
+            if (dateStr !== todayStr) return;
+            const minute = ts.getHours() * 60 + ts.getMinutes();
+            if (coveredMinutes.has(minute)) return;
+            coveredMinutes.add(minute);
+            readings.push({ user_id: userId, sync_id: syncId, heart_rate: hr, recorded_at: ts.toISOString(), source: 'smart_ring_single' });
+          });
+        }
+      } catch { /* not fatal */ }
+
+      // 3. HRV-derived HR (X3: 24 hourly readings embedded in HRV packets — primary coverage for Detail screen)
+      try {
+        const overnightCutoff = startOfToday.getTime() - 12 * 3_600_000; // noon yesterday
+        const hrv = await service.getHRVDataNormalizedArray();
+        for (const h of hrv) {
+          const hr = h.heartRate ?? 0;
+          if (hr <= 0 || typeof h.timestamp !== 'number' || h.timestamp < overnightCutoff) continue;
+          const ts = new Date(h.timestamp);
+          const dateStr = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
+          if (dateStr !== todayStr) continue;
+          const minute = ts.getHours() * 60 + ts.getMinutes();
+          if (coveredMinutes.has(minute)) continue;
+          coveredMinutes.add(minute);
+          readings.push({ user_id: userId, sync_id: syncId, heart_rate: hr, recorded_at: ts.toISOString(), source: 'smart_ring_hrv' });
+        }
+      } catch { /* not fatal */ }
 
       if (readings.length > 0) {
         await supabaseService.deleteHeartRateReadingsForRange(userId, startOfToday, endOfToday);

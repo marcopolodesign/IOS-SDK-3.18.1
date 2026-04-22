@@ -1581,16 +1581,16 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const hrStart = Date.now();
       updateSP(prev => updateMetric(prev, 'heartRate', 'loading'));
       try {
-      // Try single/static HR first — reliably returns data on this device
-      // Continuous HR is fetched only when single is empty (rarely)
-      const singleHRFirst = await UnifiedSmartRingService.getSingleHeartRateRaw();
-      console.log('📊 [useHomeData] Single HR records (primary):', singleHRFirst.records?.length);
-      // Use single HR records as the primary source; fall through to continuous if empty
-      const hasSingleData = (singleHRFirst.records?.length ?? 0) > 0;
-      const hrRaw = hasSingleData
-        ? { records: [] }  // skip continuous when single has data
-        : await UnifiedSmartRingService.getContinuousHeartRateRaw();
-      if (!hasSingleData) console.log('📊 [useHomeData] Continuous HR records (fallback):', hrRaw.records?.length);
+      // Fetch continuous HR and single HR; use allSettled so a BLE disconnect during
+      // the long single-HR pagination doesn't kill the entire HR block.
+      const [hrRawResult, singleHRResult] = await Promise.allSettled([
+        UnifiedSmartRingService.getContinuousHeartRateRaw(),
+        UnifiedSmartRingService.getSingleHeartRateRaw(),
+      ]);
+      const hrRaw = hrRawResult.status === 'fulfilled' ? hrRawResult.value : { records: [] };
+      const singleHRFirst = singleHRResult.status === 'fulfilled' ? singleHRResult.value : { records: [] };
+      if (singleHRResult.status === 'rejected') console.log('⚠️ [useHomeData] Single HR failed (disconnect?):', singleHRResult.reason?.message);
+      console.log('📊 [useHomeData] Continuous HR records:', hrRaw.records?.length, '| Single HR records:', singleHRFirst.records?.length);
       const samples: number[] = [];
       const now = new Date();
       const todayDateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
@@ -1619,9 +1619,6 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         return getRecordDateStr(rec) === targetDateStr;
       };
 
-      // Correct drifted RTC: ring timestamps are off by this many ms (positive = ring is behind)
-      const ringOffsetMs = await UnifiedSmartRingService.getRingOffsetMs().catch(() => 0);
-
       const parseX3DateToMinutes = (value?: string): number | undefined => {
         if (!value || typeof value !== 'string') return undefined;
         const [datePart, timePart] = value.trim().split(/\s+/);
@@ -1629,15 +1626,12 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
         const [y, m, d] = datePart.split('.').map(Number);
         const [hh, mm, ss] = (timePart || '00:00:00').split(':').map(Number);
         if ([y, m, d, hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
-        const epochMs = new Date(y, m - 1, d, hh, mm, ss).getTime();
-        if (!Number.isFinite(epochMs) || epochMs <= 0) return undefined;
-        const corrected = new Date(epochMs + ringOffsetMs);
-        return corrected.getHours() * 60 + corrected.getMinutes();
+        return hh * 60 + mm;
       };
       const tsToMinutes = (ts: number): number => {
         if (ts > 1e10) {
-          const corrected = new Date(ts + ringOffsetMs);
-          return corrected.getHours() * 60 + corrected.getMinutes();
+          const d = new Date(ts);
+          return d.getHours() * 60 + d.getMinutes();
         }
         return Math.round(ts / 60);
       };
@@ -2031,12 +2025,14 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       const totalSleepMinutes = sleep.timeAsleepMinutes + totalNapMinutesUpdated;
 
       setData(prev => {
-      // Keep previously fetched hrChartData if the new fetch returned nothing.
-      // Fall back to HRV-derived HR points if continuous HR is empty.
-        const finalHrChartData = hrChartData.length > 0
+      // Prefer HRV-derived points (24/day) over sparse ring HR (<3 points = single spot-check).
+      // Ring HR takes priority only when it has meaningful chart coverage (>=3 points).
+        const finalHrChartData = hrChartData.length >= 3
           ? hrChartData
-          : hrvHrPoints.length > 0
+          : hrvHrPoints.length > hrChartData.length
           ? hrvHrPoints
+          : hrChartData.length > 0
+          ? hrChartData
           : prev.hrChartData;
 
         const recoveryContributors: RecoveryContributors = {

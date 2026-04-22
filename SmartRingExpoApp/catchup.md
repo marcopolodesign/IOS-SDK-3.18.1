@@ -4,6 +4,85 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-22: Fix X3 HR — Remove ringOffsetMs Double-Correction + HR Detail Sparse Coverage
+
+**Source:** Claude Code — Macbook Pro
+
+**Root cause (confirmed by commit-trace):**
+`795e6eb` (Apr 21 OTA) introduced `getRingOffsetMs()` and applied it to `parseX3DateToMinutes` and `tsToMinutes` in `useHomeData.ts` and `DataSyncService.ts`. Since `setTime()` is now called on every reconnect (`973415d`), the ring clock drift is < seconds. The cached 5-min `ringOffsetMs` held a phantom pre-sync offset and shifted every X3 HR point into the wrong minute/hour — producing "all over the place" bars on Overview and wrong-day-filtered points on HR Detail.
+
+**Fix 1 — `src/hooks/useHomeData.ts`:**
+- Deleted `getRingOffsetMs()` call (line 1623)
+- Restored `tsToMinutes` and `parseX3DateToMinutes` to plain local-time math (no offset added)
+
+**Fix 2 — `src/services/DataSyncService.ts` (`syncHeartRateData`):**
+- Removed `ringOffsetMs` from timestamp computation
+- Extended to also write `getSingleHeartRateRaw()` (`source: 'smart_ring_single'`) and HRV-derived 24 hourly HR points (`source: 'smart_ring_hrv'`) to `heart_rate_readings` Supabase table so HR Detail has enough points (≥2) to render the line
+
+**Fix 3 — `src/services/UnifiedSmartRingService.ts`:**
+- Deleted `getRingOffsetMs()` method and its cache fields (no remaining callers)
+
+**Fix 4 — `app/detail/heart-rate-detail.tsx`:**
+- Lowered render threshold to `>= 1 point` for today (was `>= 2`) so X3's single spot-check renders
+- Added single-point circle marker + axis label fallback in `ContinuousHRLine` when `filtered.length === 1`
+
+**What was NOT changed:** V8 HR pipeline (`V8Bridge.m`, `V8Service.ts`, `29c40ca` pagination fix), `Promise.allSettled` parallel HR fetch, HRV fallback logic.
+
+**Result:** Overview HR bars appear at correct hours matching real clock. HR Detail shows a line (or single marker) for today via HRV-derived hourly readings written to Supabase. V8 unchanged.
+
+---
+
+## 2026-04-22: Fix X3 Ring HR Chart — Robust BLE Disconnect + HRV Fallback
+
+**Source:** Claude Code — Macbook Pro
+
+**Root causes (confirmed via Xcode logs):**
+1. Continuous HR (type 28) always returns `dataEnd: 1` immediately — X3 ring stores no DynamicHR data
+2. Single HR (type 29) paginates 52+ packets and disconnects mid-fetch — kills HRV fetch too
+3. `hrChartData.length > 0` (even 1 spot-check) blocked the HRV-derived 24-point fallback
+
+**Fixes in `src/hooks/useHomeData.ts`:**
+- `Promise.allSettled` for continuous + single HR so a disconnect during single HR pagination doesn't throw
+- Threshold raised: ring HR only used when `>= 3` points; otherwise prefers HRV-derived (24 hourly) if richer
+
+**Result:** Chart shows 24 HRV-derived points when HRV succeeds. Cached fallback when everything fails.
+
+---
+
+## 2026-04-22: Figma — Caffeine Window / Adenosine Clearance Component (3 States)
+
+**Source:** Claude Code — Macbook Pro
+
+Designed and pushed an Ultrahuman-style "plug" card for caffeine/adenosine window tracking to Figma (V1 page, x≈3050, y≈-750). Three states ready for iteration:
+
+- **Optimal** (84% clear, green badge, NOW at 12:30 PM) — standard morning window
+- **Caution** (52% clear, amber badge, NOW at 3:30 PM) — window closing
+- **Avoid** (18% clear, red badge, NOW at 8 PM) — too late, disrupts sleep
+
+Each card includes: metric + badge, color-coded timeline bar (skip/optimal/caution/avoid zones), NOW indicator with glow, stats row (Last Intake / Half-life Left / Clear By), and amber/red coach tip. Font fell back to Inter since TT Interphases Pro isn't available in plugin context — needs manual swap in Figma.
+
+**Figma node IDs:** `740:120` (Optimal), `741:120` (Caution), `741:159` (Avoid)
+
+Added 2 curve variants (y≈-350):
+- **Variant A — Decay Curve** (`746:120`): exponential concentration drop from intake, sleep threshold line, green CLEAR zone
+- **Variant B — Adenosine Pressure** (`746:163`): dual-line — dashed natural buildup vs amber caffeine-masked line, amber shading in the "block" zone, green dot where curves converge
+
+---
+
+## 2026-04-22: Fix HR Chart — Restore Continuous HR as Primary Source
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** HR card showed "None" / 1 data point despite 1464 raw records from ring.
+
+**Root cause:** Commit `7aa8270` (TestFlight 1.0.25 session) swapped continuous HR → single HR as primary source. Single HR is manual spot-checks — it has 1464 historical records but only 1 from today. Continuous HR (minute-by-minute) was never fetched because `hasSingleData` was always `true`.
+
+**Fix:** `useHomeData.ts` — restored continuous HR as primary. Now fetches both in parallel via `Promise.all`; continuous fills `allRecords` for the chart, single HR stays as the fallback when continuous has no data.
+
+**Files modified:** `src/hooks/useHomeData.ts`
+
+---
+
 ## 2026-04-22: AI Coach — Persistent User Memory
 
 **Source:** Claude Code — Macbook Pro
