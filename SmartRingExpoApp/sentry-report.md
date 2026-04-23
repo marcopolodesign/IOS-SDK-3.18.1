@@ -112,3 +112,30 @@
 - **Breadcrumbs/beforeSend issues (B, 8, 2):** Root fix applied in PR #2 (`Array.isArray` guard on `event.breadcrumbs?.values` in `app/_layout.tsx:21`). Events originate from old production build. Will resolve once updated build is distributed.
 - No auto-fixable issues found today. No branches or PRs created.
 - `gh` CLI not available — PR creation would be skipped regardless.
+
+## 2026-04-23
+
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7434420472 | Error: com.apple.healthkit Code=6 "Protected health data is inaccessible" | warning | 2026-04-22T18:08:35Z | Auto-fixed (PR #4) — `isExpectedHealthKitError` guard added |
+| 7431794260 | Error: com.apple.healthkit Code=5 "Authorization status is not determined" | warning | 2026-04-22T00:59:31Z | Auto-fixed (PR #4) — same guard |
+| 7434372098 | Error: getFirmwareVersion timed out after 5000ms | warning | 2026-04-22T17:51:23Z | Needs manual review — BLE timeout under load; `withNativeTimeout` already in place |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — BLE race condition, no stack trace available |
+| 7434420739 | Error: autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | Needs manual review — intentional `reportError` when auto-reconnect fails; consider downgrading to warning |
+| 7435115776 | Error: sleep_ring_empty | warning | 2026-04-23T00:13:56Z | Needs manual review — ring returned 0 sleep records, Supabase fallback kicked in |
+| 7431794314 | Error: sleep_ring_empty | warning | 2026-04-22T00:59:34Z | Needs manual review — same as above |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | Needs manual review — sync attempted while ring disconnected |
+| 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | Needs manual review — same pattern |
+| 7435110956 | Error: No device connected (DataSyncService→getSleepDataRaw→ensureConnected) | error | 2026-04-23T00:10:43Z | Needs manual review — sync burst while ring disconnected |
+| 7435111574 / 7435111082 / 7435115700 / 7435110949 / 7435111092 / 7435111107 / 7435111093 / 7435110932 / 7435112378 / 7435111538 / 7435111519 / 7435111605 / 7435116696 | Error: No device connected (various callers) | error/warning | 2026-04-23T00:10–00:14Z | Needs manual review — same root cause; all from `ensureConnected` in UnifiedSmartRingService |
+| 7431794956 | Error: V8 getActivityModeData timed out after 10000ms | error | 2026-04-22T00:59:59Z | Skipped — V8 service off-limits per project constraints |
+| 7406751015 | WatchdogTermination: OS watchdog terminated app (possible RAM overuse) | fatal | 2026-04-13T00:38:05Z | Needs manual review — recurring fatal, no JS stack; requires Xcode Instruments profiling |
+
+### 2026-04-23 Notes
+- 25 unresolved issues total; all 25 active within the last 24 h.
+- **Auto-fixed:** HealthKit `Code=5` / `Code=6` errors (PR #4). Both are expected iOS OS conditions — Code=6 fires when device is locked while a background task reads HealthKit, Code=5 fires before permissions are granted. Fix guards all `reportError` call-sites in `HealthKitDataFetchers.ts` and `HealthKitPermissions.ts` with `isExpectedHealthKitError()`. Branch: `sentry/fix-7434420472` → PR #4.
+- **No device connected (burst):** Large cluster of 13 identical errors at 00:10–00:14 UTC. `ensureConnected()` in `UnifiedSmartRingService.ts:152` is working correctly; however the sync caller (`DataSyncService.syncSleepData:364`) is not checking connection state before looping. Consider a pre-flight connection guard to suppress spam.
+- **sleep_ring_empty:** Intentional `reportError` at `useHomeData.ts:1531`. Consider changing severity from `warning` to `info`, or suppressing when Supabase fallback succeeds.
+- **autoReconnect.jstyle returned failure (7434420739):** Intentional `reportError` at `UnifiedSmartRingService.ts:376`. Consider downgrading to `warning` since this is a normal expected path when ring is out of range.
+- **V8 timeout (7431794956):** V8 service — off-limits per constraints. Not touched.
+- **WatchdogTermination (7406751015):** Recurring since 2026-04-13. Requires Xcode Instruments memory profiling. Possibly related to the BLE sync burst above.
