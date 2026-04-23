@@ -50,7 +50,7 @@ serve(async (req: Request) => {
     // All users with push tokens
     const { data: tokenRows, error: tokenErr } = await supabase
       .from('push_tokens')
-      .select('user_id, token');
+      .select('user_id, token, tz_offset_min');
 
     if (tokenErr || !tokenRows?.length) {
       return new Response(JSON.stringify({ sent: 0, reason: 'no tokens' }), {
@@ -114,7 +114,7 @@ serve(async (req: Request) => {
 
     const messages: object[] = [];
 
-    for (const { user_id, token } of tokenRows) {
+    for (const { user_id, token, tz_offset_min } of tokenRows) {
       let title = '';
       let body = '';
 
@@ -166,17 +166,21 @@ serve(async (req: Request) => {
         // Skip users whose wind-down hour doesn't match the current UTC hour
         if (windDownUtcHour !== currentUtcHour) continue;
 
-        // Format average wake time for display (12h, UTC)
-        const wakeH = Math.floor(avgWakeUtcMin / 60);
-        const wakeM = avgWakeUtcMin % 60;
+        // Convert UTC minutes to local minutes using device timezone offset
+        const tzOff = tz_offset_min ?? 0;
+        const avgWakeLocalMin = ((avgWakeUtcMin + tzOff) + 1440 * 2) % 1440;
+
+        // Format average wake time for display (12h, local)
+        const wakeH = Math.floor(avgWakeLocalMin / 60);
+        const wakeM = avgWakeLocalMin % 60;
         const wakeH12 = wakeH % 12 || 12;
         const wakeAmPm = wakeH < 12 ? 'AM' : 'PM';
         const wakeStr = `${wakeH12}:${String(wakeM).padStart(2, '0')} ${wakeAmPm}`;
 
-        // Format bedtime (wake - 8h, 12h)
-        const bedUtcMin = ((avgWakeUtcMin - 480) + 1440) % 1440;
-        const bedH = Math.floor(bedUtcMin / 60);
-        const bedM = bedUtcMin % 60;
+        // Format bedtime (wake - 8h, 12h, local)
+        const bedLocalMin = ((avgWakeLocalMin - 480) + 1440) % 1440;
+        const bedH = Math.floor(bedLocalMin / 60);
+        const bedM = bedLocalMin % 60;
         const bedH12 = bedH % 12 || 12;
         const bedAmPm = bedH < 12 ? 'AM' : 'PM';
         const bedStr = `${bedH12}:${String(bedM).padStart(2, '0')} ${bedAmPm}`;

@@ -78,7 +78,7 @@ export const DeviceSheet = memo(function DeviceSheet({
     if (toIndex >= 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
-  const isX6 = connectedDevice?.sdkType === 'v8' && connectedDevice?.deviceType === 'ring';
+  const isX6 = /x6/i.test(connectedDevice?.name ?? '') || /x6/i.test(connectedDevice?.localName ?? '');
   const isBand = (connectedDevice?.sdkType === 'v8' || connectedDevice?.deviceType === 'band') && !isX6;
   const deviceImg = isX6 ? X6_MOCK_IMG : isBand ? BAND_MOCK_IMG : CONNECT_MOCK_IMG;
   const deviceName = connectedDevice?.localName || connectedDevice?.name || (isX6 ? 'FOCUS X6' : isBand ? 'FOCUS BAND' : 'FOCUS X3');

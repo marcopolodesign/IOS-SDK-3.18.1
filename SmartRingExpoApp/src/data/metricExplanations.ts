@@ -24,7 +24,8 @@ export type MetricKey =
   | 'contributor_resting_hr_delta'
   | 'contributor_sleep_quality'
   | 'contributor_temperature'
-  | 'score_breakdown';
+  | 'score_breakdown'
+  | 'caffeine_window';
 
 export type ChartType = 'score_arc' | 'range_bar' | 'sleep_stages' | 'waveform' | 'none';
 
@@ -469,6 +470,19 @@ export function getMetricExplanations(t: TFunc): Record<MetricKey, MetricExplana
         ],
       },
       accentColor: '#FF6B35',
+    },
+
+    caffeine_window: {
+      title: 'The Caffeine Window',
+      subtitle: 'Adenosine clearance science',
+      body: 'Adenosine is a sleep-pressure molecule that accumulates while you\'re awake. Caffeine works by blocking adenosine receptors — but if you consume it too early, residual adenosine from sleep remains and the stimulant effect is blunted.\n\nWaiting for adenosine to clear naturally amplifies caffeine\'s impact and avoids the mid-morning energy crash that comes from blocking half-occupied receptors.',
+      ranges: [
+        'Pre-window — Adenosine still circulating from sleep. Caffeine blocks receptors but sleep pressure isn\'t fully cleared. Weaker effect, earlier crash.',
+        'Window open — Adenosine cleared. Caffeine fully occupies receptors for peak alertness and sustained energy with no early crash.',
+        'Window closed — Caffeine drops below ~100 mg. Sleep pressure rebuilds. Additional intake risks delaying sleep onset and reducing deep sleep.',
+      ],
+      chart: { type: 'none' },
+      accentColor: '#00D7A9',
     },
   };
 }

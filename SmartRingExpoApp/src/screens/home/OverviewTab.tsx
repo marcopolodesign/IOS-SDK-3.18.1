@@ -11,6 +11,7 @@ import { SleepScoreIcon } from '../../assets/icons';
 import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
 
 import DailyTimelineCard from '../../components/home/DailyTimelineCard';
+import { CaffeineWindowCard } from '../../components/home/CaffeineWindowCard';
 import LogEntrySheet from '../../components/home/LogEntrySheet';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { useFocusDataContext } from '../../context/FocusDataContext';
@@ -196,6 +197,11 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>
         <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} onTouchStart={onChartTouchStart} onTouchEnd={onChartTouchEnd} />
+      </View>
+
+      {/* Caffeine Window */}
+      <View style={styles.gradientCardSection}>
+        <CaffeineWindowCard />
       </View>
 
       {/* Daily Chronology Timeline */}
