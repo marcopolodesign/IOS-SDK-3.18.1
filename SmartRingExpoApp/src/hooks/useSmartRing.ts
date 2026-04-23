@@ -49,8 +49,8 @@ const formatDeviceName = (device: DeviceInfo): string => {
   const id = device.id || '';
   const lower = name.toLowerCase();
 
-  // V8 X6 ring
-  if (device.sdkType === 'v8' && (lower.includes('x6') || device.deviceType === 'ring')) return 'FOCUS X6';
+  // X6 ring (now uses Jstyle/X3 SDK)
+  if (lower.includes('x6')) return 'FOCUS X6';
   // V8 band devices
   if (device.sdkType === 'v8' || device.deviceType === 'band') return 'FOCUS BAND';
 

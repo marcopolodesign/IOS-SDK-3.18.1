@@ -35,7 +35,7 @@ Sentry.init({
     return event;
   },
 });
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 // Inject Figma capture script on web (removed after design capture)
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const s = document.createElement('script');
@@ -48,8 +48,9 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View } from 'react-native';
 import { useFonts } from 'expo-font';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { OnboardingProvider } from '../src/context/OnboardingContext';
+import UnifiedSmartRingService from '../src/services/UnifiedSmartRingService';
 import { HomeDataProvider } from '../src/context/HomeDataContext';
 import { AddOverlayProvider } from '../src/context/AddOverlayContext';
 import { MetricExplainerProvider } from '../src/context/MetricExplainerContext';
@@ -110,6 +111,18 @@ function RootLayout() {
       console.warn('[RootLayout] Font loading error, proceeding anyway:', fontError);
     }
   }, [fontError]);
+
+  // Re-sync ring clock on foreground — catches TZ changes from travel or DST before the next data read.
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', nextState => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        UnifiedSmartRingService.maybeSyncRingClock().catch(() => {});
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   // Safety timeout — never let splash hang more than 5s
   useEffect(() => {

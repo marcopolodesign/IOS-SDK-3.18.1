@@ -38,6 +38,7 @@ class UnifiedSmartRingService {
   private connectedSDKType: SDKType = 'none';
   private connectedDeviceType: DeviceType | null = null;
   private autoReconnectInFlight: Promise<{ success: boolean; message: string; deviceId?: string; deviceName?: string }> | null = null;
+  private syncClockInFlight: Promise<void> | null = null;
 
   private async getPersistedSDKType(): Promise<SDKType> {
     try {
@@ -221,6 +222,11 @@ class UnifiedSmartRingService {
       : null;
     if (!svc) return { connected: false, state: 'unavailable', deviceName: null, deviceMac: null };
     const status = await svc.isConnected();
+    // Heal state when iOS background BLE reconnect restored the connection without JS autoReconnect().
+    if (status.connected && this.connectedSDKType === 'none') {
+      this.connectedSDKType = svc === V8Service ? 'v8' : 'jstyle';
+      addBreadcrumb('ble', 'healed SDK type from native connection', { type: this.connectedSDKType });
+    }
     return {
       connected: status.connected,
       state: status.state,
@@ -293,7 +299,7 @@ class UnifiedSmartRingService {
       if (vResult.hasPairedDevice && vResult.device) {
         return {
           hasPairedDevice: true,
-          device: { ...vResult.device, sdkType: 'v8', deviceType: /x6/i.test(vResult.device.name ?? '') ? 'ring' : 'band' },
+          device: { ...vResult.device, sdkType: /x6/i.test(vResult.device.name ?? '') ? 'jstyle' : 'v8', deviceType: /x6/i.test(vResult.device.name ?? '') ? 'ring' : 'band' },
         };
       }
     }
@@ -344,9 +350,10 @@ class UnifiedSmartRingService {
         try {
           const vStatus = await V8Service.isConnected();
           if (vStatus.connected) {
-            const vDevType = /x6/i.test(vStatus.deviceName ?? '') ? 'ring' : 'band';
-            this.setConnectedSDKType('v8', vDevType);
-            JstyleService.forgetPairedDevice().catch(() => {});
+            const isX6 = /x6/i.test(vStatus.deviceName ?? '');
+            // X6 ring uses Jstyle/X3 SDK — reclassify even if V8 BLE holds the connection
+            this.setConnectedSDKType(isX6 ? 'jstyle' : 'v8', isX6 ? 'ring' : 'band');
+            if (!isX6) JstyleService.forgetPairedDevice().catch(() => {});
             return {
               success: true,
               message: 'Already connected',
@@ -369,7 +376,7 @@ class UnifiedSmartRingService {
               addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'jstyle' });
               if (result.deviceId) setRingContext(result.deviceId, 'jstyle');
               setTimeout(() => this.emitConnectionState('connected'), 50);
-              JstyleService.setTime().catch(() => {});
+              this.maybeSyncRingClock().catch(() => {});
               V8Service.forgetPairedDevice().catch(() => {});
               return result;
             }
@@ -387,18 +394,23 @@ class UnifiedSmartRingService {
           const vPaired = await V8Service.hasPairedDevice();
           if (vPaired.hasPairedDevice) {
             const vPairedDev = await V8Service.getPairedDevice().catch(() => null);
-            const vDevType = /x6/i.test(vPairedDev?.device?.name ?? '') ? 'ring' : 'band';
-            this.setConnectedSDKType('v8', vDevType);
-            const result = await V8Service.autoReconnect();
-            if (result.success) {
-              addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'v8' });
-              if (result.deviceId) setRingContext(result.deviceId, 'v8');
-              setTimeout(() => this.emitConnectionState('connected'), 50);
-              JstyleService.forgetPairedDevice().catch(() => {});
-              return result;
+            const isX6Paired = /x6/i.test(vPairedDev?.device?.name ?? '');
+            // X6 ring uses Jstyle SDK — skip V8 reconnect so Jstyle path handles it
+            if (isX6Paired) {
+              V8Service.forgetPairedDevice().catch(() => {});
+            } else {
+              this.setConnectedSDKType('v8', 'band');
+              const result = await V8Service.autoReconnect();
+              if (result.success) {
+                addBreadcrumb('ble', 'autoReconnect succeeded', { sdkType: 'v8' });
+                if (result.deviceId) setRingContext(result.deviceId, 'v8');
+                setTimeout(() => this.emitConnectionState('connected'), 50);
+                JstyleService.forgetPairedDevice().catch(() => {});
+                return result;
+              }
+              reportError(new Error('autoReconnect.v8 returned failure'), { op: 'autoReconnect.v8', reason: result?.message ?? 'unknown' });
+              this.connectedSDKType = 'none';
             }
-            reportError(new Error('autoReconnect.v8 returned failure'), { op: 'autoReconnect.v8', reason: result?.message ?? 'unknown' });
-            this.connectedSDKType = 'none';
           }
         } catch (e) {
           reportError(e, { op: 'autoReconnect.v8' });
@@ -728,6 +740,23 @@ class UnifiedSmartRingService {
     return await JstyleService.getDeviceTime();
   }
 
+  async maybeSyncRingClock(): Promise<void> {
+    if (this.syncClockInFlight) return this.syncClockInFlight;
+    this.syncClockInFlight = (async () => {
+      const currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      try {
+        const lastTz = await AsyncStorage.getItem('ring_clock_last_tz_v1');
+        if (lastTz === currentTz) return;
+        await JstyleService.setTime();
+        await AsyncStorage.setItem('ring_clock_last_tz_v1', currentTz);
+        addBreadcrumb('ble', 'ring clock synced', { tz: currentTz, prev: lastTz ?? 'none' });
+      } catch (e) {
+        reportError(e, { op: 'maybeSyncRingClock' });
+      }
+    })();
+    try { await this.syncClockInFlight; } finally { this.syncClockInFlight = null; }
+  }
+
   // ========== Device ==========
 
   findDevice(): void {
@@ -790,12 +819,11 @@ class UnifiedSmartRingService {
     if (V8Service.isAvailable()) {
       unsubs.push(V8Service.onDeviceDiscovered((device) => {
         const name = (device.name || '').toLowerCase();
-        const isX3 = name.includes('x3');
-        const isX6 = name.includes('x6');
+        const isJstyle = name.includes('x3') || name.includes('x6');
         callback({
           ...device,
-          sdkType: isX3 ? 'jstyle' : 'v8',
-          deviceType: isX3 || isX6 ? 'ring' : 'band',
+          sdkType: isJstyle ? 'jstyle' : 'v8',
+          deviceType: isJstyle ? 'ring' : 'band',
         });
       }));
     }

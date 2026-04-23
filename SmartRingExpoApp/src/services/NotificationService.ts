@@ -9,8 +9,9 @@ async function saveTokenToSupabase(token: string): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
 
+  const tzOffsetMin = -new Date().getTimezoneOffset(); // e.g. -180 for ART (UTC-3)
   const { error } = await supabase.from('push_tokens').upsert(
-    { user_id: user.id, token, platform: 'ios' },
+    { user_id: user.id, token, platform: 'ios', tz_offset_min: tzOffsetMin },
     { onConflict: 'user_id,token' },
   );
 

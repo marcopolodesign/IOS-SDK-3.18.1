@@ -4,6 +4,84 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-22: X6 Ring — Route to Jstyle/X3 SDK
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** X6 ring now uses the Jstyle/X3 SDK instead of the V8 SDK.
+
+- `onDeviceDiscovered` (V8 scanner path): X6 devices (`name.includes('x6')`) now get `sdkType: 'jstyle'` instead of `'v8'`
+- `getPairedDevice`: V8-returned X6 paired device stamped with `sdkType: 'jstyle'`
+- `autoReconnect` — "V8 already connected" path: X6 reclassified to `sdkType: 'jstyle'` without clearing Jstyle pairing
+- `autoReconnect` — "V8 reconnect" path: if paired device is X6, clears V8 pairing and skips V8 reconnect (Jstyle path handles it)
+- `DeviceSheet.tsx`: `isX6` now detected by device name regex (`/x6/i`) rather than `sdkType === 'v8'`
+- `useSmartRing.ts`: `formatDeviceName` X6 branch now matches by name only (not SDK type)
+
+**Note:** Existing users paired via V8 will need to re-pair — V8 NSUserDefaults entry is cleared on next reconnect attempt.
+
+**Files modified:** `src/services/UnifiedSmartRingService.ts`, `src/components/home/DeviceSheet.tsx`, `src/hooks/useSmartRing.ts`
+
+---
+
+## 2026-04-22: Wind-down Notification — Fix Local Time Display
+
+**Source:** Claude Code — Macbook Pro
+
+The wind-down push notification was showing wake time and bedtime in UTC (e.g. "10:00 AM") instead of the user's local time (e.g. "7:00 AM" for ART UTC-3).
+
+**Root cause:** `avgWakeUtcMin` is derived from `sleep_sessions.end_time` which is stored as UTC. The edge function formatted it directly into 12h time without applying any timezone offset.
+
+**Fix (3 parts):**
+1. **Migration** `20260422120000_push_tokens_tz_offset.sql` — adds `tz_offset_min INTEGER` column to `push_tokens`
+2. **`NotificationService.ts`** — includes `tz_offset_min: -new Date().getTimezoneOffset()` in the push_tokens upsert payload on every token registration
+3. **`daily-summary-push/index.ts`** — selects `tz_offset_min` from push_tokens, converts `avgWakeUtcMin` → `avgWakeLocalMin` via `(utcMin + tzOff + 2880) % 1440`, formats wake and bedtime strings from local minutes. Falls back to 0 if offset is null (no regression for tokens registered before this fix).
+
+**Deployed:** migration pushed, edge function redeployed.
+
+---
+
+## 2026-04-22: CaffeineWindowCard — Replace Union shape with 3 window blocks
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced the single Figma-derived Union SVG path in `CaffeineWindowCard.tsx` with 3 side-by-side rounded `<Rect>` blocks representing the adenosine window timeframes:
+- **Pre** (25% width): amber (#FFAC3F) → teal (#00D7A9) horizontal gradient
+- **Open** (37% width): solid teal (#00D7A9)
+- **Closed** (38% width): teal (#00D7A9) → rose (#FD8D8F) horizontal gradient
+
+Dark top vignette (`#000 → transparent`) overlays all 3 blocks. Each block has `rx=10` border radius — no gap between blocks, rounded corners create natural visual separation at junctions.
+
+Removed `UNION_PATH` string constant (no longer needed). `UNION_H=89` retained to preserve `LABEL_Y` calculation (time axis labels).
+
+**Files modified:** `src/components/home/CaffeineWindowCard.tsx`
+
+---
+
+## 2026-04-22: Ring Clock Strategy — TZ-aware sync + parser standardization
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** Three ring data parsers (HRV, SpO2, Temperature) used `Date.parse` on non-ISO strings — implementation-defined per spec, highest-risk silent-drift path. Also, `setTime()` fired fire-and-forget on every reconnect with no telemetry, and timezone changes (travel, DST) could silently skew ring data until next reconnect.
+
+**Fix 1 — `src/services/JstyleService.ts`:**
+- HRV (line 876), SpO2 (line 947), Temperature (line 1002): replaced `Date.parse(...)` with `this.parseX3DateTime(rawDate) ?? result.timestamp` — the same canonical local-time parser used everywhere else in the service.
+
+**Fix 2 — `src/services/UnifiedSmartRingService.ts`:**
+- Replaced fire-and-forget `JstyleService.setTime()` in `autoReconnect` with `this.maybeSyncRingClock()`.
+- Added `maybeSyncRingClock()`: reads last-synced TZ from AsyncStorage key `ring_clock_last_tz_v1`, no-ops if TZ unchanged, otherwise calls `setTime()` + persists new TZ + Sentry breadcrumb. Errors go to `reportError` and do not update stored TZ (so next trigger retries). Concurrency guard (`syncClockInFlight`) prevents dual `setTime()` if autoReconnect and AppState fire simultaneously.
+
+**Fix 3 — `app/_layout.tsx`:**
+- Added AppState foreground listener calling `maybeSyncRingClock()` on `inactive→active` transitions — catches timezone changes while app is backgrounded (air travel, DST) before the next ring data read.
+
+**Architecture contract locked in:** Ring RTC = phone local time. Supabase writes UTC ISO via `.toISOString()`. Reads recover local hour via `new Date(iso).getHours()`.
+
+**Fix 4 — `src/services/UnifiedSmartRingService.ts` (follow-up):**
+- `isConnected()`: when native reports connected but `connectedSDKType === 'none'`, heals the state by inferring the SDK type. Fixes cascading `No device connected` errors from `DataSyncService.syncAllData` when iOS background BLE reconnect restores the native connection without JS `autoReconnect()` completing.
+
+**Files modified:** `src/services/JstyleService.ts`, `src/services/UnifiedSmartRingService.ts`, `app/_layout.tsx`
+
+---
+
 ## 2026-04-22: Fix X3 HR — Remove ringOffsetMs Double-Correction + HR Detail Sparse Coverage
 
 **Source:** Claude Code — Macbook Pro
@@ -49,6 +127,35 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-22: CaffeineWindowCard — Built Live in App
+
+**Source:** Claude Code — Macbook Pro
+
+**What was built:** New `CaffeineWindowCard` component (`src/components/home/CaffeineWindowCard.tsx`) rendered in OverviewTab after the HR card.
+
+**Visual design (from Figma node 757:399):**
+- Two-zone layout: green gradient top section + black chart section
+- Top: 34px glass icon circle (☕) + "CAFFEINE WINDOW" label, large 28px title, subtitle body text
+- Chart (185px tall, full card width): three radial-gradient zone blobs (amber left / teal center / rose right) rising from the bottom via SVG `RadialGradient` on `Rect` fills. White exponential decay curve as SVG `Path`. Dashed NOW vertical line + white glow dot. Time axis labels (6AM / 12PM / 3PM / 11PM) inside SVG.
+- Footer: `rgba(255,255,255,0.10)` strip with clearance label text.
+- Background: two stacked SVG radial gradients — green spotlight from above-center + warm amber accent top-left
+
+**Props:**
+- `intakeHour` — decimal hour of last caffeine intake (default 8.0 = 8 AM)
+- `currentHour` — decimal hour for NOW dot (defaults to `new Date()`)
+- `clearanceLabel` — footer string (default "9:30 PM tonight")
+
+**Key technique:** `useWindowDimensions` minus `spacing.md * 2` (the OverviewTab wrapper margins) gives exact card width — no `onLayout` needed. Chart SVG sizes itself accordingly.
+
+**Pharmacokinetics:** Half-life 5h. `conc(t) = 0.5^((t-intake)/5)`, y-position inverted so high concentration = top of chart.
+
+**Architecture (final):** Standalone card (no GradientInfoCard). Full-card absoluteFill SVG provides the amber/teal/rose blob bg (same zone colors as chart, anchored at bottom). Chart section has a `rgba(0,0,0,0.55)` dark overlay so the curve reads cleanly against the blobs. Curve uses a 2-phase PK model: linear absorption rise (45 min to peak) → exponential elimination (5h half-life). Y-axis shows 200/100/0 mg labels (assumes 200mg standard dose) with subtle dashed gridlines. `CHART_PAD_L=38` reserves left space for the Y labels.
+
+**Files created:** `src/components/home/CaffeineWindowCard.tsx`
+**Files modified:** `src/screens/home/OverviewTab.tsx`
+
+---
+
 ## 2026-04-22: Figma — Caffeine Window / Adenosine Clearance Component (3 States)
 
 **Source:** Claude Code — Macbook Pro
@@ -66,6 +173,14 @@ Each card includes: metric + badge, color-coded timeline bar (skip/optimal/cauti
 Added 2 curve variants (y≈-350):
 - **Variant A — Decay Curve** (`746:120`): exponential concentration drop from intake, sleep threshold line, green CLEAR zone
 - **Variant B — Adenosine Pressure** (`746:163`): dual-line — dashed natural buildup vs amber caffeine-masked line, amber shading in the "block" zone, green dot where curves converge
+
+Added **Hero-style card** (`758:120`, x≈3050, y≈120) replicating node 757:399 sketch — two-zone layout:
+- **Top half:** VERTICAL auto-layout with a large green radial glow (gradient center at (0.515, -0.15) above the frame, matching original sketch spotlight). Coffee icon, title (28px Inter), subtitle text.
+- **Bottom chart (375×185px):** Three colored zone blobs (amber/teal/rose) created via `figma.createNodeFromSvg()` with SVG `<feGaussianBlur>` filter — GRADIENT_RADIAL fills on ELLIPSE/RECT nodes are invisible in plugin context so SVG-blur approach is required. White exponential decay curve as polyline. Dashed NOW indicator at 12PM.
+- Footer frame with `bottomRadius=12` appended before card so it slides under (z-order trick).
+- Font: Inter (TT Interphases Pro unavailable in plugin context — needs manual swap).
+
+**Key gotcha:** `GRADIENT_RADIAL` fills set programmatically on child nodes inside a nested frame do NOT render in the Figma screenshot API (even with correct transforms, visible=true, opacity=1). Use `figma.createNodeFromSvg()` with SVG blur filters instead.
 
 ---
 

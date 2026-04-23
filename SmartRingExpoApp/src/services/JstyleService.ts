@@ -873,7 +873,7 @@ class JstyleService {
 
     const pushRecord = (rec: any, fallbackTs: number) => {
       const rawDate = rec.date as string | undefined;
-      const ts = rawDate ? Date.parse(rawDate.replace(/\./g, '-')) : undefined;
+      const ts = rawDate ? this.parseX3DateTime(rawDate) : undefined;
       const hrvVal = Number(rec.hrv ?? rec.hrvValue ?? 0);
       const hrVal = Number(rec.heartRate ?? 0);
       const stressVal = Number(rec.stress ?? 0);
@@ -944,8 +944,8 @@ class JstyleService {
           // Key is automaticSpo2Data (not spo2)
           const spo2 = Number(entry.automaticSpo2Data ?? entry.spo2 ?? 0);
           if (spo2 > 0) {
-            const ts = entry.date ? Date.parse(entry.date.replace(/\./g, '-').replace(' ', 'T')) : result.timestamp;
-            spo2Data.push({ spo2, timestamp: isNaN(ts) ? result.timestamp : ts });
+            const ts = this.parseX3DateTime(entry.date) ?? result.timestamp;
+            spo2Data.push({ spo2, timestamp: ts });
           }
         }
         continue;
@@ -999,8 +999,8 @@ class JstyleService {
           const temp = Number(entry.temperature ?? 0);
           // Filter to human body temperature range (34–42°C) — SDK returns corrupted values outside this range
           if (temp >= 34 && temp <= 42) {
-            const ts = entry.date ? Date.parse(entry.date.replace(/\./g, '-').replace(' ', 'T')) : result.timestamp;
-            tempData.push({ temperature: temp, timestamp: isNaN(ts) ? result.timestamp : ts });
+            const ts = this.parseX3DateTime(entry.date) ?? result.timestamp;
+            tempData.push({ temperature: temp, timestamp: ts });
           }
         }
         continue;
