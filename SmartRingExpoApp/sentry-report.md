@@ -113,6 +113,20 @@
 - No auto-fixable issues found today. No branches or PRs created.
 - `gh` CLI not available — PR creation would be skipped regardless.
 
+## 2026-04-24
+
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7434372098 | Error: getBatteryLevel timed out after 5000ms | warning | 2026-04-22T17:51:23Z | Needs manual review — BLE native timeout; `withNativeTimeout` already in place, expected behavior |
+| 7437906964 | Error: [Worklets] Tried to synchronously call a non-worklet function `phaseColor` on the UI thread | fatal | 2026-04-24T02:26:27Z | Needs manual review — `phaseColor` called inside `useAnimatedStyle` without `'worklet'` directive; source file `app/detail/adenosine-detail.tsx` not found in repo checkout |
+| 7437886447 | Error: getStepsData timed out after 5000ms | warning | 2026-04-24T02:12:04Z | Needs manual review — BLE native timeout; `withNativeTimeout` already in place, expected behavior |
+
+### 2026-04-24 Notes
+- 3 issues active in last 24 h (out of 25 unresolved total).
+- **No auto-fixes applied today.**
+- **getBatteryLevel / getStepsData timeouts (7434372098, 7437886447):** Both fire from inside `withNativeTimeout`'s `setTimeout` reject callback in `JstyleService.ts`. The timeout mechanism is working correctly — the ring's native SDK did not resolve/reject within 5 s. These are BLE device-side conditions (ring out of range or busy), not code bugs. The subsequent `cancelPendingDataRequest()` call in `enqueueNativeCall` cleans up the native state. Consider suppressing these Sentry warnings if the ring subsequently reconnects successfully (i.e. gate `reportError` on a follow-up connection failure rather than every timeout).
+- **phaseColor worklet crash (7437906964) — FATAL:** `phaseColor` is a plain JS function being synchronously invoked on the UI thread inside a `useAnimatedStyle` animated style updater in `adenosine-detail.tsx`. Fix: add `'worklet';` as the first statement of the `phaseColor` function body. The file `app/detail/adenosine-detail.tsx` does not exist in the current repo checkout — this screen may be on a feature branch or was removed. **Requires manual investigation by the dev who owns the adenosine detail screen.**
+
 ## 2026-04-23
 
 | Issue ID | Title | Severity | First Seen | Action Taken |
