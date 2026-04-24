@@ -151,7 +151,20 @@
     "insight_none": "Your sleep is on target. Keep maintaining your consistent schedule to stay well-rested.",
     "insight_low": "You have a small sleep deficit. Adding 15–20 minutes of extra sleep tonight can help you catch up.",
     "insight_moderate": "Your sleep debt is building up. Try going to bed 30 minutes earlier this week to recover.",
-    "insight_high": "Significant sleep debt detected. Prioritize 9+ hours of sleep for the next few nights to support recovery."
+    "insight_high": "Significant sleep debt detected. Prioritize 9+ hours of sleep for the next few nights to support recovery.",
+    "chart_debt_title": "Running Sleep Debt",
+    "chart_debt_subtitle": "7-day rolling, last 30 nights",
+    "chart_overlap_title": "Sleep vs Target",
+    "chart_overlap_subtitle": "Last 7 nights",
+    "legend_actual": "Actual",
+    "legend_target": "Target",
+    "recommendation_title": "Sleep tonight",
+    "recommendation_extra": "+{{minutes}} min above target",
+    "rec_rationale_none": "No debt — stick to your usual target.",
+    "rec_rationale_maintain": "Small debt — a normal night keeps you on track.",
+    "rec_rationale_moderate": "Aim a bit longer tonight to chip away at your debt.",
+    "rec_rationale_aggressive": "Prioritize an early night — your debt is high.",
+    "tap_to_edit": "tap to edit"
   },
   "activity": {
     "title": "Activity",
@@ -571,7 +584,6 @@
   },
   "explainer": {
     "button_got_it": "Got it",
-
     "lbl_poor": "Poor",
     "lbl_fair": "Fair",
     "lbl_good": "Good",
@@ -594,7 +606,6 @@
     "lbl_fever": "Fever",
     "lbl_cold": "Cold",
     "lbl_warm": "Warm",
-
     "recovery_score_title": "Recovery Score",
     "recovery_score_subtitle": "How ready your body is today",
     "recovery_score_body": "Recovery score combines HRV, resting heart rate, sleep quality, and body temperature to estimate how well your body recovered overnight. A high score means you can push hard today. A low score suggests prioritizing rest.",
@@ -602,7 +613,6 @@
     "recovery_score_range_1": "65–84 → Good: normal training",
     "recovery_score_range_2": "40–64 → Fair: moderate effort",
     "recovery_score_range_3": "0–39 → Poor: rest day",
-
     "sleep_score_title": "Sleep Score",
     "sleep_score_subtitle": "Overall quality of last night's sleep",
     "sleep_score_body": "Sleep score reflects total sleep duration, time in each stage (deep, REM, light), sleep consistency, and restlessness. It ranges from 0–100 and gives you a single number to gauge how restorative your sleep was.",
@@ -610,7 +620,6 @@
     "sleep_score_range_1": "65–84 → Good",
     "sleep_score_range_2": "40–64 → Fair",
     "sleep_score_range_3": "0–39 → Poor",
-
     "strain_title": "Strain",
     "strain_subtitle": "Cumulative cardiovascular load over the last 7 days",
     "strain_body": "Strain reflects your accumulated training load over the past 7 days, not just today. Recent days carry more weight (EWMA), so a hard workout echoes forward while rest lets it fade gradually. Balancing strain against your recovery score helps avoid overtraining.",
@@ -618,7 +627,6 @@
     "strain_range_1": "25–49 → Moderate",
     "strain_range_2": "50–74 → Strenuous",
     "strain_range_3": "75–100 → All Out",
-
     "readiness_title": "Readiness",
     "readiness_subtitle": "Balance of recent strain vs. recovery",
     "readiness_body": "Readiness combines your recent training load with overnight recovery to estimate whether your body is prepared for intense effort. It acts as a guide for how aggressively to push workouts or activities today.",
@@ -626,7 +634,6 @@
     "readiness_range_1": "65–84 → Ready",
     "readiness_range_2": "40–64 → Moderate",
     "readiness_range_3": "0–39 → Rest advised",
-
     "sleep_duration_title": "Sleep Duration",
     "sleep_duration_subtitle": "Total time asleep last night",
     "sleep_duration_body": "Sleep duration is the total time you spent asleep, not just in bed. Adults generally need 7–9 hours. Consistently sleeping less than 6 hours raises health risks, while over 10 hours may indicate illness or excessive fatigue.",
@@ -634,7 +641,6 @@
     "sleep_duration_range_1": "6–7 hrs → Below optimal",
     "sleep_duration_range_2": "7–9 hrs → Recommended",
     "sleep_duration_range_3": "> 9 hrs → Extended",
-
     "sleep_deep_title": "Sleep Stages",
     "sleep_deep_subtitle": "Deep, REM, light, and awake time",
     "sleep_deep_body": "Your sleep cycles through light, deep (slow-wave), and REM stages. Deep sleep restores the body physically; REM consolidates memory and emotion. Light sleep bridges the transitions. Awake time should be minimal.",
@@ -642,25 +648,21 @@
     "sleep_deep_range_1": "REM: ~20–25% of total",
     "sleep_deep_range_2": "Light: ~50–60% of total",
     "sleep_deep_range_3": "Awake: <5% ideal",
-
     "sleep_rem_title": "REM Sleep",
     "sleep_rem_subtitle": "Memory consolidation & emotional reset",
     "sleep_rem_body": "REM (Rapid Eye Movement) sleep is when most dreaming occurs. It plays a critical role in memory formation, creativity, and emotional regulation. Adults typically spend 20–25% of the night in REM across 4–5 cycles.",
     "sleep_rem_range_0": "< 15% → Low",
     "sleep_rem_range_1": "15–25% → Normal",
     "sleep_rem_range_2": "> 25% → High (unusual)",
-
     "sleep_light_title": "Light Sleep",
     "sleep_light_subtitle": "Transitional restorative sleep",
     "sleep_light_body": "Light sleep (N1 and N2 stages) accounts for about half your night. It helps consolidate memories and is a transition into deeper sleep. While less restorative than deep sleep, it is a necessary part of healthy sleep architecture.",
-
     "sleep_awake_title": "Time Awake",
     "sleep_awake_subtitle": "Interruptions during the night",
     "sleep_awake_body": "Brief awakenings are normal — you may wake briefly dozens of times without remembering. More than 5% of your sleep window spent awake can reduce overall sleep quality and indicate restlessness or disturbances.",
     "sleep_awake_range_0": "< 5% of sleep → Normal",
     "sleep_awake_range_1": "5–10% → Slightly elevated",
     "sleep_awake_range_2": "> 10% → Disrupted",
-
     "resting_hr_title": "Resting Heart Rate",
     "resting_hr_subtitle": "Beats per minute while at rest",
     "resting_hr_body": "Resting heart rate (RHR) is the number of times your heart beats per minute while you're at rest. Lower RHR generally indicates better cardiovascular fitness. An elevated RHR can signal stress, illness, or insufficient recovery.",
@@ -668,15 +670,12 @@
     "resting_hr_range_1": "50–60 bpm → Excellent",
     "resting_hr_range_2": "60–80 bpm → Normal",
     "resting_hr_range_3": "> 80 bpm → Elevated",
-
     "live_hr_title": "Live Heart Rate",
     "live_hr_subtitle": "Real-time beats per minute",
     "live_hr_body": "Live heart rate measures your heart rate in real time using your device's optical sensor. Use this during a workout warm-up, after waking, or to check stress levels. Values vary significantly with activity, stress, and body position.",
-
     "daily_hr_title": "Heart Rate Through the Day",
     "daily_hr_subtitle": "Hourly heart rate pattern",
     "daily_hr_body": "This chart shows how your heart rate changed throughout the day. Peaks typically coincide with activity or stress, while valleys reflect rest and recovery. Consistent, predictable patterns suggest good cardiovascular health.",
-
     "hrv_sdnn_title": "HRV — SDNN",
     "hrv_sdnn_subtitle": "Heart rate variability (Standard Deviation)",
     "hrv_sdnn_body": "Heart Rate Variability (HRV) measures the variation in time between heartbeats. Higher HRV generally indicates better recovery, resilience to stress, and cardiovascular fitness. SDNN is the most common HRV metric from wearables.",
@@ -684,14 +683,12 @@
     "hrv_sdnn_range_1": "20–50 ms → Low–moderate",
     "hrv_sdnn_range_2": "50–100 ms → Good",
     "hrv_sdnn_range_3": "> 100 ms → Excellent",
-
     "spo2_title": "Blood Oxygen (SpO2)",
     "spo2_subtitle": "Oxygen saturation in your blood",
     "spo2_body": "SpO2 (blood oxygen saturation) measures the percentage of hemoglobin in your blood that is carrying oxygen. Healthy adults typically read 95–100%. Values below 90% may indicate a medical concern.",
     "spo2_range_0": "95–100% → Normal",
     "spo2_range_1": "90–94% → Slightly low",
     "spo2_range_2": "< 90% → Seek medical attention",
-
     "respiratory_title": "Respiratory Rate",
     "respiratory_subtitle": "Breaths per minute while sleeping",
     "respiratory_body": "Respiratory rate is how many breaths you take per minute during sleep. It's calculated from your device's heart rate sensor. A normal resting rate is 12–20 breaths per minute. Elevated rates can indicate illness, stress, or sleep apnea.",
@@ -699,7 +696,6 @@
     "respiratory_range_1": "12–20 bpm → Normal",
     "respiratory_range_2": "20–25 bpm → Elevated",
     "respiratory_range_3": "> 25 bpm → High",
-
     "body_temp_title": "Body Temperature",
     "body_temp_subtitle": "Skin temperature relative to baseline",
     "body_temp_body": "Your device measures wrist skin temperature, which correlates with core body temperature. Deviations from your personal baseline of ±0.5°C are normal; deviations greater than 1–2°C may indicate fever, illness, or hormonal shifts.",
@@ -707,7 +703,6 @@
     "body_temp_range_1": "36.1–37.2°C → Normal range",
     "body_temp_range_2": "37.3–38°C → Low-grade fever",
     "body_temp_range_3": "> 38°C → Fever",
-
     "steps_title": "Active Calories",
     "steps_subtitle": "Energy burned through movement",
     "steps_body": "Active calories (also called exercise calories) are the calories your body burns beyond its basal metabolic rate due to physical movement. The daily goal of 500–700 kcal is a good target for general health and body composition.",
@@ -715,7 +710,6 @@
     "steps_range_1": "200–400 kcal → Lightly active",
     "steps_range_2": "400–700 kcal → Active",
     "steps_range_3": "> 700 kcal → Very active",
-
     "calorie_deficit_title": "Calorie Deficit",
     "calorie_deficit_subtitle": "Calories burned vs. consumed",
     "calorie_deficit_body": "Calorie deficit shows the gap between energy consumed (food) and energy expended (metabolism + activity). A moderate deficit of 200–500 kcal/day supports gradual, sustainable fat loss. Avoid large deficits — they impair recovery and muscle maintenance.",
@@ -723,11 +717,9 @@
     "calorie_deficit_range_1": "200–500 deficit → Moderate cut",
     "calorie_deficit_range_2": "< 200 either side → Maintenance",
     "calorie_deficit_range_3": "> 200 surplus → Building",
-
     "sleep_trend_7d_title": "7-Day Sleep Trend",
     "sleep_trend_7d_subtitle": "Your sleep pattern over the past week",
     "sleep_trend_7d_body": "The 7-day trend shows your sleep score each night over the past week. Consistency matters as much as individual nights — irregular schedules disrupt your circadian rhythm, which affects energy, mood, and metabolic health.",
-
     "sleep_debt_title": "Sleep Debt",
     "sleep_debt_subtitle": "Accumulated sleep deficit over 7 days",
     "sleep_debt_body": "Sleep debt is the total amount of sleep you've missed compared to your target over the past 7 nights. Unlike a bank account, you can't 'pre-sleep' — surplus sleep on one night doesn't cancel out deficit from another. Chronic sleep debt impairs cognition, mood, immune function, and athletic performance.",
@@ -735,7 +727,6 @@
     "sleep_debt_range_1": "30 min – 2h → Low: minor deficit",
     "sleep_debt_range_2": "2h – 5h → Moderate: prioritize sleep",
     "sleep_debt_range_3": "> 5h → High: recovery sleep needed",
-
     "score_breakdown_title": "Score Breakdown",
     "score_breakdown_subtitle": "Baseline-relative scores, not fixed thresholds",
     "score_breakdown_body": "Each bar shows a component score (0–100) calibrated to your personal 14-day rolling baseline. A score of 50 means you're exactly at your norm — above 50 is better than usual, below 50 is lower than usual.\n\nHRV carries the most weight (35%) because it's the most sensitive signal of autonomic recovery. Sleep quality (25%) and resting HR (20%) follow. When Strava is connected, training load (20%) is added and the remaining weights are re-normalized around it.\n\n40ms HRV isn't bad in isolation — what matters is whether it's above or below your personal average. Population norms vary widely by age and fitness level.",
@@ -743,26 +734,21 @@
     "score_breakdown_range_1": "Sleep Quality (25%) — ring score + hours vs your norm",
     "score_breakdown_range_2": "Resting HR (20%) — overnight HR vs your personal average",
     "score_breakdown_range_3": "Training Load (20%) — Strava 7-day acute vs 28-day chronic ratio",
-
     "contributor_hrv_title": "HRV Balance",
     "contributor_hrv_subtitle": "Recent HRV trend vs. your baseline",
     "contributor_hrv_body": "HRV Balance compares your recent (3-day) HRV to your longer-term baseline. A positive balance means your HRV is trending above average — a sign of good recovery accumulation. Negative balance indicates recent stress or under-recovery.",
-
     "contributor_rhr_title": "Resting HR Trend",
     "contributor_rhr_subtitle": "Today's resting HR vs. your personal average",
     "contributor_rhr_body": "This contributor compares today's resting heart rate to your 30-day baseline. A resting HR that is 3+ bpm above normal often predicts reduced performance or early illness. Lower-than-normal RHR suggests excellent recovery.",
-
     "contributor_sleep_title": "Sleep Quality Score",
     "contributor_sleep_subtitle": "Efficiency and depth of last night's sleep",
     "contributor_sleep_body": "Sleep quality is a combined measure of sleep efficiency (time asleep ÷ time in bed), the proportion of deep + REM sleep, and the number of awakenings. It contributes to both recovery and readiness scores.",
-
     "contributor_temp_title": "Temperature Deviation",
     "contributor_temp_subtitle": "Skin temperature vs. your baseline",
     "contributor_temp_body": "Temperature deviation tracks how much your wrist temperature differs from your personal normal. Small fluctuations are expected. A sustained deviation above +1°C may indicate your body is fighting inflammation, infection, or experiencing hormonal changes.",
     "contributor_temp_range_0": "+/− 0.5°C → Normal variation",
     "contributor_temp_range_1": "+/− 0.5–1°C → Mild deviation",
     "contributor_temp_range_2": "> 1°C → Notable — monitor closely",
-
     "sleep_baseline_title": "Sleep Baseline",
     "sleep_baseline_subtitle": "Your 14-day average sleep quality tier",
     "sleep_baseline_body": "Sleep Baseline classifies your average nightly sleep score over the last 14 days into one of four tiers: Low (0–49), Developing (50–64), Good (65–79), and Optimal (80–100). Consistent sleep habits — same bedtime, enough duration, quality environment — gradually lift your tier over weeks.",
@@ -970,5 +956,56 @@
     "max_hr": "Max HR",
     "distance": "Distance",
     "view_full": "View full activity"
+  },
+  "adenosine": {
+    "title": "Adenosine",
+    "subtitle": "Circulating caffeine",
+    "phase": {
+      "pre": "Pre-window",
+      "open": "Open window",
+      "closed": "Window closed"
+    },
+    "metric": {
+      "total_today": "Total today",
+      "current_mg": "Right now",
+      "peak": "Peak today",
+      "clearance": "Clearance"
+    },
+    "preset": {
+      "espresso": "Espresso",
+      "coffee": "Coffee",
+      "flat_white": "Flat white",
+      "black_tea": "Black tea",
+      "green_tea": "Green tea",
+      "matcha": "Matcha",
+      "energy_drink": "Energy drink",
+      "soda": "Soda",
+      "custom": "Custom"
+    },
+    "log_drink": "Log a drink",
+    "log_another": "Log another",
+    "empty_hint": "Log your first drink to see your curve",
+    "empty_footer": "No caffeine logged today",
+    "today_heading": "Today's intake",
+    "delete_confirm": "Remove this drink?",
+    "delete_yes": "Remove",
+    "delete_cancel": "Cancel",
+    "insight": {
+      "no_drinks": "Log a drink to see your caffeine curve and safe intake window.",
+      "pre_window": "Adenosine still clearing. Best to wait until {{time}} before your first caffeine.",
+      "open_window": "Peak stimulant effect in ~{{min}} min. Last safe intake: {{lastSafe}}.",
+      "open_peaking": "Caffeine peaking now. Ride it — next safe window reopens at {{time}}.",
+      "closed_window": "Caffeine above sleep threshold. Avoid more for quality sleep tonight.",
+      "clearance_at": "Caffeine clears below sleep limit at {{time}}."
+    },
+    "log": {
+      "title": "Log a drink",
+      "name_label": "Name (optional)",
+      "name_placeholder": "e.g. Morning latte",
+      "mg_label": "Caffeine",
+      "mg_unit": "mg",
+      "time_label": "Time consumed",
+      "submit": "Log drink"
+    }
   }
 }

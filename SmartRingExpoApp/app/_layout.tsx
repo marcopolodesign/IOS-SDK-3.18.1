@@ -155,6 +155,7 @@ function RootLayout() {
           <Stack.Screen name="testing" />
           <Stack.Screen name="detail/sleep-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/heart-rate-detail" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/adenosine-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/hrv-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/spo2-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/temperature-detail" options={{ animation: 'slide_from_right' }} />

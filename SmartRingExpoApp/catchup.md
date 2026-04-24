@@ -4,6 +4,200 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-24: Adenosine Curve — Dynamic Y-Scale (curve always reaches the top)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Fixed the curve appearing tiny in the chart. The Y-axis was fixed at 400 mg but the effective peak (default 95 mg baseline) only reached ~24% of the chart height. Now the Y-scale is computed dynamically from the peak of the effective doses, so the curve always fills the chart. Minimum scale is 150 mg so the 100 mg sleep-limit line is always visible.
+
+**Files modified:**
+- `src/utils/caffeinePk.ts` — Added `peakMgForDoses(doses, timeStart, timeEnd)` helper that samples `totalMgAt` across the day and returns the peak value.
+- `src/components/home/CaffeineWindowCard.tsx` — Replaced fixed `Y_SCALE_MG = 400` constant with `yScale = max(ceil(peakMgForDoses(effectiveDoses)), 150)` computed via `useMemo`. `mgToY` now takes `yScale` as a parameter. Y-axis tick labels are dynamic: `[yScale, yScale/2, 0]`.
+- `app/detail/adenosine-detail.tsx` — Same dynamic `yScale` applied to `CaffeineCurveChart`: gridlines, sleep threshold, NOW dot, and curve path all use `mgToY(mg, yScale)`.
+
+**Key notes:**
+- With only the 95 mg default baseline: `yScale = 150`, curve peaks at ~63% height, sleep limit at 67%. Visual accurately shows that a single 95 mg coffee stays just under the sleep threshold.
+- When logged drinks push total above 150 mg: `yScale` equals the actual peak and the curve always reaches the chart top.
+- Y-axis labels update live as drinks are logged (e.g., 95 → 190 when a second coffee is added).
+
+---
+
+## 2026-04-24: Adenosine Curve — Always-Present Baseline + Superposition
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The adenosine curve now always shows a default baseline (wake time + 90 min, 95 mg) so it's never empty. When you log drinks they stack on top of that baseline via pharmacokinetic superposition — pushing the descending portion of the curve upward. Metrics (current mg, total today) still reflect only actual logged drinks, not the predicted baseline.
+
+**Files modified:**
+- `src/utils/caffeinePk.ts` — Added `DEFAULT_DOSE_MG = 95` constant and `withDefaultDose(loggedDoses, wakeHour)` helper that prepends a virtual 95 mg dose at `max(wakeHour + 1.5, 6.5)` to the logged dose array.
+- `src/components/home/CaffeineWindowCard.tsx` — Replaced `doses` with `effectiveDoses = withDefaultDose(doses, wakeHour)` for chart path, clearance hour, phase blocks, and NOW dot. `hasDoses` still uses raw `doses.length > 0` for the "log first drink" footer hint. Removed the `curvePath !== ''` guard since there's always a curve now.
+- `app/detail/adenosine-detail.tsx` — Added `effectiveDoses = withDefaultDose(doses, wakeHour)`, computes `clearHour` from `effectiveDoses`. `CaffeineCurveChart` receives `effectiveDoses`; `activePhase` derived from `effectiveDoses`. Headline current mg and MetricsGrid total/peak still come from logged `doses` only.
+
+**Key notes:**
+- Default dose intake hour is clamped to at least 6:30 AM so it never renders before the chart starts at 6 AM.
+- "Superposition" is the natural result of the linear PK model — each dose's contribution sums independently, so the baseline + logged drinks are just `totalMgAt(t, effectiveDoses)`.
+
+---
+
+## 2026-04-23: Fix Adenosine Detail — Worklet Crash (phaseColor on UI thread)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Fixed crash on opening the Adenosine Details screen. `phaseColor(activePhase)` was called directly inside a `useAnimatedStyle` worklet, which runs on the UI thread and cannot call non-worklet JS functions.
+
+**Files modified:**
+- `app/detail/adenosine-detail.tsx` — Moved `const pColor = phaseColor(activePhase)` to before the `useAnimatedStyle` calls (line 364). The worklet now closes over the pre-computed plain string `pColor` instead of calling the function on the UI thread. Also removed a stale `const pColor` declaration that had ended up after the JSX return.
+
+**Key notes:**
+- Root cause: any regular function called inside `useAnimatedStyle`/`useAnimatedScrollHandler` must be decorated `'worklet'` or its result must be pre-computed in JS before the hook runs.
+- The "adenosine curve broke" report was a consequence of the same crash — the screen never rendered, so the curve chart never appeared.
+
+---
+
+## 2026-04-23: Adenosine Log Sheet — Flat White + Scroll-Wheel Time Picker
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added "Flat White" to the drink presets (130 mg, double-ristretto-based) and replaced the ±15-min stepper for time input with a native-style 3-column scroll-wheel picker (hour / minute / AM·PM), implemented entirely in RN without extra dependencies.
+
+**Files modified:**
+- `src/utils/caffeinePk.ts` — Added `flat_white` preset (emoji ☕, 130 mg) between coffee and black_tea.
+- `src/components/home/LogDrinkSheet.tsx` — Added `WheelCol` (snap-scroll column with momentum + drag-end handlers, `selectedIndex` scroll-to effect) and `TimeWheelPicker` (3-column layout with selection highlight band). Replaced old stepper with `<TimeWheelPicker value={consumedAt} onChange={setConsumedAt} />`. Removed unused `formatDecimalHour` import.
+- `src/i18n/locales/en.json` + `es.json` — Added `adenosine.preset.flat_white` ("Flat white" / "Flat white").
+
+**Key notes:**
+- Wheel rows snap to `ROW_H = 44px` via `snapToInterval` + `decelerationRate="fast"`.
+- Both `onMomentumScrollEnd` and `onScrollEndDrag` fire `handleScrollEnd` so slow drags without a flick also commit the selection.
+- `useEffect` on `selectedIndex` calls `scrollTo` (animated after first mount, instant on mount) to keep the wheel in sync when external state changes (e.g., period switch flips the hour).
+- `nestedScrollEnabled` on each column allows gesture coexistence with the BottomSheetModal.
+- 9 presets (3×3 grid) still fit cleanly at `width: '30%'` tiles.
+
+---
+
+## 2026-04-23: SpO₂ Detail — HRDetail Structure (Gradient Zone + TrendBarChart)
+
+**Source:** Claude Code — Macbook Pro
+
+Rewrote `app/detail/spo2-detail.tsx` to match the HR/Temperature detail page structure.
+
+- **Gradient zone**: blue radial gradient (`#3B82F6` / `#1D4ED8`) with `DetailPageHeader` + 30-day `TrendBarChart`. Bars colored green/amber/red by level (≥95% / 90–94% / <90%). Dynamic scale compresses to actual data range (SpO2 clusters 95–100% so fixed 0–100 scale wastes space). Guide line drawn at 95% when it falls within the displayed range.
+- **Animated headline**: 72→36px avg SpO₂, label "% SpO₂", expanding quality badge + scroll-in chip, height 100→44px.
+- **Scatter chart**: rebuilt to match HR chart frame (self-contained SVG, PAD_LEFT y-axis, dashed guide lines, 95% threshold line + green band, hour labels). Removed `DetailChartContainer` wrapper.
+- **Layout**: insight → scatter chart → legend → MetricsGrid → stats rows.
+- **30-day history**: `useMetricHistory('spo2', { initialDays: 7, fullDays: 30 })`.
+- No personal baseline line — SpO₂ is absolute physiological (95%+ is universal normal).
+
+**File:** `app/detail/spo2-detail.tsx`
+
+---
+
+## 2026-04-23: Adenosine Details Page + Drink Logging + Real-Time Caffeine Curve
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Turned the static "Adenosine Window Clearance" home card into a live, personal caffeine model. Users can now log caffeinated drinks (espresso, coffee, tea, energy drinks, custom) and see a real-time multi-dose pharmacokinetic curve that updates on both the Home card and a new full Detail screen via Supabase Realtime. The detail screen mirrors the HRDetails template with a collapsing headline, 30-day trend bar chart, scrub-to-inspect curve, today's drink list, and a recommended safe intake window derived from wake time.
+
+**Files created:**
+- `supabase/migrations/20260423150000_caffeinated_drinks.sql` — New table with `user_id`, `drink_type`, `name`, `caffeine_mg`, `consumed_at`; RLS FOR ALL; Realtime publication added.
+- `src/utils/caffeinePk.ts` — Pure PK model utilities: `doseMgAt`, `totalMgAt`, `clearanceHour`, `recommendedWindow`, `buildMultiDoseCurvePath`, `CAFFEINE_PRESETS` (8 presets with default mg + emoji).
+- `src/hooks/useCaffeineTimeline.ts` — Supabase hook: loads today's entries, subscribes to Realtime postgres_changes, exposes `addDrink`/`deleteDrink`, computes `currentMg`, `peakMgToday`, `clearanceHour`.
+- `src/components/home/LogDrinkSheet.tsx` — `@gorhom/bottom-sheet` BottomSheetModal with preset grid (8 tiles), name input, mg stepper, ±15-min time stepper. Exposed via `forwardRef<LogDrinkSheetHandle>`.
+- `app/detail/adenosine-detail.tsx` — Full detail screen: green radial gradient zone + `TrendBarChart` (30-day mg totals), collapsing headline (current mg, phase badge), scrub-to-inspect PK curve chart with window band + sleep-limit dashed line, `MetricsGrid` (4 cells), today's drink list (long-press to delete), log-drink button.
+
+**Files modified:**
+- `src/components/home/CaffeineWindowCard.tsx` — Replaced hardcoded single-dose PK with `useCaffeineTimeline()` hook; multi-dose `buildMultiDoseCurvePath`; empty state when no drinks logged; wrapped in `Pressable` → `/detail/adenosine-detail`; chevron indicator; clearance label now computed live.
+- `src/services/SupabaseService.ts` — Added `insertCaffeineEntry`, `getCaffeineEntriesForRange`, `deleteCaffeineEntry`.
+- `src/types/supabase.types.ts` — Added `caffeinated_drinks` Row/Insert/Update; exported `CaffeinatedDrink`, `CaffeinatedDrinkInsert`.
+- `src/utils/time.ts` — Added `formatDecimalHour(hour: number | null): string` (shared by card, detail screen, log sheet; replaces 3 duplicate formatters).
+- `src/screens/home/OverviewTab.tsx` — Passes `wakeHour` derived from `sleep.wakeTime` to `CaffeineWindowCard`.
+- `app/_layout.tsx` — Registered `detail/adenosine-detail` route.
+- `src/i18n/locales/en.json` + `es.json` — Added full `adenosine.*` key group (30+ keys: phase labels, metric labels, preset names, log form, insight texts).
+
+**Key notes:**
+- PK model: linear absorption (45 min ramp) + exponential decay (5h half-life), multi-dose superposition (PK is linear). `clearanceHour` = first hour total mg drops below 100 mg sleep threshold.
+- Recommended window: `wakeHour + 1.5h → bedHour − 10.75h` (so 100 mg clears by bedtime). Default bedHour = 23.
+- Realtime: single `postgres_changes` subscription per hook instance; channel fires `load()` on any INSERT/UPDATE/DELETE.
+- 30-day trend: historical (past 29 days) loaded once on mount; today's aggregate derived from live `entries` state — no extra Supabase round-trips on each drink log.
+- Migration applied to remote via `npx supabase db push --include-all` (had to repair stale remote-only migration history entries 20260422 and 20260423 before push succeeded).
+- All OTA-eligible — no native changes.
+
+---
+
+## 2026-04-23: Sleep Debt Detail — Full Redesign (Line Charts + Tonight Recommendation)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Redesigned `sleep-debt-detail.tsx` to match the HR/Sleep detail page structure (gradient zone + collapsing headline + ScrollView scaffolding). Replaced the old segmented gauge + 7-bar chart with two new SVG line graphs and a computed "Sleep tonight" recommendation card. The screen now answers two questions at a glance: how is my debt trending over 30 nights, and how much should I sleep tonight to start recovering.
+
+**Files created:**
+- `src/components/detail/SleepDebtLine.tsx` — Main line chart: 30-night running sleep debt (7-day trailing window), monotone cubic path, gradient area fill, PanResponder scrub tooltip.
+- `src/components/detail/SleepVsTargetOverlay.tsx` — Two-line overlap chart for last 7 nights: actual sleep (accent color) vs target (dashed blue). Data-point circles color green if on/above target.
+- `src/components/detail/TonightRecommendationCard.tsx` — Glass card showing computed nightly recommendation: target + debt/3 nights, capped at +90 min, max 10h.
+
+**Files modified:**
+- `app/detail/sleep-debt-detail.tsx` — Full rewrite: gradient zone (dynamic color per debt category) with `TrendBarChart` showing 30-day nightly deficits; collapsing headline (72→28px) with category chip; ScrollView with insight → recommendation card → SleepDebtLine → SleepVsTargetOverlay → MetricsGrid → target edit row → small gauge recap.
+- `src/services/SleepDebtService.ts` — Extended `computeSleepDebt` to fetch 30 days (was 7); added `gradientForCategory`, `computeTonightRecommendation` (pure, exported); computes `last30`, `last7`, `tonight` on every call. Cache key bumped to `v2`.
+- `src/types/sleepDebt.types.ts` — Added `NightlyPoint`, `TonightRecommendation` interfaces; extended `SleepDebtState` with optional `last30?`, `last7?`, `tonight?`.
+- `src/utils/time.ts` — Added `formatSleepTime(minutes)` (compact: "1h 30m", omits zero-minute component). Replaces three duplicate inline formatters across the new components.
+- `src/i18n/locales/en.json` + `es.json` — Added 13 new `sleep_debt.*` keys: `chart_debt_title/subtitle`, `chart_overlap_title/subtitle`, `recommendation_title/extra`, `rec_rationale_none/maintain/moderate/aggressive`, `tap_to_edit`, `legend_actual/target`.
+
+**Key notes:**
+- Dynamic gradient: `none`→green, `low`→yellow, `moderate`→orange, `high`→red. Drives gradient zone, headline color, chart accent, and recommendation card value color.
+- Recovery algorithm: `target + min(90, debt/3)`, capped at 600 min (10h). Spread = 3 nights (Oura-like aggressive recovery).
+- Running debt = trailing 7-day sum of deficits at each nightly data point — line naturally drops after good sleep, rises after poor sleep.
+- Old 7-bar chart removed; `SleepDebtGauge` kept as a small demoted recap at the bottom.
+- All new components are OTA-eligible — no native changes.
+
+---
+
+## 2026-04-23: Body Temperature Detail — Fix Bar Height (Dynamic Scale)
+
+**Source:** Claude Code — Macbook Pro
+
+Fixed TrendBarChart bars appearing too low on the body temperature detail page. Root cause: the fixed `minValue=35 / maxValue=38.5` scale is too wide for body temperature, which clusters in a ~0.3–0.8°C range — all bars rendered at ~40% height and looked identical.
+
+Fix: compute `chartMinVal` / `chartMaxVal` dynamically from the actual 30-day temp data (`min - 0.2°C` to `max + 0.3°C`), with a minimum 0.8°C span enforced. This compresses the scale to the data's actual range so variation between days is visually clear.
+
+**File:** `app/detail/temperature-detail.tsx`
+
+---
+
+## 2026-04-23: Body Temperature Detail — HRDetail Structure + Personal Baseline Chart
+
+**Source:** Claude Code — Macbook Pro
+
+Rewrote `app/detail/temperature-detail.tsx` to match the Heart Rate detail page structure, and updated the intra-day chart to anchor readings to the user's personal 30-day baseline instead of the hardcoded 36.1–37.2°C population range.
+
+**Layout changes (matches HRDetail):**
+- Gradient zone at top (orange/amber radial gradient): contains `DetailPageHeader` + scrollable `TrendBarChart` spanning 30 days of daily avg temperature.
+- Animated collapsing headline (72→36px font) with status badge (expands below number) and scroll-in chip on the right. Height collapses from 100→44px as user scrolls.
+- ScrollView body: insight prose → intra-day line chart → MetricsGrid → stats rows.
+
+**Chart changes:**
+- Removed hardcoded "normal band" (36.1–37.2°C).
+- Added personal baseline: 30-day unweighted mean of `dayData.avg` across all days in `useMetricHistory`, excluding the currently viewed day. Returns `null` if fewer than 3 days have data.
+- Chart draws a dashed white baseline line at the personal mean + faint tinted ±0.3°C tolerance band.
+- Dot coloring: green (within ±0.3°C of baseline), red (above), blue (below). Falls back to NORMAL_LOW/HIGH for new users.
+- Area gradient fill under the readings line (orange, HR-style).
+
+**Status logic pivot:** "Normal / Elevated / Low" now based on deviation from personal baseline (±0.3°C threshold), not population range. Falls back to population range when baseline is null.
+
+**TrendBarChart enhancement:** Added optional `minValue` prop (default `0`) so narrow-range metrics like temperature (35–38.5°C) scale correctly. Bars, trend path, and guide lines all use `(v - minValue) / (maxValue - minValue)` scaling. Backwards-compatible — HR and other consumers unaffected.
+
+**Files modified:**
+- `app/detail/temperature-detail.tsx` (full rewrite)
+- `src/components/detail/TrendBarChart.tsx` (additive `minValue` prop)
+
+---
+
+## 2026-04-22: TestFlight 1.0.30 (build 31)
+
+**Source:** Claude Code — Macbook Pro
+
+Bumped version to 1.0.30 (build 31) and uploaded to App Store Connect via TestFlight. No code changes in this session — version bump only.
+
+---
+
 ## 2026-04-22: X6 Ring — Route to Jstyle/X3 SDK
 
 **Source:** Claude Code — Macbook Pro

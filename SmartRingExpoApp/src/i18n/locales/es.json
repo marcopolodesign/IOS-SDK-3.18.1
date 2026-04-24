@@ -151,7 +151,20 @@
     "insight_none": "Tu sueño está en objetivo. Sigue manteniendo tu horario constante para estar bien descansado.",
     "insight_low": "Tienes un pequeño déficit de sueño. Añadir 15–20 minutos extra esta noche puede ayudarte a recuperarte.",
     "insight_moderate": "Tu deuda de sueño se está acumulando. Intenta acostarte 30 minutos antes esta semana para recuperarte.",
-    "insight_high": "Deuda de sueño significativa detectada. Prioriza 9+ horas de sueño las próximas noches para apoyar la recuperación."
+    "insight_high": "Deuda de sueño significativa detectada. Prioriza 9+ horas de sueño las próximas noches para apoyar la recuperación.",
+    "chart_debt_title": "Deuda de sueño acumulada",
+    "chart_debt_subtitle": "Promedio 7 días, últimas 30 noches",
+    "chart_overlap_title": "Sueño vs objetivo",
+    "chart_overlap_subtitle": "Últimas 7 noches",
+    "legend_actual": "Real",
+    "legend_target": "Objetivo",
+    "recommendation_title": "Duerme esta noche",
+    "recommendation_extra": "+{{minutes}} min sobre el objetivo",
+    "rec_rationale_none": "Sin deuda — mantén tu horario habitual.",
+    "rec_rationale_maintain": "Deuda pequeña — una noche normal te mantiene en camino.",
+    "rec_rationale_moderate": "Intenta dormir un poco más esta noche para reducir tu deuda.",
+    "rec_rationale_aggressive": "Prioriza acostarte temprano — tu deuda de sueño es alta.",
+    "tap_to_edit": "toca para editar"
   },
   "sleep_baseline": {
     "title": "Línea Base de Sueño",
@@ -585,7 +598,6 @@
   },
   "explainer": {
     "button_got_it": "Entendido",
-
     "lbl_poor": "Malo",
     "lbl_fair": "Regular",
     "lbl_good": "Bueno",
@@ -608,7 +620,6 @@
     "lbl_fever": "Fiebre",
     "lbl_cold": "Frío",
     "lbl_warm": "Cálido",
-
     "recovery_score_title": "Puntuación de Recuperación",
     "recovery_score_subtitle": "Qué tan preparado está tu cuerpo hoy",
     "recovery_score_body": "La puntuación de recuperación combina VFC, frecuencia cardíaca en reposo, calidad del sueño y temperatura corporal para estimar qué tan bien se recuperó tu cuerpo durante la noche. Una puntuación alta significa que puedes esforzarte hoy. Una puntuación baja sugiere priorizar el descanso.",
@@ -616,7 +627,6 @@
     "recovery_score_range_1": "65–84 → Bueno: entrenamiento normal",
     "recovery_score_range_2": "40–64 → Regular: esfuerzo moderado",
     "recovery_score_range_3": "0–39 → Malo: día de descanso",
-
     "sleep_score_title": "Puntuación de Sueño",
     "sleep_score_subtitle": "Calidad general del sueño de anoche",
     "sleep_score_body": "La puntuación de sueño refleja la duración total, el tiempo en cada fase (profundo, REM, ligero), la consistencia y el movimiento. Va de 0 a 100 y te da un número para evaluar qué tan reparador fue tu sueño.",
@@ -624,7 +634,6 @@
     "sleep_score_range_1": "65–84 → Bueno",
     "sleep_score_range_2": "40–64 → Regular",
     "sleep_score_range_3": "0–39 → Malo",
-
     "strain_title": "Esfuerzo",
     "strain_subtitle": "Carga cardiovascular acumulada de los últimos 7 días",
     "strain_body": "El esfuerzo refleja la carga de entrenamiento acumulada en los últimos 7 días, no solo el día de hoy. Los días más recientes tienen mayor peso (EWMA), por lo que un entrenamiento intenso se proyecta hacia adelante mientras que el descanso lo reduce gradualmente. Equilibrar el esfuerzo con la recuperación ayuda a evitar el sobreentrenamiento.",
@@ -632,7 +641,6 @@
     "strain_range_1": "25–49 → Moderado",
     "strain_range_2": "50–74 → Intenso",
     "strain_range_3": "75–100 → Máximo",
-
     "readiness_title": "Preparación",
     "readiness_subtitle": "Equilibrio entre el esfuerzo reciente y la recuperación",
     "readiness_body": "La preparación combina tu carga de entrenamiento reciente con la recuperación nocturna para estimar si tu cuerpo está listo para un esfuerzo intenso. Es una guía de qué tan agresivamente entrenar hoy.",
@@ -640,7 +648,6 @@
     "readiness_range_1": "65–84 → Listo",
     "readiness_range_2": "40–64 → Moderado",
     "readiness_range_3": "0–39 → Descanso recomendado",
-
     "sleep_duration_title": "Duración del Sueño",
     "sleep_duration_subtitle": "Tiempo total dormido anoche",
     "sleep_duration_body": "La duración del sueño es el tiempo total que pasaste dormido, no solo en cama. Los adultos generalmente necesitan 7–9 horas. Dormir menos de 6 horas de forma constante aumenta los riesgos de salud, mientras que más de 10 horas puede indicar enfermedad o fatiga excesiva.",
@@ -648,7 +655,6 @@
     "sleep_duration_range_1": "6–7 h → Por debajo del óptimo",
     "sleep_duration_range_2": "7–9 h → Recomendado",
     "sleep_duration_range_3": "> 9 h → Extendido",
-
     "sleep_deep_title": "Fases del Sueño",
     "sleep_deep_subtitle": "Profundo, REM, ligero y tiempo despierto",
     "sleep_deep_body": "Tu sueño pasa por fases ligeras, profundas (ondas lentas) y REM. El sueño profundo restaura el cuerpo físicamente; el REM consolida la memoria y las emociones. El sueño ligero sirve de transición. El tiempo despierto debe ser mínimo.",
@@ -656,25 +662,21 @@
     "sleep_deep_range_1": "REM: ~20–25% del total",
     "sleep_deep_range_2": "Ligero: ~50–60% del total",
     "sleep_deep_range_3": "Despierto: <5% ideal",
-
     "sleep_rem_title": "Sueño REM",
     "sleep_rem_subtitle": "Consolidación de memoria y reinicio emocional",
     "sleep_rem_body": "El sueño REM (Movimiento Rápido de Ojos) es cuando ocurren la mayoría de los sueños. Juega un papel crítico en la formación de la memoria, la creatividad y la regulación emocional. Los adultos suelen pasar el 20–25% de la noche en REM.",
     "sleep_rem_range_0": "< 15% → Bajo",
     "sleep_rem_range_1": "15–25% → Normal",
     "sleep_rem_range_2": "> 25% → Alto (inusual)",
-
     "sleep_light_title": "Sueño Ligero",
     "sleep_light_subtitle": "Sueño restaurador de transición",
     "sleep_light_body": "El sueño ligero (fases N1 y N2) representa aproximadamente la mitad de la noche. Ayuda a consolidar memorias y sirve de transición al sueño profundo. Aunque menos restaurador, es necesario para una arquitectura de sueño saludable.",
-
     "sleep_awake_title": "Tiempo Despierto",
     "sleep_awake_subtitle": "Interrupciones durante la noche",
     "sleep_awake_body": "Los despertares breves son normales — puedes despertar brevemente decenas de veces sin recordarlo. Más del 5% de tu ventana de sueño despierto puede reducir la calidad general del sueño e indicar inquietud.",
     "sleep_awake_range_0": "< 5% del sueño → Normal",
     "sleep_awake_range_1": "5–10% → Ligeramente elevado",
     "sleep_awake_range_2": "> 10% → Interrumpido",
-
     "resting_hr_title": "Frecuencia Cardíaca en Reposo",
     "resting_hr_subtitle": "Latidos por minuto en reposo",
     "resting_hr_body": "La frecuencia cardíaca en reposo (FCR) es el número de veces que late tu corazón por minuto en reposo. Una FCR más baja generalmente indica mejor salud cardiovascular. Una FCR elevada puede indicar estrés, enfermedad o recuperación insuficiente.",
@@ -682,15 +684,12 @@
     "resting_hr_range_1": "50–60 ppm → Excelente",
     "resting_hr_range_2": "60–80 ppm → Normal",
     "resting_hr_range_3": "> 80 ppm → Elevado",
-
     "live_hr_title": "Frecuencia Cardíaca en Vivo",
     "live_hr_subtitle": "Latidos por minuto en tiempo real",
     "live_hr_body": "La frecuencia cardíaca en vivo mide tu ritmo cardíaco en tiempo real usando el sensor óptico del dispositivo. Úsala durante el calentamiento, al despertar o para revisar niveles de estrés. Los valores varían significativamente con la actividad, el estrés y la posición corporal.",
-
     "daily_hr_title": "Frecuencia Cardíaca Durante el Día",
     "daily_hr_subtitle": "Patrón horario de frecuencia cardíaca",
     "daily_hr_body": "Este gráfico muestra cómo cambió tu frecuencia cardíaca durante el día. Los picos suelen coincidir con actividad o estrés, mientras que los valles reflejan descanso y recuperación. Patrones consistentes y predecibles sugieren buena salud cardiovascular.",
-
     "hrv_sdnn_title": "VFC — SDNN",
     "hrv_sdnn_subtitle": "Variabilidad de frecuencia cardíaca (Desviación estándar)",
     "hrv_sdnn_body": "La Variabilidad de Frecuencia Cardíaca (VFC) mide la variación en el tiempo entre latidos. Una VFC más alta generalmente indica mejor recuperación, resiliencia al estrés y buena condición cardiovascular. El SDNN es la métrica de VFC más común en wearables.",
@@ -698,14 +697,12 @@
     "hrv_sdnn_range_1": "20–50 ms → Baja–moderada",
     "hrv_sdnn_range_2": "50–100 ms → Buena",
     "hrv_sdnn_range_3": "> 100 ms → Excelente",
-
     "spo2_title": "Oxígeno en Sangre (SpO2)",
     "spo2_subtitle": "Saturación de oxígeno en tu sangre",
     "spo2_body": "SpO2 (saturación de oxígeno en sangre) mide el porcentaje de hemoglobina que transporta oxígeno. Los adultos sanos suelen leer 95–100%. Valores por debajo del 90% pueden indicar un problema médico.",
     "spo2_range_0": "95–100% → Normal",
     "spo2_range_1": "90–94% → Ligeramente bajo",
     "spo2_range_2": "< 90% → Busca atención médica",
-
     "respiratory_title": "Frecuencia Respiratoria",
     "respiratory_subtitle": "Respiraciones por minuto mientras duermes",
     "respiratory_body": "La frecuencia respiratoria es cuántas respiraciones tomas por minuto durante el sueño. Se calcula desde el sensor de frecuencia cardíaca del dispositivo. Un rango normal en reposo es 12–20 respiraciones por minuto. Tasas elevadas pueden indicar enfermedad, estrés o apnea del sueño.",
@@ -713,7 +710,6 @@
     "respiratory_range_1": "12–20 rpm → Normal",
     "respiratory_range_2": "20–25 rpm → Elevada",
     "respiratory_range_3": "> 25 rpm → Alta",
-
     "body_temp_title": "Temperatura Corporal",
     "body_temp_subtitle": "Temperatura cutánea relativa a tu línea base",
     "body_temp_body": "Tu dispositivo mide la temperatura de la muñeca, que se correlaciona con la temperatura corporal central. Las desviaciones de ±0.5°C de tu base personal son normales; desviaciones mayores de 1–2°C pueden indicar fiebre, enfermedad o cambios hormonales.",
@@ -721,7 +717,6 @@
     "body_temp_range_1": "36.1–37.2°C → Rango normal",
     "body_temp_range_2": "37.3–38°C → Fiebre leve",
     "body_temp_range_3": "> 38°C → Fiebre",
-
     "steps_title": "Calorías Activas",
     "steps_subtitle": "Energía quemada por el movimiento",
     "steps_body": "Las calorías activas son las que tu cuerpo quema más allá de la tasa metabólica basal debido al movimiento físico. La meta diaria de 500–700 kcal es un buen objetivo para la salud general y la composición corporal.",
@@ -729,7 +724,6 @@
     "steps_range_1": "200–400 kcal → Ligeramente activo",
     "steps_range_2": "400–700 kcal → Activo",
     "steps_range_3": "> 700 kcal → Muy activo",
-
     "calorie_deficit_title": "Déficit Calórico",
     "calorie_deficit_subtitle": "Calorías quemadas vs. consumidas",
     "calorie_deficit_body": "El déficit calórico muestra la diferencia entre la energía consumida (comida) y la gastada (metabolismo + actividad). Un déficit moderado de 200–500 kcal/día apoya una pérdida de grasa gradual y sostenible. Evita déficits grandes — perjudican la recuperación y el mantenimiento muscular.",
@@ -737,11 +731,9 @@
     "calorie_deficit_range_1": "200–500 déficit → Corte moderado",
     "calorie_deficit_range_2": "< 200 en cualquier lado → Mantenimiento",
     "calorie_deficit_range_3": "> 200 superávit → Volumen",
-
     "sleep_trend_7d_title": "Tendencia de Sueño de 7 Días",
     "sleep_trend_7d_subtitle": "Tu patrón de sueño en la última semana",
     "sleep_trend_7d_body": "La tendencia de 7 días muestra tu puntuación de sueño cada noche de la semana pasada. La consistencia importa tanto como las noches individuales — los horarios irregulares alteran el ritmo circadiano, afectando energía, humor y salud metabólica.",
-
     "sleep_debt_title": "Deuda de Sueño",
     "sleep_debt_subtitle": "Déficit de sueño acumulado en 7 días",
     "sleep_debt_body": "La deuda de sueño es la cantidad total de sueño que has perdido en comparación con tu objetivo en las últimas 7 noches. A diferencia de una cuenta bancaria, no puedes 'pre-dormir' — el sueño extra de una noche no cancela el déficit de otra. La deuda crónica de sueño afecta la cognición, el ánimo, la inmunidad y el rendimiento deportivo.",
@@ -749,7 +741,6 @@
     "sleep_debt_range_1": "30 min – 2h → Baja: déficit menor",
     "sleep_debt_range_2": "2h – 5h → Moderada: prioriza el sueño",
     "sleep_debt_range_3": "> 5h → Alta: necesitas sueño de recuperación",
-
     "score_breakdown_title": "Desglose de Puntuación",
     "score_breakdown_subtitle": "Puntuaciones relativas a tu línea base personal",
     "score_breakdown_body": "Cada barra muestra una puntuación de componente (0–100) calibrada con tu línea base personal de los últimos 14 días. Una puntuación de 50 significa que estás exactamente en tu norma — por encima de 50 es mejor de lo habitual, por debajo es menor.\n\nLa VFC tiene el mayor peso (35%) porque es la señal más sensible de recuperación autonómica. La calidad del sueño (25%) y la FC en reposo (20%) siguen. Cuando Strava está conectado, la carga de entrenamiento (20%) se añade y los pesos restantes se renormalizan.\n\n40ms de VFC no es malo por sí solo — lo que importa es si está por encima o por debajo de tu promedio personal.",
@@ -757,26 +748,21 @@
     "score_breakdown_range_1": "Calidad de Sueño (25%) — puntuación + horas vs tu norma",
     "score_breakdown_range_2": "FC en Reposo (20%) — FC nocturna vs tu promedio personal",
     "score_breakdown_range_3": "Carga de Entrenamiento (20%) — ratio agudo 7 días vs crónico 28 días en Strava",
-
     "contributor_hrv_title": "Equilibrio de VFC",
     "contributor_hrv_subtitle": "Tendencia reciente de VFC vs. tu línea base",
     "contributor_hrv_body": "El equilibrio de VFC compara tu VFC reciente (3 días) con tu línea base a largo plazo. Un equilibrio positivo significa que tu VFC está por encima del promedio — señal de buena acumulación de recuperación. Un equilibrio negativo indica estrés reciente o sub-recuperación.",
-
     "contributor_rhr_title": "Tendencia de FC en Reposo",
     "contributor_rhr_subtitle": "FC en reposo de hoy vs. tu promedio personal",
     "contributor_rhr_body": "Este factor compara la frecuencia cardíaca en reposo de hoy con tu línea base de 30 días. Una FCR 3+ ppm por encima de lo normal a menudo predice rendimiento reducido o enfermedad temprana. Una FCR por debajo de lo normal sugiere excelente recuperación.",
-
     "contributor_sleep_title": "Puntuación de Calidad del Sueño",
     "contributor_sleep_subtitle": "Eficiencia y profundidad del sueño de anoche",
     "contributor_sleep_body": "La calidad del sueño es una medida combinada de la eficiencia del sueño (tiempo dormido ÷ tiempo en cama), la proporción de sueño profundo + REM, y el número de despertares. Contribuye tanto a las puntuaciones de recuperación como de preparación.",
-
     "contributor_temp_title": "Desviación de Temperatura",
     "contributor_temp_subtitle": "Temperatura cutánea vs. tu línea base",
     "contributor_temp_body": "La desviación de temperatura rastrea cuánto difiere la temperatura de tu muñeca de tu normal personal. Las pequeñas fluctuaciones son esperadas. Una desviación sostenida de más de +1°C puede indicar que tu cuerpo está combatiendo inflamación, infección o cambios hormonales.",
     "contributor_temp_range_0": "+/− 0.5°C → Variación normal",
     "contributor_temp_range_1": "+/− 0.5–1°C → Desviación leve",
     "contributor_temp_range_2": "> 1°C → Notable — monitorea de cerca",
-
     "sleep_baseline_title": "Línea Base de Sueño",
     "sleep_baseline_subtitle": "Tu nivel de calidad de sueño promedio de 14 días",
     "sleep_baseline_body": "La Línea Base de Sueño clasifica tu puntuación de sueño nocturna promedio en los últimos 14 días en uno de cuatro niveles: Bajo (0–49), En Desarrollo (50–64), Bueno (65–79) y Óptimo (80–100). Los hábitos de sueño consistentes — misma hora de acostarse, duración suficiente, buen ambiente — elevan tu nivel gradualmente.",
@@ -970,5 +956,56 @@
     "max_hr": "FC Máx.",
     "distance": "Distancia",
     "view_full": "Ver actividad completa"
+  },
+  "adenosine": {
+    "title": "Adenosina",
+    "subtitle": "Cafeína circulante",
+    "phase": {
+      "pre": "Pre-ventana",
+      "open": "Ventana abierta",
+      "closed": "Ventana cerrada"
+    },
+    "metric": {
+      "total_today": "Total hoy",
+      "current_mg": "Ahora mismo",
+      "peak": "Pico hoy",
+      "clearance": "Eliminación"
+    },
+    "preset": {
+      "espresso": "Espresso",
+      "coffee": "Café",
+      "flat_white": "Flat white",
+      "black_tea": "Té negro",
+      "green_tea": "Té verde",
+      "matcha": "Matcha",
+      "energy_drink": "Energizante",
+      "soda": "Gaseosa",
+      "custom": "Personalizado"
+    },
+    "log_drink": "Registrar bebida",
+    "log_another": "Registrar otra",
+    "empty_hint": "Registrá tu primera bebida para ver tu curva",
+    "empty_footer": "Sin cafeína registrada hoy",
+    "today_heading": "Consumo de hoy",
+    "delete_confirm": "¿Eliminar esta bebida?",
+    "delete_yes": "Eliminar",
+    "delete_cancel": "Cancelar",
+    "insight": {
+      "no_drinks": "Registrá una bebida para ver tu curva de cafeína y la ventana óptima.",
+      "pre_window": "La adenosina aún se está limpiando. Esperá hasta las {{time}} para tu primera cafeína.",
+      "open_window": "Efecto estimulante máximo en ~{{min}} min. Último consumo seguro: {{lastSafe}}.",
+      "open_peaking": "Cafeína en pico ahora. La próxima ventana segura se abre a las {{time}}.",
+      "closed_window": "Cafeína sobre el umbral de sueño. Evitá más para dormir bien esta noche.",
+      "clearance_at": "La cafeína baja del umbral de sueño a las {{time}}."
+    },
+    "log": {
+      "title": "Registrar bebida",
+      "name_label": "Nombre (opcional)",
+      "name_placeholder": "ej. Café mañanero",
+      "mg_label": "Cafeína",
+      "mg_unit": "mg",
+      "time_label": "Hora de consumo",
+      "submit": "Registrar"
+    }
   }
 }

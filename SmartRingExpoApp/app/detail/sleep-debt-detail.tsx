@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,34 +14,23 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
+import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
+import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
+import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
+import { SleepDebtGauge } from '../../src/components/home/SleepDebtGauge';
+import { TonightRecommendationCard } from '../../src/components/detail/TonightRecommendationCard';
+import { SleepDebtLine } from '../../src/components/detail/SleepDebtLine';
+import { SleepVsTargetOverlay } from '../../src/components/detail/SleepVsTargetOverlay';
+import { useSleepDebt } from '../../src/hooks/useSleepDebt';
+import { gradientForCategory } from '../../src/services/SleepDebtService';
+import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
+import { formatSleepTime } from '../../src/utils/time';
 
 const COLLAPSE_END = 80;
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
-import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
-import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
-import { SleepDebtGauge } from '../../src/components/home/SleepDebtGauge';
-import { useSleepDebt } from '../../src/hooks/useSleepDebt';
-import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
-import type { SleepDebtCategory } from '../../src/types/sleepDebt.types';
 
-const CATEGORY_COLORS: Record<SleepDebtCategory, string> = {
-  none: '#4ADE80',
-  low: '#FFD700',
-  moderate: '#FF6B35',
-  high: '#FF4444',
-};
-
-const TARGET_PRESETS = [420, 450, 480, 510, 540]; // 7h, 7.5h, 8h, 8.5h, 9h
-
-function formatDebtTime(minutes: number): string {
-  if (minutes < 1) return '0m';
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
+const TARGET_PRESETS = [420, 450, 480, 510, 540];
 
 function formatAvgTime(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -49,40 +38,36 @@ function formatAvgTime(minutes: number): string {
   return `${h}h ${m.toString().padStart(2, '0')}m`;
 }
 
-function deficitColor(deficitMin: number): string {
-  if (deficitMin === 0) return '#4ADE80';
-  if (deficitMin <= 60) return '#FFD700';
-  return '#FF4444';
-}
-
-function getInsight(category: SleepDebtCategory, t: (key: string) => string): string {
-  return t(`sleep_debt.insight_${category}`);
-}
-
 export default function SleepDebtDetailScreen() {
-  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { sleepDebt, updateTarget } = useSleepDebt();
 
-  const catColor = CATEGORY_COLORS[sleepDebt.category];
+  const [gradStart, gradEnd] = useMemo(
+    () => gradientForCategory(sleepDebt.category),
+    [sleepDebt.category]
+  );
+  const accent = gradStart;
 
   const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.value = e.contentOffset.y; } });
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => { scrollY.value = e.contentOffset.y; },
+  });
+
   const numberAnimStyle = useAnimatedStyle(() => ({
-    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [56, 28], Extrapolation.CLAMP),
-    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [56, 28], Extrapolation.CLAMP),
-    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [catColor, '#FFFFFF']),
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [72, 28], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [80, 36], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [accent, '#FFFFFF']),
   }));
   const labelAnimStyle = useAnimatedStyle(() => ({
-    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [11, 11], Extrapolation.CLAMP),
-    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.5], [1, 0], Extrapolation.CLAMP),
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [14, 11], Extrapolation.CLAMP),
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.6], [1, 0], Extrapolation.CLAMP),
   }));
   const chipSlideStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
     opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
   }));
   const headlineHeightStyle = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [0, COLLAPSE_END], [90, 44], Extrapolation.CLAMP),
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [96, 44], Extrapolation.CLAMP),
   }));
 
   const handleEditTarget = () => {
@@ -100,160 +85,142 @@ export default function SleepDebtDetailScreen() {
     );
   };
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <DetailPageHeader title={t('sleep_debt.detail_title')} useSafeArea={false} />
+  const categoryLabel = t(`sleep_debt.category_${sleepDebt.category}`);
 
-      {/* Period label */}
-      <View style={styles.periodRow}>
-        <Text style={styles.periodLabel}>{t('sleep_debt.period_label')}</Text>
+  return (
+    <View style={styles.container}>
+      {/* Gradient zone: header only (no day selector) */}
+      <View style={styles.gradientZone}>
+        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <Defs>
+            <RadialGradient id="debtGrad1" cx="50%" cy="-80%" rx="80%" ry="280%">
+              <Stop offset="0%" stopColor={gradStart} stopOpacity={0.8} />
+              <Stop offset="60%" stopColor={gradStart} stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id="debtGrad2" cx="15%" cy="20%" rx="50%" ry="65%">
+              <Stop offset="0%" stopColor={gradEnd} stopOpacity={0.4} />
+              <Stop offset="100%" stopColor={gradEnd} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad1)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad2)" />
+        </Svg>
+
+        <DetailPageHeader title={t('sleep_debt.detail_title')} marginBottom={spacing.md} />
       </View>
 
-      {sleepDebt.isReady && (
-        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
-          <View style={styles.headlineLeft}>
-            <View style={styles.headlineRow}>
-              <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
-                {formatDebtTime(sleepDebt.totalDebtMin)}
-              </Reanimated.Text>
-              <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
-                {t('sleep_debt.card_title').toUpperCase()}
-              </Reanimated.Text>
-            </View>
+      {/* Collapsing headline */}
+      <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+        <View style={styles.headlineLeft}>
+          <View style={styles.headlineRow}>
+            <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
+              {formatSleepTime(sleepDebt.totalDebtMin)}
+            </Reanimated.Text>
+            <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+              {t('sleep_debt.card_title').toUpperCase()}
+            </Reanimated.Text>
           </View>
-          <View style={styles.chipRight}>
-            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${catColor}22`, borderColor: `${catColor}55` }]}>
-              <Text style={[styles.chipText, { color: catColor }]}>{t(`sleep_debt.category_${sleepDebt.category}`)}</Text>
-            </Reanimated.View>
-          </View>
-        </Reanimated.View>
-      )}
+        </View>
+        <View style={styles.chipRight}>
+          <Reanimated.View
+            style={[
+              styles.chip,
+              chipSlideStyle,
+              { backgroundColor: `${accent}22`, borderColor: `${accent}55` },
+            ]}
+          >
+            <Text style={[styles.chipText, { color: accent }]}>{categoryLabel}</Text>
+          </Reanimated.View>
+        </View>
+      </Reanimated.View>
 
       <Reanimated.ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         {!sleepDebt.isReady ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>{t('sleep_debt.not_enough_data', { count: 3 - sleepDebt.daysWithData })}</Text>
+            <Text style={styles.emptyText}>
+              {t('sleep_debt.not_enough_data', { count: 3 - sleepDebt.daysWithData })}
+            </Text>
+            <TouchableOpacity onPress={handleEditTarget} activeOpacity={0.7} style={styles.targetButton}>
+              <Text style={styles.targetButtonText}>{t('sleep_debt.edit_target')}</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
-
-            {/* Gauge */}
-            <View style={styles.gaugeWrapper}>
-              <SleepDebtGauge
-                totalDebtMin={sleepDebt.totalDebtMin}
-                category={sleepDebt.category}
-              />
+            {/* Insight */}
+            <View style={styles.insightBlock}>
+              <Text style={styles.insightText}>
+                {t(`sleep_debt.insight_${sleepDebt.category}`)}
+              </Text>
             </View>
 
-            {/* Stats */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow
-                title={t('sleep_debt.avg_label')}
-                value={formatAvgTime(sleepDebt.averageSleepMin)}
+            {/* Tonight recommendation */}
+            {sleepDebt.tonight && (
+              <TonightRecommendationCard
+                recommendedMin={sleepDebt.tonight.recommendedMin}
+                targetMin={sleepDebt.targetMin}
+                extraPerNight={sleepDebt.tonight.extraPerNight}
+                rationaleKey={sleepDebt.tonight.rationaleKey}
+                accent={accent}
               />
+            )}
+
+            {/* Main line chart: running sleep debt over 30 days */}
+            {(sleepDebt.last30 ?? []).length >= 2 && (
+              <View style={styles.chartSection}>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>{t('sleep_debt.chart_debt_title')}</Text>
+                  <Text style={styles.chartSubtitle}>{t('sleep_debt.chart_debt_subtitle')}</Text>
+                </View>
+                <SleepDebtLine
+                  points={sleepDebt.last30!}
+                />
+              </View>
+            )}
+
+            {/* Overlap chart: actual sleep vs recommended (last 7 nights) */}
+            {(sleepDebt.last7 ?? []).length >= 2 && (
+              <View style={styles.chartSection}>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>{t('sleep_debt.chart_overlap_title')}</Text>
+                  <Text style={styles.chartSubtitle}>{t('sleep_debt.chart_overlap_subtitle')}</Text>
+                </View>
+                <SleepVsTargetOverlay
+                  nights={sleepDebt.last7!}
+                />
+              </View>
+            )}
+
+            {/* Metrics grid */}
+            <MetricsGrid metrics={[
+              { label: t('sleep_debt.avg_label'), value: formatAvgTime(sleepDebt.averageSleepMin) },
+              { label: t('sleep_debt.target_label'), value: formatAvgTime(sleepDebt.targetMin), onPress: handleEditTarget },
+              { label: t('sleep_debt.days_tracked'), value: `${sleepDebt.daysWithData} / 7` },
+              { label: t('sleep_debt.total_debt'), value: formatSleepTime(sleepDebt.totalDebtMin), accent },
+            ]} />
+
+            {/* Target edit row */}
+            <View style={styles.statsContainer}>
               <TouchableOpacity onPress={handleEditTarget} activeOpacity={0.7}>
                 <DetailStatRow
                   title={t('sleep_debt.target_label')}
                   value={formatAvgTime(sleepDebt.targetMin)}
-                  unit="tap to edit"
+                  unit={t('sleep_debt.tap_to_edit')}
                 />
               </TouchableOpacity>
-              <DetailStatRow
-                title={t('sleep_debt.days_tracked')}
-                value={`${sleepDebt.daysWithData} / 7`}
-              />
-              <DetailStatRow
-                title={t('sleep_debt.total_debt')}
-                value={formatDebtTime(sleepDebt.totalDebtMin)}
-                accent={catColor}
-              />
             </View>
 
-            {/* Nightly Sleep Bar Chart */}
-            <View style={styles.chartCard}>
-              <Text style={styles.chartSectionTitle}>{t('sleep_debt.daily_breakdown')}</Text>
-              <View style={styles.chartArea}>
-                {/* Target line */}
-                {(() => {
-                  const sorted = sleepDebt.dailyDeficits.slice().sort((a, b) => a.date.localeCompare(b.date));
-                  const maxActual = Math.max(...sorted.map(d => d.actualMin), 0);
-                  const target = sleepDebt.targetMin;
-                  const ceiling = Math.max(target, maxActual) * 1.15;
-                  const targetPct = (target / ceiling) * 100;
-                  const targetH = Math.floor(target / 60);
-                  const targetM = Math.round(target % 60);
-                  const targetLabel = targetM === 0 ? `${targetH}h` : `${targetH}h ${targetM}m`;
-
-                  return (
-                    <>
-                      {/* Dashed target line */}
-                      <View style={[styles.targetLine, { bottom: `${targetPct}%` }]}>
-                        <View style={styles.targetDash} />
-                        <Text style={styles.targetLabel}>{targetLabel}</Text>
-                      </View>
-
-                      {/* Bars */}
-                      <View style={styles.barsRow}>
-                        {sorted.map((d) => {
-                          const barPct = d.actualMin > 0 ? (d.actualMin / ceiling) * 100 : 8;
-                          const hasData = d.actualMin > 0;
-                          const barColor = !hasData
-                            ? 'rgba(255,255,255,0.1)'
-                            : deficitColor(d.deficitMin);
-                          const ghostPct = hasData && d.deficitMin > 0
-                            ? (d.deficitMin / ceiling) * 100
-                            : 0;
-                          const dayDate = new Date(d.date + 'T12:00:00');
-                          const dayLabel = ['S', 'M', 'T', 'W', 'T', 'F', 'S'][dayDate.getDay()];
-
-                          return (
-                            <View key={d.date} style={styles.barColumn}>
-                              {/* Duration label */}
-                              <Text style={styles.barValueLabel}>
-                                {hasData ? formatAvgTime(d.actualMin) : '—'}
-                              </Text>
-                              {/* Bar + ghost container */}
-                              <View style={styles.barContainer}>
-                                {/* Ghost deficit segment */}
-                                {ghostPct > 0 && (
-                                  <View
-                                    style={[
-                                      styles.ghostSegment,
-                                      { height: `${ghostPct}%` },
-                                    ]}
-                                  />
-                                )}
-                                {/* Actual sleep bar */}
-                                <View
-                                  style={[
-                                    styles.sleepBar,
-                                    {
-                                      height: `${barPct}%`,
-                                      backgroundColor: barColor,
-                                    },
-                                  ]}
-                                />
-                              </View>
-                              {/* Day label */}
-                              <Text style={styles.barDayLabel}>{dayLabel}</Text>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </>
-                  );
-                })()}
-              </View>
-            </View>
-
-            {/* Insight */}
-            <View style={styles.insightBlock}>
-              <Text style={styles.insightText}>{getInsight(sleepDebt.category, t)}</Text>
+            {/* Gauge (small recap) */}
+            <View style={styles.gaugeRecap}>
+              <SleepDebtGauge
+                totalDebtMin={sleepDebt.totalDebtMin}
+                category={sleepDebt.category}
+              />
             </View>
           </>
         )}
@@ -264,46 +231,99 @@ export default function SleepDebtDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  periodRow: {
+  gradientZone: { overflow: 'hidden' },
+  headlineSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.xs,
+    overflow: 'hidden',
   },
-  periodLabel: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-  },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 60 },
-  emptyContainer: { alignItems: 'center', paddingTop: 80, paddingHorizontal: spacing.xl },
-  emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, textAlign: 'center' },
+  headlineLeft: { flex: 1, flexDirection: 'column', alignItems: 'flex-start' },
   headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  headlineScore: { fontSize: 56, fontFamily: fontFamily.regular, lineHeight: 64 },
-  headlineRight: { gap: spacing.xs },
+  headlineScore: { fontFamily: fontFamily.regular },
   headlineLabel: {
     color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
     fontFamily: fontFamily.regular,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+  chipRight: { overflow: 'hidden' },
+  chip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     borderWidth: 1,
     alignSelf: 'flex-start',
   },
-  badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold },
-  gaugeWrapper: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+  chipText: { fontSize: 11, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 60 },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  emptyText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+    textAlign: 'center',
+  },
+  targetButton: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  targetButtonText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  insightBlock: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.xs,
+  },
+  insightText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 16,
+    fontFamily: fontFamily.regular,
+    lineHeight: 24,
+  },
+  chartSection: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  chartTitle: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 14,
+    fontFamily: fontFamily.demiBold,
+  },
+  chartSubtitle: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 11,
+    fontFamily: fontFamily.regular,
   },
   statsContainer: {
     marginHorizontal: spacing.md,
@@ -311,106 +331,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: spacing.md,
-  },
-chartCard: {
-    marginHorizontal: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: spacing.md,
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  chartSectionTitle: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    fontFamily: fontFamily.regular,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: spacing.sm,
-  },
-  chartArea: {
-    height: 200,
-    position: 'relative',
-    paddingBottom: 24,
-  },
-  targetLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  targetDash: {
-    flex: 1,
-    height: 1,
-    borderStyle: 'dashed',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  targetLabel: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 10,
-    fontFamily: fontFamily.regular,
-    marginLeft: 4,
-  },
-  barsRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  barColumn: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  barValueLabel: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 9,
-    fontFamily: fontFamily.regular,
-    marginBottom: 4,
-  },
-  barContainer: {
-    width: 28,
-    flex: 1,
-    justifyContent: 'flex-end',
-    alignItems: 'stretch',
-  },
-  ghostSegment: {
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 6,
-    borderBottomWidth: 0,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  sleepBar: {
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    minHeight: 4,
-  },
-  barDayLabel: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-    fontFamily: fontFamily.regular,
-    marginTop: 6,
-  },
-  insightBlock: {
+  gaugeRecap: {
     marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
     marginBottom: spacing.lg,
-    padding: spacing.md,
-    backgroundColor: 'rgba(107,142,255,0.15)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(107,142,255,0.3)',
-  },
-  insightText: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: fontSize.sm,
-    fontFamily: fontFamily.regular,
-    lineHeight: 22,
+    transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }],
+    opacity: 0.7,
   },
 });

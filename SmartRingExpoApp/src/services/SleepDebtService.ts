@@ -1,16 +1,25 @@
 /**
- * SleepDebtService — pure calculation service for 7-day sleep debt.
+ * SleepDebtService — pure calculation service for sleep debt.
  * Pattern follows ReadinessService: no React, no BLE.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './SupabaseService';
-import type { SleepDebtCategory, DailyDeficit, SleepDebtState } from '../types/sleepDebt.types';
+import type {
+  SleepDebtCategory,
+  DailyDeficit,
+  SleepDebtState,
+  NightlyPoint,
+  TonightRecommendation,
+} from '../types/sleepDebt.types';
 
-const CACHE_KEY = 'sleep_debt_cache_v1';
+const CACHE_KEY = 'sleep_debt_cache_v3';
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_TARGET = 480;
 const MIN_NIGHTS = 3;
+const RECOVERY_NIGHTS = 3;
+const EXTRA_CAP = 90;       // never recommend > +1h30 above target
+const NIGHT_CEILING = 600;  // hard cap at 10h
 
 interface CachedSleepDebt {
   state: SleepDebtState;
@@ -39,7 +48,7 @@ export async function setSleepTarget(userId: string, minutes: number): Promise<v
     .eq('id', userId);
 }
 
-// ─── Category logic ────────────────────────────────────────────────────────────
+// ─── Category + gradient logic ─────────────────────────────────────────────────
 
 export function categorizeDebt(totalMin: number): SleepDebtCategory {
   if (totalMin < 30) return 'none';
@@ -48,17 +57,40 @@ export function categorizeDebt(totalMin: number): SleepDebtCategory {
   return 'high';
 }
 
+export function gradientForCategory(category: SleepDebtCategory): [string, string] {
+  switch (category) {
+    case 'none':     return ['#10B981', '#047857'];
+    case 'low':      return ['#FFD24D', '#D97706'];
+    case 'moderate': return ['#FB923C', '#C2410C'];
+    case 'high':     return ['#EF4444', '#991B1B'];
+  }
+}
+
 export function getRecoverySuggestionKey(category: SleepDebtCategory): string | null {
   switch (category) {
-    case 'none':
-      return null;
-    case 'low':
-      return 'sleep_debt.recovery_low';
-    case 'moderate':
-      return 'sleep_debt.recovery_moderate';
-    case 'high':
-      return 'sleep_debt.recovery_high';
+    case 'none':     return null;
+    case 'low':      return 'sleep_debt.recovery_low';
+    case 'moderate': return 'sleep_debt.recovery_moderate';
+    case 'high':     return 'sleep_debt.recovery_high';
   }
+}
+
+// ─── Tonight recommendation ────────────────────────────────────────────────────
+
+export function computeTonightRecommendation({
+  targetMin,
+  totalDebtMin,
+}: { targetMin: number; totalDebtMin: number }): TonightRecommendation {
+  const extraPerNight = Math.min(EXTRA_CAP, Math.round(totalDebtMin / RECOVERY_NIGHTS));
+  const recommendedMin = Math.min(NIGHT_CEILING, targetMin + extraPerNight);
+
+  let rationaleKey: string;
+  if (totalDebtMin < 30)       rationaleKey = 'sleep_debt.rec_rationale_none';
+  else if (extraPerNight < 20) rationaleKey = 'sleep_debt.rec_rationale_maintain';
+  else if (extraPerNight <= 45) rationaleKey = 'sleep_debt.rec_rationale_moderate';
+  else                          rationaleKey = 'sleep_debt.rec_rationale_aggressive';
+
+  return { recommendedMin, extraPerNight, rationaleKey };
 }
 
 // ─── Main computation ──────────────────────────────────────────────────────────
@@ -66,50 +98,73 @@ export function getRecoverySuggestionKey(category: SleepDebtCategory): string | 
 export async function computeSleepDebt(userId: string): Promise<SleepDebtState> {
   const targetMin = await getSleepTarget(userId);
 
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const cutoff = sevenDaysAgo.toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const cutoff = thirtyDaysAgo.toISOString().slice(0, 10);
 
   const { data: rows } = await (supabase
     .from('daily_summaries') as any)
     .select('date, sleep_total_min, nap_total_min')
     .eq('user_id', userId)
     .gte('date', cutoff)
-    .order('date', { ascending: false })
-    .limit(7);
+    .order('date', { ascending: true })
+    .limit(30);
 
-  const validRows = (rows ?? []).filter(
-    (r: any) => r.sleep_total_min != null && r.sleep_total_min > 0
-  );
+  const validRows: Array<{ date: string; sleep_total_min: number; nap_total_min: number | null }> =
+    (rows ?? []).filter(
+      (r: any) => r.sleep_total_min != null && r.sleep_total_min > 0
+    );
 
-  if (validRows.length < MIN_NIGHTS) {
+  // Compute NightlyPoint for each valid row with trailing 7-day running debt
+  // Pass 1: compute running debt at each point (needed to derive recommendedMin for the next point)
+  const runningDebts: number[] = validRows.map((r, i, arr) => {
+    const windowStart = Math.max(0, i - 6);
+    return arr.slice(windowStart, i + 1).reduce((sum, wr) => {
+      const a = wr.sleep_total_min + (wr.nap_total_min || 0);
+      return sum + Math.max(0, targetMin - a);
+    }, 0);
+  });
+
+  // Pass 2: build full NightlyPoint using prior-night running debt for recommendedMin
+  const last30: NightlyPoint[] = validRows.map((r, i) => {
+    const actualMin = r.sleep_total_min + (r.nap_total_min || 0);
+    const deficitMin = Math.max(0, targetMin - actualMin);
+    const runningDebtMin = runningDebts[i];
+    const priorDebt = i > 0 ? runningDebts[i - 1] : 0;
+    const recommendedMin = computeTonightRecommendation({ targetMin, totalDebtMin: priorDebt }).recommendedMin;
+    return { date: r.date, actualMin, targetMin, deficitMin, runningDebtMin, recommendedMin };
+  });
+
+  const last7 = last30.slice(-7);
+
+  if (last7.length < MIN_NIGHTS) {
     return {
       totalDebtMin: 0,
       averageSleepMin: 0,
       category: 'none',
       dailyDeficits: [],
       targetMin,
-      daysWithData: validRows.length,
+      daysWithData: last7.length,
       isReady: false,
       recoverySuggestionKey: null,
+      last30,
+      last7,
+      tonight: computeTonightRecommendation({ targetMin, totalDebtMin: 0 }),
     };
   }
 
-  // Naps reduce debt (Ultrahuman-style): add nap minutes to actual sleep
-  const dailyDeficits: DailyDeficit[] = validRows.map((r: any) => {
-    const actualMin = r.sleep_total_min + (r.nap_total_min || 0);
-    return {
-      date: r.date,
-      actualMin,
-      targetMin,
-      deficitMin: Math.max(0, targetMin - actualMin),
-    };
-  });
+  const dailyDeficits: DailyDeficit[] = last7.map(p => ({
+    date: p.date,
+    actualMin: p.actualMin,
+    targetMin: p.targetMin,
+    deficitMin: p.deficitMin,
+  }));
 
   const totalDebtMin = dailyDeficits.reduce((s, d) => s + d.deficitMin, 0);
   const totalSleep = dailyDeficits.reduce((s, d) => s + d.actualMin, 0);
   const averageSleepMin = Math.round(totalSleep / dailyDeficits.length);
   const category = categorizeDebt(totalDebtMin);
+  const tonight = computeTonightRecommendation({ targetMin, totalDebtMin });
 
   return {
     totalDebtMin,
@@ -120,6 +175,9 @@ export async function computeSleepDebt(userId: string): Promise<SleepDebtState> 
     daysWithData: dailyDeficits.length,
     isReady: true,
     recoverySuggestionKey: getRecoverySuggestionKey(category),
+    last30,
+    last7,
+    tonight,
   };
 }
 
