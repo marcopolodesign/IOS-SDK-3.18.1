@@ -21,6 +21,8 @@ export interface TrendBarChartProps {
   colorFn: (value: number) => string;
   /** Upper bound of the display range. Bars clamp to this. */
   maxValue: number;
+  /** Lower bound of the display range. Default: 0. Useful for narrow-range metrics like temperature. */
+  minValue?: number;
   /** Show numeric value label inside tall bars. Default: true. */
   showValueLabels?: boolean;
   /** Column width in px. Default: 38. */
@@ -46,6 +48,7 @@ export function TrendBarChart({
   onSelectDay,
   colorFn,
   maxValue,
+  minValue = 0,
   showValueLabels = true,
   colWidth = 38,
   barWidth = 28,
@@ -68,6 +71,8 @@ export function TrendBarChart({
   const maxBarH = chartHeight - padV * 2;
   const baseline = chartHeight - padV;
 
+  const denom = Math.max(1, maxValue - minValue);
+
   const { rawValues, dateLabels, trendPath, snapOffsets } = useMemo(() => {
     const rv = reversed.map(d => values.find(s => s.dateKey === d.dateKey)?.value ?? 0);
 
@@ -81,7 +86,8 @@ export function TrendBarChart({
       const avg = rollingAvg(rv, i);
       if (avg !== null) {
         const cx = i * colWidth + colWidth / 2;
-        const barH = (Math.min(avg, maxValue) / maxValue) * maxBarH;
+        const clamped = Math.max(minValue, Math.min(avg, maxValue));
+        const barH = ((clamped - minValue) / denom) * maxBarH;
         trendPts.push({ x: cx, y: baseline - barH });
       }
     });
@@ -92,7 +98,7 @@ export function TrendBarChart({
     );
 
     return { rawValues: rv, dateLabels: dl, trendPath: monotoneCubicPath(trendPts), snapOffsets: snaps };
-  }, [reversed, values, colWidth, maxValue, maxBarH, baseline, contentW]);
+  }, [reversed, values, colWidth, minValue, maxValue, denom, maxBarH, baseline, contentW]);
 
   useEffect(() => {
     const todayCenterX = todayColIndex * colWidth + colWidth / 2;
@@ -150,7 +156,7 @@ export function TrendBarChart({
             <G>
               {/* Optional guide lines */}
               {guideLines?.map(threshold => {
-                const lineY = baseline - (threshold / maxValue) * maxBarH;
+                const lineY = baseline - ((threshold - minValue) / denom) * maxBarH;
                 return (
                   <Line
                     key={threshold}
@@ -168,7 +174,8 @@ export function TrendBarChart({
               {/* Bars */}
               {reversed.map((d, i) => {
                 const v = rawValues[i];
-                const barH = Math.max(3, (Math.min(v, maxValue) / maxValue) * maxBarH);
+                const clamped = v <= 0 ? minValue : Math.max(minValue, Math.min(v, maxValue));
+                const barH = Math.max(3, ((clamped - minValue) / denom) * maxBarH);
                 const cx = i * colWidth + colWidth / 2;
                 const x = cx - barWidth / 2;
                 const y = baseline - barH;

@@ -201,7 +201,11 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
 
       {/* Caffeine Window */}
       <View style={styles.gradientCardSection}>
-        <CaffeineWindowCard />
+        <CaffeineWindowCard
+          wakeHour={sleep.wakeTime
+            ? sleep.wakeTime.getHours() + sleep.wakeTime.getMinutes() / 60
+            : undefined}
+        />
       </View>
 
       {/* Daily Chronology Timeline */}

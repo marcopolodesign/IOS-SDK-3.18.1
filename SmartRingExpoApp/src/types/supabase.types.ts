@@ -442,6 +442,35 @@ export interface Database {
           created_at?: string;
         };
       };
+      caffeinated_drinks: {
+        Row: {
+          id: string;
+          user_id: string;
+          drink_type: string;
+          name: string | null;
+          caffeine_mg: number;
+          consumed_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          drink_type: string;
+          name?: string | null;
+          caffeine_mg: number;
+          consumed_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          drink_type?: string;
+          name?: string | null;
+          caffeine_mg?: number;
+          consumed_at?: string;
+          created_at?: string;
+        };
+      };
       blood_pressure_readings: {
         Row: {
           id: string;
@@ -816,6 +845,8 @@ export type SpO2Reading = Database['public']['Tables']['spo2_readings']['Row'];
 export type HRVReading = Database['public']['Tables']['hrv_readings']['Row'];
 export type StressReading = Database['public']['Tables']['stress_readings']['Row'];
 export type TemperatureReading = Database['public']['Tables']['temperature_readings']['Row'];
+export type CaffeinatedDrink = Database['public']['Tables']['caffeinated_drinks']['Row'];
+export type CaffeinatedDrinkInsert = Database['public']['Tables']['caffeinated_drinks']['Insert'];
 export type BloodPressureReading = Database['public']['Tables']['blood_pressure_readings']['Row'];
 export type SportRecord = Database['public']['Tables']['sport_records']['Row'];
 export type StravaActivity = Database['public']['Tables']['strava_activities']['Row'];

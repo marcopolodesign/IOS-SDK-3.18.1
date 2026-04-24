@@ -1,3 +1,13 @@
+// Formats a decimal hour (e.g. 8.5 → "8:30 AM", null → "—")
+export function formatDecimalHour(hour: number | null): string {
+  if (hour === null) return '—';
+  const h   = Math.floor(hour) % 24;
+  const m   = Math.round((hour % 1) * 60);
+  const suf = h >= 12 ? 'PM' : 'AM';
+  const dh  = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${dh}:${String(m).padStart(2, '0')} ${suf}`;
+}
+
 /**
  * Formats a duration in minutes as "Xh Ym" (e.g. "7h 32m") or "Ym" when < 1 hour.
  */
@@ -5,6 +15,19 @@ export function formatDurationHm(totalMin: number): string {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
+ * Compact sleep/debt time format — omits zero-minute component.
+ * 0→"0m", 60→"1h", 90→"1h 30m", 30→"30m"
+ */
+export function formatSleepTime(minutes: number): string {
+  if (minutes < 1) return '0m';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 /**

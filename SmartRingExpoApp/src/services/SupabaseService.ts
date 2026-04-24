@@ -701,6 +701,60 @@ class SupabaseService {
     return data || [];
   }
 
+  // ============================================
+  // CAFFEINE DRINK OPERATIONS
+  // ============================================
+
+  async insertCaffeineEntry(entry: {
+    drink_type: string;
+    name?: string | null;
+    caffeine_mg: number;
+    consumed_at: string;
+  }): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('caffeinated_drinks').insert({
+      user_id: user.id,
+      ...entry,
+    });
+    if (error) {
+      console.error('[Supabase] insertCaffeineEntry error:', error);
+      reportError(error, { method: 'insertCaffeineEntry' });
+    }
+  }
+
+  async getCaffeineEntriesForRange(
+    startISO: string,
+    endISO: string,
+  ): Promise<Database['public']['Tables']['caffeinated_drinks']['Row'][]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    const { data, error } = await supabase
+      .from('caffeinated_drinks')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('consumed_at', startISO)
+      .lte('consumed_at', endISO)
+      .order('consumed_at', { ascending: true });
+    if (error) {
+      console.error('[Supabase] getCaffeineEntriesForRange error:', error);
+      reportError(error, { method: 'getCaffeineEntriesForRange' });
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async deleteCaffeineEntry(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('caffeinated_drinks')
+      .delete()
+      .eq('id', id);
+    if (error) {
+      console.error('[Supabase] deleteCaffeineEntry error:', error);
+      reportError(error, { method: 'deleteCaffeineEntry' });
+    }
+  }
+
   // Fire-and-forget remote debug log — never throws, never blocks sync
   debugLog(userId: string, event: string, payload: Record<string, any>): void {
     supabase.from('debug_logs' as any).insert({ user_id: userId, event, payload }).then();
