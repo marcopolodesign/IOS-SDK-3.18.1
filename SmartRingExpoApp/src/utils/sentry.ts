@@ -16,7 +16,9 @@ export function reportError(
   context?: ErrorContext,
   level: SeverityLevel = 'error',
 ): void {
-  const exception = error instanceof Error ? error : new Error(String(error));
+  const exception = error instanceof Error
+    ? error
+    : new Error((error as any)?.message || String(error));
   if (!context && level === 'error') {
     Sentry.captureException(exception);
     return;
