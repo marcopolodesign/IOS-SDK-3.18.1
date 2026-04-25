@@ -4,6 +4,127 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-25: Sleep Notification — Dedup Fix + Correct Duration in Push
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Fixed two bugs: (1) multiple "sleep ready" notifications firing in the same morning due to concurrent scheduling paths racing past the AsyncStorage dedup check, and (2) the 9 AM server push showing total sleep window duration (including awake) instead of actual sleep time.
+
+**Files modified:**
+- `src/services/BackgroundSleepTask.ts` — Added `_schedulingInProgress` in-memory mutex (synchronous guard before the first async read); replaced the cancel-loop with a fixed `identifier: 'focus_sleep_ready'` on `scheduleNotificationAsync` so any subsequent schedule call atomically replaces the pending notification
+- `supabase/functions/daily-summary-push/index.ts` — Added `deep_min, light_min, rem_min` to the morning session SELECT; compute `totalMin` from stage minutes (actual sleep) with `end_time - start_time` as fallback; deployed to production
+
+**Key notes:**
+- The server push was using `end_time - start_time` for the "You slept Xh Ym" body, which includes pre-sleep awake time in bed — now uses the same stage-sum calculation as the local notification
+- Fixed identifier means scheduling from background task, MorningSleepReconnect, and NewHomeScreen foreground path all converge to one pending notification — last writer wins, no stacking
+- `_schedulingInProgress` resets only if `scheduleSleepNotification` returns false (fire time past), so it stays locked for the rest of the day once scheduled — AsyncStorage handles cross-session persistence
+
+---
+
+## 2026-04-25: Adenosine — Huberman Window Timing + Phase Fix
+
+**Source:** Claude Code — Macbook Pro
+
+Three root-cause fixes for the broken phase windows:
+
+1. **`recommendedWindow` updated to Huberman protocol** (`src/utils/caffeinePk.ts`):
+   - Pre-window delay: `wakeHour + 1.5h` → `wakeHour + 2h` (120 min; Huberman: 90-120 min for cortisol peak to clear)
+   - Window close: `bedHour - 10.75h` → `bedHour - 8h` (Huberman: 8-10h before bed; pharmacokinetically ~25 mg remains — well below 100 mg threshold)
+
+2. **Phase zones now time-based, not dose-based** (both cover + detail):
+   - Root bug: `clearanceHour` was called on `effectiveDoses` (which includes a 95 mg default baseline dose). Since 95 mg < 100 mg `SLEEP_THRESHOLD_MG`, clearance was reported as immediate — making the "open" window only 45 min wide.
+   - Fix: `clearanceHour` now uses actual `doses` only. When no drinks are logged, `clearHour = null` and `win.end` is used as the fallback.
+   - `activePhase` is now purely time-based (`nowHour < win.start → pre`, `≤ openEnd → open`, else `closed`), not dependent on which doses are present.
+
+3. **Cover no longer shows phantom 95 mg curve** (`CaffeineWindowCard`):
+   - Removed `withDefaultDose` / `effectiveDoses` entirely from the cover.
+   - Curve renders only when real drinks are logged; empty state shows clean window zones with the 400 mg reference line.
+
+**Terminology:** "cover" = overview-tab card component; "detail" = full-screen page. Saved to CLAUDE.md + memory.
+
+**Files modified:** `src/utils/caffeinePk.ts`, `src/components/home/CaffeineWindowCard.tsx`, `app/detail/adenosine-detail.tsx`, `CLAUDE.md`
+
+---
+
+## 2026-04-24: Adenosine — Windows Use Actual Wake + Bed Time Per Day
+
+**Source:** Claude Code — Macbook Pro
+
+Both the overview card (`CaffeineWindowCard`) and the detail screen now derive the caffeine window from actual sleep data instead of hardcoded defaults.
+
+- **`OverviewTab.tsx`**: passes `bedHour` computed from `sleep.bedTime` to `CaffeineWindowCard`. Post-midnight bedtimes (hour < 6) are offset by +24 so the pharmacokinetic formula stays consistent.
+- **`adenosine-detail.tsx`**: replaces `bedHour = 23` with `homeData.lastNightSleep?.bedTime`, applying the same +24 offset for post-midnight values. Fixed the stale `[wakeHour]` dep in the `win` useMemo to include `bedHour`.
+
+**Files modified:** `src/screens/home/OverviewTab.tsx`, `app/detail/adenosine-detail.tsx`
+
+**Also fixed:** Supabase migration history orphan entries (`20260422`, `20260423`) repaired. Table `caffeinated_drinks` confirmed healthy (2 rows, correct schema + RLS). In-app "caffeine errors" were a Metro cache issue from component rewrites — clear cache with `npx expo start --clear`.
+
+---
+
+## 2026-04-24: Adenosine Detail — Bar Chart, Drink Markers, Y-Axis, Window Sync
+
+**Source:** Claude Code — Macbook Pro
+
+Rewrote the adenosine detail screen's main chart and supporting UI:
+
+1. **Overview card Y-axis fixed at 400mg** — `CaffeineWindowCard` now uses `MIN_Y_SCALE = MAX_CAFFEINE_MG (400)` so the curve is always shown relative to the 400mg tolerance ceiling, not scaled to the peak value.
+
+2. **Bar chart replaces line chart** — `CaffeineCurveChart` (line + drag-to-scrub) replaced with `CaffeineBarChart` showing PK-modeled caffeine per 30-min slot:
+   - Phase-colored bars (orange = pre-window, teal = open, red = closed)
+   - 2px floor bars at 18% opacity so the chart never appears empty with 0 caffeine
+   - Y-axis gridlines + labels at 100, 200, 300mg
+   - 400mg dashed tolerance line
+   - Now-line marker
+
+3. **Drink spike markers** — for each logged drink, a white dashed vertical line is drawn at the intake hour, and the drink's emoji is overlaid just above the spike via absolute positioning.
+
+4. **Window phase bar below chart** — the 3-segment phase indicator (pre/open/closed) from the overview card is reused below the bar chart, proportionally sized to the day's time ranges.
+
+5. **Drink suggestions** — below the phase bar, shows drinks from `CAFFEINE_PRESETS` that fit within the remaining caffeine budget (400 − currentMg). Closed window and limit-reached states show an empty state card. Border-only, no background.
+
+6. **Log button** — white background (`#FFFFFF`) + black text (`#000000`) per design rule.
+
+7. **Design rule documented** — "no background on components, borders only" added to CLAUDE.md Design Conventions + saved as feedback memory.
+
+8. **Simplify fixes** — removed unused imports (`ActivityIndicator`, `SLEEP_THRESHOLD_MG`), removed unused `isLoading` destructure, lifted `win`/`clearHour` computation to parent (eliminating duplicate `recommendedWindow`/`clearanceHour` calls in child components), collapsed duplicate `DrinkSuggestions` early-return branches, memoized `peak`/`yScale`.
+
+**Files modified:** `src/utils/caffeinePk.ts`, `src/components/home/CaffeineWindowCard.tsx`, `app/detail/adenosine-detail.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`, `CLAUDE.md`
+
+---
+
+## 2026-04-24: All Detail Screens — Full-Screen Gradient Background with Fade-to-Black
+
+**Source:** Claude Code — Macbook Pro
+
+Applied the gradient treatment from `spo2-detail` to all 7 remaining detail screens. Each screen's gradient SVG was moved from inside `gradientZone` (clipped by `overflow: hidden`) to a root-level absolute element (`gradientBg: position absolute, top 0, height 480`) that sits behind the header, bar chart, headline, and ScrollView.
+
+**Changes per screen:**
+- Radial gradient center shifted from `cy="-86%"` → `"-20%"` so the glow is visible inside the view
+- Primary gradient: `rx/ry` widened, opacity raised to 1.0, fade stop extended to 70%
+- Secondary gradient: `rx/ry` widened, opacity raised to 0.75
+- Added `LinearGradient` fade overlay (transparent @ 40% → `#0A0A0F` @ 100%) applied as third Rect
+- `gradientZone` style: removed `overflow: 'hidden'`
+- Added `gradientBg` style to each screen's StyleSheet
+- Added `LinearGradient` to SVG imports where missing (hrv, recovery, sleep-debt, adenosine)
+
+**Files modified:** `sleep-detail.tsx`, `heart-rate-detail.tsx`, `hrv-detail.tsx`, `adenosine-detail.tsx`, `temperature-detail.tsx`, `recovery-detail.tsx`, `sleep-debt-detail.tsx`
+
+---
+
+## 2026-04-24: SpO2 Detail Chart — Fix Green Background, White Dots, Extended History
+
+**Source:** Claude Code — Macbook Pro
+
+Three fixes to `app/detail/spo2-detail.tsx` and `src/hooks/useMetricHistory.ts`:
+
+1. **Removed green background** — Deleted the `<Rect fill="rgba(74,222,128,0.04)">` above the 95% threshold line in `SpO2LineChart`. The dashed green threshold line itself remains.
+2. **White dots** — Reading dots in the intra-day chart now use `fill="#FFFFFF"` instead of the per-value `spo2Color()` (green/amber/red).
+3. **Extended SpO2 history to 30 days** — `fetchSpO2History()` was hardcoded to `nDaysAgo(7)`. Added a `days` parameter (default 7) and updated the `spo2` switch case in `useMetricHistory` to pass `fullDays` (30), matching the 30-day bar chart range.
+
+**Files modified:** `app/detail/spo2-detail.tsx`, `src/hooks/useMetricHistory.ts`
+
+---
+
 ## 2026-04-24: Adenosine Curve — Dynamic Y-Scale (curve always reaches the top)
 
 **Source:** Claude Code — Macbook Pro

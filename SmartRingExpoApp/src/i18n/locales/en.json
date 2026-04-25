@@ -1006,6 +1006,10 @@
       "mg_unit": "mg",
       "time_label": "Time consumed",
       "submit": "Log drink"
-    }
+    },
+    "suggestions_heading": "What you can have now",
+    "suggestions_budget": "{{budget}}mg remaining in your daily budget",
+    "suggestions_none": "Window closed — skip caffeine for quality sleep tonight",
+    "suggestions_limit": "You're at your caffeine limit"
   }
 }

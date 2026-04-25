@@ -379,8 +379,8 @@ async function fetchHRVHistory(userId: string, days: number = 7): Promise<Map<st
 
 // ─── SpO2 history ─────────────────────────────────────────────────────────────
 
-async function fetchSpO2History(userId: string): Promise<Map<string, DaySpO2Data>> {
-  const since = nDaysAgo(7);
+async function fetchSpO2History(userId: string, days = 7): Promise<Map<string, DaySpO2Data>> {
+  const since = nDaysAgo(days);
   const { data, error } = await supabase
     .from('spo2_readings')
     .select('spo2, recorded_at')
@@ -811,7 +811,7 @@ export function useMetricHistory<T>(
             if (result.size === 0) result = await fetchHRVFromRing();
             break;
           case 'spo2':
-            result = await fetchSpO2History(user.id);
+            result = await fetchSpO2History(user.id, fullDays);
             if (result.size === 0) result = await fetchSpO2FromRing();
             break;
           case 'temperature':

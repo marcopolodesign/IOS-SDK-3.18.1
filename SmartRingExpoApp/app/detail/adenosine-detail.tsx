@@ -1,12 +1,14 @@
+// Design rule for this screen: NO background fills on components — borders only.
+// All cards, chart wrappers, and buttons use borderWidth + borderColor without backgroundColor.
+// Exception: logBtn uses white background (#FFFFFF) with black text per brand spec.
+
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
-  PanResponder,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import Reanimated, {
@@ -19,13 +21,12 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import Svg, {
   Defs,
+  LinearGradient,
   RadialGradient,
-  LinearGradient as SvgLinearGradient,
   Stop,
   Rect,
   Path,
   Line,
-  Circle,
   Text as SvgText,
 } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -41,9 +42,8 @@ import {
   totalMgAt,
   clearanceHour,
   recommendedWindow,
-  buildMultiDoseCurvePath,
-  withDefaultDose,
   peakMgForDoses,
+  MAX_CAFFEINE_MG,
   SLEEP_THRESHOLD_MG,
   CAFFEINE_PRESETS,
   type CaffeineDose,
@@ -55,219 +55,330 @@ const COLLAPSE_END = 80;
 const DAY_ENTRIES  = buildDayNavigatorLabels(30);
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHART_W = SCREEN_WIDTH - spacing.md * 2 - spacing.sm * 2;
-const CHART_H = 190;
 
-// ─── Chart geometry (matches CaffeineWindowCard) ─────────────────────────────
-const CHART_PAD_L  = 34;
-const CHART_PAD_R  = 8;
-const TIME_START   = 6;
-const TIME_END     = 23;
-const TIME_SPAN    = TIME_END - TIME_START;
-const CURVE_TOP_Y  = 12;
-const CURVE_BOT_Y  = 90;
-const MIN_Y_SCALE  = 150; // keeps 100 mg sleep-limit line always visible
+// ─── Bar chart geometry ───────────────────────────────────────────────────────
+const TIME_START  = 6;
+const TIME_END    = 23;
+const TIME_SPAN   = TIME_END - TIME_START;
+const TOTAL_BARS  = TIME_SPAN * 2; // 34 bars of 30 min each
 
-function mgToY(mg: number, yScale: number): number {
-  const conc = Math.min(mg / yScale, 1);
-  return CURVE_TOP_Y + (1 - conc) * (CURVE_BOT_Y - CURVE_TOP_Y);
-}
-
-function hToX(h: number): number {
-  return CHART_PAD_L + ((h - TIME_START) / TIME_SPAN) * (CHART_W - CHART_PAD_L - CHART_PAD_R);
-}
+const BAR_SVG_W   = SCREEN_WIDTH - spacing.md * 2;
+const BAR_CHART_H = 240;
+const BAR_PAD_L   = 40;
+const BAR_PAD_R   = 8;
+const BAR_PAD_T   = 28; // extra room for drink emoji labels above bars
+const BAR_PAD_B   = 4; // no time labels at bottom — phase bar acts as X axis
+const BAR_INNER_W = BAR_SVG_W - BAR_PAD_L - BAR_PAD_R;
+const BAR_INNER_H = BAR_CHART_H - BAR_PAD_T - BAR_PAD_B;
 
 function phaseColor(phase: 'pre' | 'open' | 'closed'): string {
   return phase === 'pre' ? '#FFAC3F' : phase === 'open' ? '#00D7A9' : '#FD8D8F';
-}
-
-function computeActivePhase(
-  doses: CaffeineDose[],
-  nowHour: number,
-  window: { start: number; end: number },
-  clearHour: number | null,
-): 'pre' | 'open' | 'closed' {
-  if (doses.length === 0) return 'pre';
-  const firstDoseHour = Math.min(...doses.map(d => d.intakeHour));
-  if (nowHour < firstDoseHour) return 'pre';
-  if (clearHour !== null && nowHour < clearHour) return 'open';
-  return 'closed';
 }
 
 function drinkEmoji(drinkType: string): string {
   return CAFFEINE_PRESETS.find(p => p.key === drinkType)?.emoji ?? '☕';
 }
 
-// ─── Inline curve chart with drag-to-scrub ────────────────────────────────────
-function CaffeineCurveChart({
+function topRoundedRect(x: number, y: number, w: number, h: number, r: number): string {
+  const cr = Math.min(r, w / 2, h);
+  return `M${x+cr},${y} L${x+w-cr},${y} Q${x+w},${y} ${x+w},${y+cr} L${x+w},${y+h} L${x},${y+h} L${x},${y+cr} Q${x},${y} ${x+cr},${y} Z`;
+}
+
+type BarEntry = { id: string; drink_type: string; name: string | null; consumed_at: string };
+
+// ─── Bar chart — PK-modeled caffeine per 30-min slot with Y-axis + drink markers
+function CaffeineBarChart({
   doses,
-  wakeHour,
-  bedHour,
+  entries,
+  win,
+  clearHour,
 }: {
   doses: CaffeineDose[];
-  wakeHour: number;
-  bedHour: number;
+  entries: BarEntry[];
+  win: { start: number; end: number };
+  clearHour: number | null;
 }) {
-  const [tooltip, setTooltip] = useState<{ x: number; hour: number; mg: number } | null>(null);
-  const layoutWidthRef = useRef(CHART_W);
-  const innerW = layoutWidthRef.current - CHART_PAD_L - CHART_PAD_R;
+  const openEnd = clearHour ?? win.end;
+  const slotW   = BAR_INNER_W / TOTAL_BARS;
+  const GAP     = 4;
 
-  const yScale = useMemo(
-    () => Math.max(Math.ceil(peakMgForDoses(doses)), MIN_Y_SCALE),
-    [doses],
-  );
+  const peak   = useMemo(() => peakMgForDoses(doses, TIME_START, TIME_END), [doses]);
+  const yScale = useMemo(() => Math.max(peak, MAX_CAFFEINE_MG), [peak]);
 
-  const curvePath = useMemo(
-    () => buildMultiDoseCurvePath(doses, innerW, CHART_PAD_L, TIME_START, TIME_END, CURVE_TOP_Y, CURVE_BOT_Y, yScale),
-    [doses, innerW, yScale],
-  );
+  const bars = useMemo(() => Array.from({ length: TOTAL_BARS }, (_, i) => {
+    const slotMid = TIME_START + i * 0.5 + 0.25;
+    const mg   = totalMgAt(slotMid, doses);
+    const barH = mg > 0 ? Math.max((mg / yScale) * BAR_INNER_H, 2) : 8; // 8px floor when empty
+    const x    = BAR_PAD_L + i * slotW + GAP / 2;
+    const y    = BAR_PAD_T + BAR_INNER_H - barH;
+    return { x, y, w: Math.max(slotW - GAP, 1), h: barH, dim: mg === 0 };
+  }), [doses, yScale]);
 
-  const window = useMemo(() => recommendedWindow(wakeHour, bedHour), [wakeHour, bedHour]);
-  const clearHour = useMemo(() => clearanceHour(doses), [doses]);
+  const line400Y = BAR_PAD_T + BAR_INNER_H - (MAX_CAFFEINE_MG / yScale) * BAR_INNER_H;
+  const sleepY   = BAR_PAD_T + BAR_INNER_H - (SLEEP_THRESHOLD_MG / yScale) * BAR_INNER_H;
+  const yTicks   = [200, 300]; // 100 = sleep threshold line; 400 = daily limit line
 
-  const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
-  const clampedNow = Math.max(TIME_START, Math.min(TIME_END, nowHour));
-  const nowMg = totalMgAt(clampedNow, doses);
+  const now    = new Date();
+  const nowHr  = now.getHours() + now.getMinutes() / 60;
+  const clamped = Math.max(TIME_START, Math.min(TIME_END, nowHr));
+  const nowX   = BAR_PAD_L + ((clamped - TIME_START) / TIME_SPAN) * BAR_INNER_W;
 
-  const windowX1 = hToX(Math.max(window.start, TIME_START));
-  const windowX2 = hToX(Math.min(window.end, TIME_END));
-
-  const panResponder = useMemo(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder:  () => true,
-      onPanResponderGrant: (e) => {
-        const x = e.nativeEvent.locationX;
-        const h = TIME_START + ((x - CHART_PAD_L) / innerW) * TIME_SPAN;
-        const clamped = Math.max(TIME_START, Math.min(TIME_END, h));
-        const mg = Math.round(totalMgAt(clamped, doses));
-        setTooltip({ x, hour: clamped, mg });
-      },
-      onPanResponderMove: (e) => {
-        const x = e.nativeEvent.locationX;
-        const h = TIME_START + ((x - CHART_PAD_L) / innerW) * TIME_SPAN;
-        const clamped = Math.max(TIME_START, Math.min(TIME_END, h));
-        const mg = Math.round(totalMgAt(clamped, doses));
-        setTooltip({ x, hour: clamped, mg });
-      },
-      onPanResponderRelease: () => setTooltip(null),
-      onPanResponderTerminate: () => setTooltip(null),
-    }),
-    [doses, innerW],
-  );
-
-  const tooltipX = tooltip
-    ? Math.max(4, Math.min(tooltip.x - 44, CHART_W - 92))
-    : 0;
-
-  const timeLabels = [
-    { label: '6AM',  h: 6 },
-    { label: '12PM', h: 12 },
-    { label: '3PM',  h: 15 },
-    { label: '11PM', h: 23 },
-  ];
+  // Precompute drink marker positions
+  const drinkMarkers = useMemo(() => entries.map(e => {
+    const h = new Date(e.consumed_at).getHours() + new Date(e.consumed_at).getMinutes() / 60;
+    if (h < TIME_START || h > TIME_END) return null;
+    const x      = BAR_PAD_L + ((h - TIME_START) / TIME_SPAN) * BAR_INNER_W;
+    const mgHere = totalMgAt(h + 0.25, doses);
+    const barTop = BAR_PAD_T + BAR_INNER_H - Math.max((mgHere / yScale) * BAR_INNER_H, 2);
+    return { id: e.id, x, emoji: drinkEmoji(e.drink_type), emojiLeft: x - 10, emojiTop: Math.max(barTop - 20, 2) };
+  }).filter(Boolean), [entries, doses, yScale]);
 
   return (
-    <View style={chartStyles.wrapper} {...panResponder.panHandlers}>
-      <Svg width={CHART_W} height={CHART_H}>
-        <Defs>
-          {/* Recommended window band */}
-          <SvgLinearGradient id="winBand" x1={0} y1={0} x2={0} y2={1}>
-            <Stop offset="0%"   stopColor="#00D7A9" stopOpacity={0.15} />
-            <Stop offset="100%" stopColor="#00D7A9" stopOpacity={0.04} />
-          </SvgLinearGradient>
-        </Defs>
-
-        {/* Recommended window band */}
-        {windowX2 > windowX1 && (
-          <Rect x={windowX1} y={CURVE_TOP_Y} width={windowX2 - windowX1}
-            height={CURVE_BOT_Y - CURVE_TOP_Y} fill="url(#winBand)" />
-        )}
-
-        {/* Y gridlines — dynamic labels based on yScale */}
-        {[yScale, Math.round(yScale / 2), 0].map(mg => (
-          <React.Fragment key={mg}>
-            <Line x1={CHART_PAD_L} y1={mgToY(mg, yScale)} x2={CHART_W - CHART_PAD_R} y2={mgToY(mg, yScale)}
-              stroke="rgba(255,255,255,0.07)" strokeWidth={1} strokeDasharray="2,4" />
-            <SvgText x={CHART_PAD_L - 4} y={mgToY(mg, yScale) + 4} fill="rgba(255,255,255,0.35)"
-              fontSize={9} fontFamily={fontFamily.regular} textAnchor="end">
-              {mg}
-            </SvgText>
-          </React.Fragment>
-        ))}
-        <SvgText x={2} y={CURVE_TOP_Y + 4} fill="rgba(255,255,255,0.25)"
-          fontSize={8} fontFamily={fontFamily.regular}>mg</SvgText>
-
-        {/* Sleep threshold dashed */}
-        <Line x1={CHART_PAD_L} y1={mgToY(SLEEP_THRESHOLD_MG, yScale)} x2={CHART_W - CHART_PAD_R} y2={mgToY(SLEEP_THRESHOLD_MG, yScale)}
-          stroke="rgba(253,141,143,0.6)" strokeWidth={1} strokeDasharray="4,4" />
-        <SvgText x={CHART_W - CHART_PAD_R} y={mgToY(SLEEP_THRESHOLD_MG, yScale) - 4}
-          fill="rgba(253,141,143,0.75)" fontSize={8} fontFamily={fontFamily.regular} textAnchor="end">
-          sleep limit
-        </SvgText>
-
-        {/* Drink dose markers */}
-        {doses.map((d, i) => (
-          <React.Fragment key={i}>
-            <Line x1={hToX(d.intakeHour)} y1={CURVE_TOP_Y} x2={hToX(d.intakeHour)} y2={CURVE_BOT_Y}
-              stroke="rgba(255,255,255,0.18)" strokeWidth={1} strokeDasharray="2,3" />
-          </React.Fragment>
-        ))}
-
-        {/* Clearance line */}
-        {clearHour !== null && clearHour <= TIME_END && (
-          <Line x1={hToX(clearHour)} y1={CURVE_TOP_Y} x2={hToX(clearHour)} y2={CURVE_BOT_Y}
-            stroke="rgba(253,141,143,0.4)" strokeWidth={1} strokeDasharray="3,3" />
-        )}
-
-        {/* Multi-dose curve */}
-        {curvePath !== '' && (
-          <Path d={curvePath} fill="none" stroke="white" strokeWidth={2.5}
-            strokeLinecap="round" strokeLinejoin="round" />
-        )}
-
-        {/* NOW line + dot */}
-        <Line x1={hToX(clampedNow)} y1={CURVE_TOP_Y} x2={hToX(clampedNow)} y2={mgToY(nowMg, yScale) - 10}
-          stroke="rgba(255,255,255,0.3)" strokeWidth={1} strokeDasharray="3,3" />
-        <Circle cx={hToX(clampedNow)} cy={mgToY(nowMg, yScale)} r={8}   fill="rgba(255,255,255,0.2)" />
-        <Circle cx={hToX(clampedNow)} cy={mgToY(nowMg, yScale)} r={4.5} fill="white" />
-
-        {/* Time axis */}
-        {timeLabels.map(({ label, h }) => (
-          <SvgText key={label} x={hToX(h) - (label.length > 4 ? 11 : 0)} y={CHART_H - 4}
-            fill="rgba(255,255,255,0.35)" fontSize={10} fontFamily={fontFamily.regular}>
-            {label}
+    <View style={barChartStyles.wrapper}>
+      <View>
+        <Svg width={BAR_SVG_W} height={BAR_CHART_H}>
+          {/* Y-axis labels at 200, 300 + "mg" at baseline */}
+          {yTicks.map(mg => {
+            const y = BAR_PAD_T + BAR_INNER_H - (mg / yScale) * BAR_INNER_H;
+            return (
+              <SvgText key={mg} x={BAR_PAD_L - 5} y={y + 4}
+                fill="rgba(255,255,255,0.45)" fontSize={12}
+                fontFamily={fontFamily.regular} textAnchor="end">
+                {mg}
+              </SvgText>
+            );
+          })}
+          <SvgText x={BAR_PAD_L - 5} y={BAR_PAD_T + BAR_INNER_H + 4}
+            fill="rgba(255,255,255,0.28)" fontSize={12}
+            fontFamily={fontFamily.regular} textAnchor="end">
+            mg
           </SvgText>
-        ))}
 
-        {/* Drag tooltip */}
-        {tooltip && (
-          <>
-            <Line x1={tooltip.x} y1={CURVE_TOP_Y} x2={tooltip.x} y2={CHART_H - 20}
-              stroke="rgba(255,255,255,0.35)" strokeWidth={1} />
-            <Rect x={tooltipX} y={2} width={88} height={28} rx={6}
-              fill="rgba(20,20,30,0.9)" stroke="rgba(255,255,255,0.15)" strokeWidth={1} />
-            <SvgText x={tooltipX + 44} y={21} fill="white" fontSize={12}
-              fontFamily={fontFamily.demiBold} textAnchor="middle">
-              {formatDecimalHour(tooltip.hour)} · {tooltip.mg}mg
-            </SvgText>
-          </>
-        )}
-      </Svg>
+          {/* 400mg label on left Y axis */}
+          <SvgText x={BAR_PAD_L - 5} y={line400Y + 4}
+            fill="rgba(255,255,255,0.45)" fontSize={12}
+            fontFamily={fontFamily.regular} textAnchor="end">
+            400mg
+          </SvgText>
+
+          {/* Bars — white, rounded top only, flat bottom */}
+          {bars.map((bar, i) => (
+            <Path key={i} d={topRoundedRect(bar.x, bar.y, bar.w, bar.h, 2)}
+              fill="#FFFFFF" opacity={bar.dim ? 0.15 : 0.85} />
+          ))}
+
+          {/* Drink intake marker lines */}
+          {drinkMarkers.map(m => m && (
+            <Line key={m.id}
+              x1={m.x} y1={BAR_PAD_T} x2={m.x} y2={BAR_PAD_T + BAR_INNER_H}
+              stroke="rgba(255,255,255,0.45)" strokeWidth={1.5} strokeDasharray="2,3" />
+          ))}
+
+          {/* Sleep threshold dashed line at 100mg */}
+          <Line x1={BAR_PAD_L} y1={sleepY} x2={BAR_SVG_W - BAR_PAD_R} y2={sleepY}
+            stroke="rgba(253,141,143,0.55)" strokeWidth={1} strokeDasharray="4,4" />
+          <SvgText x={BAR_SVG_W - BAR_PAD_R} y={sleepY - 4}
+            fill="rgba(253,141,143,0.7)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
+            sleep threshold
+          </SvgText>
+          <SvgText x={BAR_PAD_L - 5} y={sleepY + 4}
+            fill="rgba(253,141,143,0.6)" fontSize={12}
+            fontFamily={fontFamily.regular} textAnchor="end">
+            100
+          </SvgText>
+
+          {/* Daily limit dashed line at 400mg */}
+          <Line x1={BAR_PAD_L} y1={line400Y} x2={BAR_SVG_W - BAR_PAD_R} y2={line400Y}
+            stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4,4" />
+          <SvgText x={BAR_SVG_W - BAR_PAD_R} y={line400Y - 4}
+            fill="rgba(255,255,255,0.6)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
+            daily limit
+          </SvgText>
+
+          {/* Now line */}
+          <Line x1={nowX} y1={BAR_PAD_T} x2={nowX} y2={BAR_PAD_T + BAR_INNER_H}
+            stroke="rgba(255,255,255,0.3)" strokeWidth={1} strokeDasharray="2,3" />
+
+        </Svg>
+
+        {/* Drink emoji labels — absolute overlay above each spike */}
+        {drinkMarkers.map(m => m && (
+          <View key={m.id} style={[barChartStyles.emojiLabel, { left: m.emojiLeft, top: m.emojiTop }]}>
+            <Text style={barChartStyles.emojiText}>{m.emoji}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
 
-const chartStyles = StyleSheet.create({
-  wrapper: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
+const barChartStyles = StyleSheet.create({
+  wrapper:    { marginHorizontal: spacing.md, marginBottom: 0 }, // flush — phase bar is the X axis
+  emojiLabel: { position: 'absolute', width: 20, alignItems: 'center' },
+  emojiText:  { fontSize: 13 },
+});
+
+// ─── Window phase bar — pre-wake spacer + 3 colored phases + wake-time label ──
+function WindowPhaseBar({
+  win,
+  clearHour,
+  activePhase,
+  wakeHour,
+}: {
+  win: { start: number; end: number };
+  clearHour: number | null;
+  activePhase: 'pre' | 'open' | 'closed';
+  wakeHour: number;
+}) {
+  const openEnd = Math.min(clearHour ?? win.end, TIME_END);
+
+  // Transparent zone before wake, then the 3 real phases
+  const preWakeFrac = Math.max(0, (wakeHour - TIME_START) / TIME_SPAN);
+  const preFrac     = Math.max(0, (win.start - Math.max(wakeHour, TIME_START)) / TIME_SPAN);
+  const openFrac    = Math.max(0, (openEnd   - win.start) / TIME_SPAN);
+  const closedFrac  = Math.max(0, (TIME_END  - openEnd)   / TIME_SPAN);
+
+  return (
+    <View style={phaseBarStyles.outer}>
+      {/* Segments */}
+      <View style={phaseBarStyles.bars}>
+        {preWakeFrac > 0 && (
+          <View style={{ flex: preWakeFrac }} />
+        )}
+        {preFrac > 0 && (
+          <View style={[phaseBarStyles.segment, { flex: preFrac,
+            backgroundColor: activePhase === 'pre' ? '#FFAC3F' : 'rgba(255,172,63,0.35)' }]} />
+        )}
+        {openFrac > 0 && (
+          <View style={[phaseBarStyles.segment, { flex: openFrac,
+            backgroundColor: activePhase === 'open' ? '#00D7A9' : 'rgba(0,215,169,0.35)' }]} />
+        )}
+        {closedFrac > 0 && (
+          <View style={[phaseBarStyles.segment, { flex: closedFrac,
+            backgroundColor: activePhase === 'closed' ? '#FD8D8F' : 'rgba(253,141,143,0.35)' }]} />
+        )}
+      </View>
+
+      {/* Labels row */}
+      <View style={phaseBarStyles.labels}>
+        {preWakeFrac > 0 && <View style={{ flex: preWakeFrac }} />}
+        {preFrac > 0 && (
+          <View style={{ flex: preFrac }}>
+            {/* Sun icon + wake time at the start of the pre-window */}
+            <View style={phaseBarStyles.wakeTag}>
+              <Text style={phaseBarStyles.sunIcon}>☀</Text>
+              <Text style={phaseBarStyles.labelText}>{formatDecimalHour(wakeHour)}</Text>
+            </View>
+          </View>
+        )}
+        {openFrac > 0 && (
+          <View style={{ flex: openFrac }}>
+            <Text style={phaseBarStyles.labelText}>{formatDecimalHour(win.start)}</Text>
+          </View>
+        )}
+        {closedFrac > 0 && (
+          <View style={{ flex: closedFrac }}>
+            <Text style={phaseBarStyles.labelText}>{formatDecimalHour(openEnd)}</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const phaseBarStyles = StyleSheet.create({
+  outer:     { marginHorizontal: spacing.md, paddingLeft: BAR_PAD_L, paddingRight: BAR_PAD_R, marginBottom: spacing.lg },
+  bars:      { flexDirection: 'row', gap: 4 },
+  segment:   { height: 8, borderRadius: 4 },
+  labels:    { flexDirection: 'row', marginTop: 5 },
+  wakeTag:   { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  sunIcon:   { fontSize: 10, color: 'rgba(255,255,255,0.6)' },
+  labelText: { color: 'rgba(255,255,255,0.4)', fontFamily: fontFamily.regular, fontSize: 10 },
+});
+
+// ─── Drink suggestions based on remaining caffeine budget ────────────────────
+function DrinkSuggestions({
+  currentMg,
+  activePhase,
+}: {
+  currentMg: number;
+  activePhase: 'pre' | 'open' | 'closed';
+}) {
+  const { t } = useTranslation();
+  const budget = Math.max(0, Math.round(MAX_CAFFEINE_MG - currentMg));
+  const available = CAFFEINE_PRESETS.filter(p => p.key !== 'custom' && p.defaultMg <= budget);
+
+  const emptyKey = activePhase === 'closed' ? 'suggestions_none' : 'suggestions_limit';
+  if (activePhase === 'closed' || available.length === 0) {
+    return (
+      <View style={suggStyles.section}>
+        <Text style={suggStyles.heading}>{t('adenosine.suggestions_heading')}</Text>
+        <View style={suggStyles.emptyCard}>
+          <Text style={suggStyles.emptyText}>{t(`adenosine.${emptyKey}`)}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={suggStyles.section}>
+      <Text style={suggStyles.heading}>{t('adenosine.suggestions_heading')}</Text>
+      <Text style={suggStyles.budget}>{t('adenosine.suggestions_budget', { budget })}</Text>
+      <View style={suggStyles.grid}>
+        {available.map(drink => (
+          <View key={drink.key} style={suggStyles.card}>
+            <Text style={suggStyles.emoji}>{drink.emoji}</Text>
+            <Text style={suggStyles.drinkName}>{t(`adenosine.preset.${drink.key}`)}</Text>
+            <Text style={suggStyles.mg}>{drink.defaultMg}mg</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const suggStyles = StyleSheet.create({
+  section:   { marginHorizontal: spacing.md, marginBottom: spacing.lg },
+  heading:   {
+    color: 'rgba(255,255,255,0.5)',
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  budget:    {
+    color: 'rgba(255,255,255,0.45)',
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  card:      {
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-    paddingVertical: spacing.sm,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 78,
+  },
+  emoji:     { fontSize: 24 },
+  drinkName: { color: 'rgba(255,255,255,0.8)', fontFamily: fontFamily.regular, fontSize: 12 },
+  mg:        { color: 'rgba(255,255,255,0.4)', fontFamily: fontFamily.regular, fontSize: 11 },
+  emptyCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(253,141,143,0.3)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: 'rgba(253,141,143,0.7)',
+    fontFamily: fontFamily.regular,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 
@@ -308,10 +419,10 @@ const drinkStyles = StyleSheet.create({
     gap: spacing.sm,
   },
   emoji: { fontSize: 22, width: 28 },
-  info: { flex: 1 },
-  name: { color: '#FFFFFF', fontFamily: fontFamily.regular, fontSize: 15 },
-  time: { color: 'rgba(255,255,255,0.45)', fontFamily: fontFamily.regular, fontSize: 12, marginTop: 2 },
-  mg: { color: 'rgba(255,255,255,0.7)', fontFamily: fontFamily.demiBold, fontSize: 15 },
+  info:  { flex: 1 },
+  name:  { color: '#FFFFFF', fontFamily: fontFamily.regular, fontSize: 15 },
+  time:  { color: 'rgba(255,255,255,0.45)', fontFamily: fontFamily.regular, fontSize: 12, marginTop: 2 },
+  mg:    { color: 'rgba(255,255,255,0.7)', fontFamily: fontFamily.demiBold, fontSize: 15 },
 });
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
@@ -321,25 +432,26 @@ export default function AdenosineDetailScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const logSheetRef = useRef<LogDrinkSheetHandle>(null);
 
-  const { entries, doses, currentMg, totalMgToday, peakMgToday, isLoading, addDrink, deleteDrink } = useCaffeineTimeline();
+  const { entries, doses, currentMg, totalMgToday, peakMgToday, addDrink, deleteDrink } = useCaffeineTimeline();
 
   const wakeTime = homeData.lastNightSleep?.wakeTime;
+  const bedTime  = homeData.lastNightSleep?.bedTime;
   const wakeHour = wakeTime ? wakeTime.getHours() + wakeTime.getMinutes() / 60 : 7;
-  const bedHour  = 23;
+  // post-midnight bedtimes (e.g. 1 AM) are treated as hour 25 so the formula stays consistent
+  const bedRaw   = bedTime ? bedTime.getHours() + bedTime.getMinutes() / 60 : 23;
+  const bedHour  = bedRaw < 6 ? bedRaw + 24 : bedRaw;
 
-  // effectiveDoses = wake+1.5h default baseline + logged drinks.
-  // Used for the chart and clearance so the curve is never empty.
-  // Metrics (totalMgToday, currentMg) use logged doses only to reflect actual intake.
-  const effectiveDoses = useMemo(() => withDefaultDose(doses, wakeHour), [doses, wakeHour]);
-  const clearHour = useMemo(() => clearanceHour(effectiveDoses), [effectiveDoses]);
+  // clearHour from actual drinks only — no phantom 95mg default that clears immediately
+  const clearHour = useMemo(() => clearanceHour(doses), [doses]);
+  const win       = useMemo(() => recommendedWindow(wakeHour, bedHour), [wakeHour, bedHour]);
 
-  const window = useMemo(() => recommendedWindow(wakeHour, bedHour), [wakeHour]);
   const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
-  const activePhase = computeActivePhase(effectiveDoses, nowHour, window, clearHour);
+  // Phase is purely time-based: where is now relative to the recommended window?
+  const openEnd     = clearHour ?? win.end;
+  const activePhase: 'pre' | 'open' | 'closed' =
+    nowHour < win.start ? 'pre' : nowHour <= openEnd ? 'open' : 'closed';
 
   // 30-day aggregated mg totals for TrendBarChart
-  // Historical data (past 29 days) is fetched once on mount.
-  // Today's total is derived from the live `entries` state so it updates without a round-trip.
   const todayKey = DAY_ENTRIES[0]?.dateKey ?? '';
   const [historicalTotals, setHistoricalTotals] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -358,7 +470,7 @@ export default function AdenosineDetailScreen() {
         }
         setHistoricalTotals(totals);
       });
-  }, []); // runs once — historical days don't change while the screen is open
+  }, []);
 
   const trendValues = useMemo(() => {
     const todayMg = Math.round(entries.reduce((s, e) => s + e.caffeine_mg, 0));
@@ -370,7 +482,6 @@ export default function AdenosineDetailScreen() {
     }));
   }, [entries, historicalTotals, todayKey]);
 
-  // Must be a plain string — worklets can't call regular JS functions on the UI thread
   const pColor = phaseColor(activePhase);
 
   // Scroll collapse animation
@@ -400,20 +511,18 @@ export default function AdenosineDetailScreen() {
     height: interpolate(scrollY.value, [0, COLLAPSE_END], [90, 44], Extrapolation.CLAMP),
   }));
 
-  // Insight text
   const insightText = useMemo(() => {
     if (doses.length === 0) return t('adenosine.insight.no_drinks');
-    const firstDose = doses.length > 0 ? Math.min(...doses.map(d => d.intakeHour)) : null;
-    const phasePeakHour = firstDose !== null ? firstDose + 0.75 : null;
-    const minToPeak = phasePeakHour !== null ? Math.max(0, Math.round((phasePeakHour - nowHour) * 60)) : 0;
-    const lastSafe = formatDecimalHour(window.end);
+    const firstDose = Math.min(...doses.map(d => d.intakeHour));
+    const minToPeak = Math.max(0, Math.round((firstDose + 0.75 - nowHour) * 60));
+    const lastSafe  = formatDecimalHour(win.end);
     const clearLabel = clearHour !== null ? formatDecimalHour(clearHour) : '—';
-    if (activePhase === 'pre') return t('adenosine.insight.pre_window', { time: formatDecimalHour(window.start) });
+    if (activePhase === 'pre')  return t('adenosine.insight.pre_window', { time: formatDecimalHour(win.start) });
     if (activePhase === 'open' && minToPeak > 0)
       return t('adenosine.insight.open_window', { min: minToPeak, lastSafe });
     if (activePhase === 'open') return t('adenosine.insight.open_peaking', { time: lastSafe });
     return t('adenosine.insight.closed_window') + ' ' + t('adenosine.insight.clearance_at', { time: clearLabel });
-  }, [doses, activePhase, nowHour, window, clearHour, t]);
+  }, [doses, activePhase, nowHour, win, clearHour, t]);
 
   const clearLabel = clearHour !== null ? formatDecimalHour(clearHour) : '—';
 
@@ -430,23 +539,29 @@ export default function AdenosineDetailScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="aGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%"  stopColor="#0D6B33" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#0D6B33" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="aGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+            <Stop offset="0%"   stopColor="#1F9F50" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#1F9F50" stopOpacity={0}    />
+          </RadialGradient>
+          <LinearGradient id="aFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad)"  />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#aFade)"  />
+      </Svg>
+
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="aGrad" cx="51%" cy="-86%" rx="80%" ry="300%">
-              <Stop offset="0%"  stopColor="#0D6B33" stopOpacity={0.85} />
-              <Stop offset="55%" stopColor="#0D6B33" stopOpacity={0}    />
-            </RadialGradient>
-            <RadialGradient id="aGrad2" cx="85%" cy="15%" rx="45%" ry="60%">
-              <Stop offset="0%"   stopColor="#1F9F50" stopOpacity={0.45} />
-              <Stop offset="100%" stopColor="#1F9F50" stopOpacity={0}    />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad)"  />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad2)" />
-        </Svg>
-
         <DetailPageHeader title={t('adenosine.title')} />
 
         <TrendBarChart
@@ -472,7 +587,7 @@ export default function AdenosineDetailScreen() {
                 {t('adenosine.subtitle')}
               </Reanimated.Text>
               <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
-                <View style={[styles.badge, { backgroundColor: `${pColor}22`, borderColor: `${pColor}55` }]}>
+                <View style={[styles.badge, { borderColor: `${pColor}55` }]}>
                   <Text style={[styles.badgeText, { color: pColor }]}>
                     {t(`adenosine.phase.${activePhase}`).toUpperCase()}
                   </Text>
@@ -492,13 +607,19 @@ export default function AdenosineDetailScreen() {
         showsVerticalScrollIndicator={false}
         onScroll={scrollHandler}
       >
+        {/* Main bar chart — PK-modeled caffeine per 30-min slot */}
+        <CaffeineBarChart doses={doses} entries={entries} win={win} clearHour={clearHour} />
+
+        {/* Window phase indicator (3 segments, mirrors overview card) */}
+        <WindowPhaseBar win={win} clearHour={clearHour} activePhase={activePhase} wakeHour={wakeHour} />
+
         {/* Insight */}
         <View style={styles.insightBlock}>
           <Text style={styles.insightText}>{insightText}</Text>
         </View>
 
-        {/* Curve chart */}
-        <CaffeineCurveChart doses={effectiveDoses} wakeHour={wakeHour} bedHour={bedHour} />
+        {/* Drink suggestions for current hour */}
+        <DrinkSuggestions currentMg={currentMg} activePhase={activePhase} />
 
         {/* Metrics */}
         <MetricsGrid metrics={[
@@ -526,11 +647,11 @@ export default function AdenosineDetailScreen() {
           </View>
         )}
 
-        {/* Log drink button */}
+        {/* Log drink button — white bg, black text */}
         <TouchableOpacity
           style={styles.logBtn}
           onPress={() => logSheetRef.current?.present()}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
           <Text style={styles.logBtnText}>
             {entries.length > 0 ? t('adenosine.log_another') : t('adenosine.log_drink')}
@@ -544,10 +665,11 @@ export default function AdenosineDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone:   { overflow: 'hidden' },
-  scroll:         { flex: 1 },
-  scrollContent:  { paddingBottom: 80 },
+  container:     { flex: 1, backgroundColor: '#0A0A0F' },
+  gradientBg:    { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone:  {},
+  scroll:        { flex: 1 },
+  scrollContent: { paddingBottom: 80 },
 
   headlineSection: {
     flexDirection: 'row',
@@ -566,6 +688,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
+    // no background fill — border only
   },
   badgeText: { fontSize: 11, fontFamily: fontFamily.demiBold, letterSpacing: 0.5 },
   unitRight: { paddingBottom: 6 },
@@ -573,7 +696,7 @@ const styles = StyleSheet.create({
 
   insightBlock: {
     marginHorizontal: spacing.md,
-    marginVertical: spacing.md,
+    marginBottom: spacing.md,
   },
   insightText: {
     color: 'rgba(255,255,255,0.75)',
@@ -585,11 +708,11 @@ const styles = StyleSheet.create({
   drinkListCard: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.md,
-    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     overflow: 'hidden',
+    // no background fill — border only
   },
   drinkListHeading: {
     color: 'rgba(255,255,255,0.5)',
@@ -609,17 +732,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
+  // White button, black text — brand spec for this screen type
   logBtn: {
     marginHorizontal: spacing.md,
     paddingVertical: 16,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
   logBtnText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontFamily: fontFamily.demiBold,
     fontSize: 16,
   },

@@ -22,7 +22,7 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Circle, Defs, Line, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { InfoButton } from '../../src/components/common/InfoButton';
 
 const COLLAPSE_END = 80;
@@ -759,22 +759,29 @@ export default function RecoveryDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Gradient zone: header + trend chart — starts from the very top of the screen */}
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="recoveryGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor="#10B981" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#10B981" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="recoveryGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor="#065F46" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#065F46" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="recoveryFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryFade)" />
+      </Svg>
+
+      {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="recoveryGrad" cx="51%" cy="-86%" rx="80%" ry="300%">
-              <Stop offset="0%" stopColor="#10B981" stopOpacity={0.75} />
-              <Stop offset="55%" stopColor="#10B981" stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id="recoveryGrad2" cx="85%" cy="15%" rx="45%" ry="60%">
-              <Stop offset="0%" stopColor="#065F46" stopOpacity={0.55} />
-              <Stop offset="100%" stopColor="#065F46" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad)" />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad2)" />
-        </Svg>
 
         <DetailPageHeader
           title="Recovery"
@@ -931,7 +938,8 @@ export default function RecoveryDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone: { overflow: 'hidden' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: {},
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   centered: { flex: 1, alignItems: 'center', paddingTop: 80 },

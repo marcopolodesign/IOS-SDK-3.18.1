@@ -11,11 +11,14 @@ import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
+  useAnimatedProps,
   interpolate,
   interpolateColor,
+  withTiming,
+  withDelay,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, LinearGradient, RadialGradient, Pattern, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { monotoneCubicPath } from '../../src/utils/chartMath';
 import { supabase } from '../../src/services/SupabaseService';
@@ -531,7 +534,14 @@ function buildTodaySleepFromContext(
 const STAGE_BAR_H = 40;
 const STAGE_BAR_RADIUS = 10;
 // statsContainer has marginHorizontal: spacing.md only — no padding
-const STAGE_BAR_W = SCREEN_WIDTH - spacing.md * 2;
+const STAGE_BAR_W = SCREEN_WIDTH - spacing.md * 4;
+
+const AnimatedPath = Reanimated.createAnimatedComponent(Path);
+
+function leftRoundedRect(w: number, h: number, r: number): string {
+  const cr = Math.min(r, w / 2, h / 2);
+  return `M${cr},0 Q0,0 0,${cr} L0,${h - cr} Q0,${h} ${cr},${h} L${w},${h} L${w},0 Z`;
+}
 const STAGE_LABEL_MIN_W = 82; // minimum fill width so label is always readable
 
 function SleepStageBar({
@@ -539,84 +549,51 @@ function SleepStageBar({
   minutes,
   totalMinutes,
   color,
-  recMinPct,
-  recMaxPct,
+  labelDark = false,
+  delay = 0,
 }: {
   label: string;
   minutes: number;
   totalMinutes: number;
   color: string;
-  recMinPct?: number; // 0–100, omit to hide zone
-  recMaxPct?: number; // 0–100
+  labelDark?: boolean;
+  delay?: number;
 }) {
   const pct = totalMinutes > 0 ? minutes / totalMinutes : 0;
   const pctRounded = Math.round(pct * 100);
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
-
-  const fillW = Math.max(STAGE_LABEL_MIN_W, pct * STAGE_BAR_W);
-  const showRec = recMinPct != null && recMaxPct != null;
-  const recX  = showRec ? (recMinPct! / 100) * STAGE_BAR_W : 0;
-  const recW  = showRec ? ((recMaxPct! - recMinPct!) / 100) * STAGE_BAR_W : 0;
-  const patId = `hp_${label.replace(/\s/g, '')}`;
-  const recLabelX = recX + recW / 2;
+  const targetW = Math.max(STAGE_LABEL_MIN_W, pct * STAGE_BAR_W);
   const statsStr = `${pctRounded}% · ${timeStr}`;
+
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withDelay(delay, withTiming(1, { duration: 550 }));
+  }, [targetW]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    d: leftRoundedRect(progress.value * targetW, STAGE_BAR_H, STAGE_BAR_RADIUS),
+  }));
+
   return (
     <View style={stageBarStyles.row}>
       <Svg width={STAGE_BAR_W} height={STAGE_BAR_H}>
-        <Defs>
-          <Pattern id={patId} patternUnits="userSpaceOnUse" width="8" height="8">
-            <Line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
-            <Line x1="-2" y1="2" x2="2" y2="-2" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
-            <Line x1="6" y1="10" x2="10" y2="6" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
-          </Pattern>
-        </Defs>
-
-        {/* Dark background track */}
+        {/* Full-width dark track */}
         <Rect x={0} y={0} width={STAGE_BAR_W} height={STAGE_BAR_H}
           rx={STAGE_BAR_RADIUS} ry={STAGE_BAR_RADIUS}
-          fill="rgba(255,255,255,0.07)" />
-
-        {/* Colored fill */}
-        {fillW > 0 && (
-          <Rect x={0} y={0} width={fillW} height={STAGE_BAR_H}
-            rx={STAGE_BAR_RADIUS} ry={STAGE_BAR_RADIUS}
-            fill={color} />
-        )}
-
-        {/* Recommended range — no rounded corners, min/max labels flanking the rect */}
-        {showRec && (
-          <>
-            <Rect x={recX} y={0} width={recW} height={STAGE_BAR_H}
-              fill={`url(#${patId})`}
-              stroke="rgba(255,255,255,0.6)"
-              strokeWidth={1.5} />
-            <SvgText
-              x={recX - 5} y={STAGE_BAR_H / 2 + 5}
-              textAnchor="end"
-              fill="rgba(255,255,255,0.6)"
-              fontSize={10}
-              fontWeight="600"
-            >{recMinPct}%</SvgText>
-            <SvgText
-              x={recX + recW + 5} y={STAGE_BAR_H / 2 + 5}
-              textAnchor="start"
-              fill="rgba(255,255,255,0.6)"
-              fontSize={10}
-              fontWeight="600"
-            >{recMaxPct}%</SvgText>
-          </>
-        )}
-
-        {/* Stage label — left inside */}
+          fill="#111111" />
+        {/* Colored fill — left-rounded, right-straight, animated */}
+        <AnimatedPath
+          fill={color}
+          animatedProps={animatedProps}
+        />
         <SvgText
           x={13} y={STAGE_BAR_H / 2 + 5}
-          fill="rgba(255,255,255,0.95)"
+          fill={labelDark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.95)'}
           fontSize={14}
           fontWeight="700"
         >{label}</SvgText>
-
       </Svg>
       <View style={stageBarStyles.statOverlay}>
         <Text style={stageBarStyles.stat} numberOfLines={1}>{statsStr}</Text>
@@ -627,9 +604,8 @@ function SleepStageBar({
 
 const stageBarStyles = StyleSheet.create({
   row: {
-    paddingVertical: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 4,
+    paddingHorizontal: spacing.md,
   },
   statOverlay: {
     position: 'absolute',
@@ -800,30 +776,29 @@ export default function SleepDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Gradient zone: header + trend chart — starts from the very top of the screen */}
-      <View style={styles.gradientZone}>
-        {/* Purple radial gradient backdrop */}
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient
-              id="sleepGrad"
-              cx="51%"
-              cy="-86%"
-              rx="80%"
-              ry="300%"
-            >
-              <Stop offset="0%" stopColor="#7100C2" stopOpacity={0.85} />
-              <Stop offset="55%" stopColor="#7100C2" stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id="sleepGrad2" cx="15%" cy="20%" rx="50%" ry="65%">
-              <Stop offset="0%" stopColor="#3B0764" stopOpacity={0.6} />
-              <Stop offset="100%" stopColor="#3B0764" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad)" />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad2)" />
-        </Svg>
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="sleepGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor="#7100C2" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#7100C2" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="sleepGrad2" cx="15%" cy="20%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor="#3B0764" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#3B0764" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="sleepFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#sleepFade)" />
+      </Svg>
 
+      {/* Gradient zone: header + trend chart */}
+      <View style={styles.gradientZone}>
         <DetailPageHeader title="Sleep" marginBottom={spacing.md} />
 
         <TrendBarChart
@@ -910,10 +885,10 @@ export default function SleepDetailScreen() {
               return (
                 <View style={styles.statsContainer}>
                   <DetailStatRow title="Total Sleep" value={dayData.timeAsleep} />
-                  <SleepStageBar label="Awake"  minutes={dayData.awakeMin}  totalMinutes={totalStageMin} color="#C26060" />
-                  <SleepStageBar label="REM"    minutes={dayData.remMin}    totalMinutes={totalStageMin} color="#D45050" recMinPct={20} recMaxPct={25} />
-                  <SleepStageBar label="Light"  minutes={dayData.lightMin}  totalMinutes={totalStageMin} color="#D96A6A" recMinPct={45} recMaxPct={55} />
-                  <SleepStageBar label="Deep"   minutes={dayData.deepMin}   totalMinutes={totalStageMin} color="#B92929" recMinPct={13} recMaxPct={23} />
+                  <SleepStageBar label="Awake"  minutes={dayData.awakeMin}  totalMinutes={totalStageMin} color="#FFFFFF"  labelDark delay={0} />
+                  <SleepStageBar label="REM"    minutes={dayData.remMin}    totalMinutes={totalStageMin} color="#F5DEDE"  labelDark delay={80} />
+                  <SleepStageBar label="Light"  minutes={dayData.lightMin}  totalMinutes={totalStageMin} color="#CC3535"            delay={160} />
+                  <SleepStageBar label="Deep"   minutes={dayData.deepMin}   totalMinutes={totalStageMin} color="#8C0B0B"            delay={240} />
 
                   {/* AI sleep insight */}
                   {(aiInsightLoading || aiInsight) && (
@@ -985,8 +960,8 @@ export default function SleepDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
   gradientZone: {
-    overflow: 'hidden',
   },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },

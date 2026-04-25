@@ -21,6 +21,9 @@ import { formatDurationHm } from '../utils/time';
 
 const TASK_NAME = 'BACKGROUND_SLEEP_CHECK';
 const SCHEDULED_KEY = '@focus_sleep_notif_scheduled_v2';
+// In-memory flag prevents concurrent scheduling within the same app session.
+// Resets on app restart; AsyncStorage SCHEDULED_KEY handles cross-session dedup.
+let _schedulingInProgress = false;
 const BG_SYNC_KEY = '@focus_bg_sync_last_at';
 /** Per-day dedupe key for sleep-only sync — format: @focus_sleep_synced_for_YYYY-MM-DD */
 const SLEEP_SYNCED_PREFIX = '@focus_sleep_synced_for_';
@@ -67,14 +70,6 @@ async function scheduleSleepNotification(
     return false;
   }
 
-  // Cancel any previously scheduled sleep notification
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  for (const n of scheduled) {
-    if ((n.content.data as any)?.type === 'sleep_ready') {
-      await Notifications.cancelScheduledNotificationAsync(n.identifier);
-    }
-  }
-
   const secondsFromNow = Math.max(1, Math.round((fireAt.getTime() - now.getTime()) / 1000));
 
   let body = "Last night's sleep has been analyzed. Tap to see your insights.";
@@ -85,7 +80,9 @@ async function scheduleSleepNotification(
       : `Slept ${duration} · Tap for your sleep insights`;
   }
 
+  // Fixed identifier — re-scheduling replaces any pending notification, preventing duplicates.
   await Notifications.scheduleNotificationAsync({
+    identifier: 'focus_sleep_ready',
     content: {
       title: 'Your Sleep Analysis is Ready 🌙',
       body,
@@ -253,15 +250,18 @@ export async function maybeSendSleepNotificationFromForeground(
 ): Promise<void> {
   if (Platform.OS !== 'ios') return;
   if (!sleepEndTime) return;
+  // Fast synchronous guard — prevents concurrent calls from racing past the async AsyncStorage read.
+  if (_schedulingInProgress) return;
 
   // Check if already scheduled today
   const today = new Date().toDateString();
   const lastScheduled = await AsyncStorage.getItem(SCHEDULED_KEY);
-  if (lastScheduled === today) return;
+  if (lastScheduled === today) { _schedulingInProgress = true; return; }
 
   // Same 7 AM guard
   if (sleepEndTime.getHours() < MIN_HOUR) return;
 
+  _schedulingInProgress = true;
   const didSchedule = await scheduleSleepNotification(sleepEndTime, session);
   if (didSchedule) {
     await AsyncStorage.setItem(SCHEDULED_KEY, today);
@@ -270,5 +270,8 @@ export async function maybeSendSleepNotificationFromForeground(
       fireAt: new Date(sleepEndTime.getTime() + NOTIFICATION_DELAY_MS).toISOString(),
       enriched: !!session,
     });
+  } else {
+    // Fire time is past — don't lock out future attempts (e.g., next day)
+    _schedulingInProgress = false;
   }
 }

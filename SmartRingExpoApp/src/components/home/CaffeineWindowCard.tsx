@@ -22,9 +22,9 @@ import {
   totalMgAt,
   clearanceHour,
   recommendedWindow,
-  withDefaultDose,
   peakMgForDoses,
   SLEEP_THRESHOLD_MG,
+  MAX_CAFFEINE_MG,
 } from '../../utils/caffeinePk';
 import { useCaffeineTimeline } from '../../hooks/useCaffeineTimeline';
 
@@ -47,7 +47,7 @@ const CHART_HEIGHT = LABEL_Y + 18;
 
 // Y-scale is computed dynamically from effective doses (see below).
 // Minimum 150 so the 100 mg sleep-limit line is always visible with headroom.
-const MIN_Y_SCALE = 150;
+const MIN_Y_SCALE = MAX_CAFFEINE_MG; // always show the full 400mg tolerance ceiling
 
 function mgToY(mg: number, yScale: number): number {
   const conc = Math.min(mg / yScale, 1);
@@ -82,48 +82,45 @@ export function CaffeineWindowCard({
     [wakeHour, bedHour],
   );
 
-  // effectiveDoses = default baseline + actual logged drinks (superposition).
-  // The chart always shows a curve; logged drinks push the descending portion upward.
-  const effectiveDoses = useMemo(
-    () => withDefaultDose(doses, wakeHour),
-    [doses, wakeHour],
-  );
+  const hasDoses = doses.length > 0;
 
-  const hasDoses = doses.length > 0; // true only when user has actually logged something
-
-  // Dynamic Y-scale: curve always peaks at the top of the chart.
+  // Curve uses actual logged doses only — no phantom baseline when empty
   const yScale = useMemo(
-    () => Math.max(Math.ceil(peakMgForDoses(effectiveDoses)), MIN_Y_SCALE),
-    [effectiveDoses],
+    () => Math.max(Math.ceil(peakMgForDoses(doses)), MIN_Y_SCALE),
+    [doses],
   );
 
   const curvePath = useMemo(
-    () => buildMultiDoseCurvePath(effectiveDoses, innerW, CHART_PAD_L, TIME_START, TIME_END, CURVE_TOP_Y, CURVE_BOT_Y, yScale),
-    [effectiveDoses, innerW, yScale],
+    () => hasDoses
+      ? buildMultiDoseCurvePath(doses, innerW, CHART_PAD_L, TIME_START, TIME_END, CURVE_TOP_Y, CURVE_BOT_Y, yScale)
+      : '',
+    [doses, hasDoses, innerW, yScale],
   );
 
-  const clearHour = useMemo(() => clearanceHour(effectiveDoses), [effectiveDoses]);
+  // clearHour from actual drinks only — prevents phantom clearance from default baseline
+  const clearHour = useMemo(() => clearanceHour(doses), [doses]);
 
-  const blockInset  = 8;
-  const bx1         = CHART_PAD_L + blockInset;
-  const blockRight  = CHART_PAD_L + innerW - blockInset;
+  const blockInset = 8;
+  const bx1        = CHART_PAD_L + blockInset;
+  const blockRight = CHART_PAD_L + innerW - blockInset;
 
-  const openStart = Math.min(...effectiveDoses.map(d => d.intakeHour));
-  const openEnd   = clearHour ?? window.end;
+  // Phase zones: pre = before window opens, open = window.start → clearHour/window.end, closed = after
+  const openEnd = clearHour ?? window.end;
 
-  const bx2 = Math.max(bx1, Math.min(tx(openStart), blockRight));
+  const bx2 = Math.max(bx1, Math.min(tx(window.start), blockRight));
   const bx3 = Math.max(bx2, Math.min(tx(openEnd), blockRight));
 
   const blockW1 = bx2 - bx1;
   const blockW2 = bx3 - bx2;
   const blockW3 = blockRight - bx3;
 
+  // Active phase is time-based (not dose-based) for correct indicator behavior
   const activePhase: 'pre' | 'open' | 'closed' =
-    clampedNow < openStart ? 'pre' : clampedNow < openEnd ? 'open' : 'closed';
+    clampedNow < window.start ? 'pre' : clampedNow <= openEnd ? 'open' : 'closed';
 
-  const nowX = tx(clampedNow);
-  const nowMg = totalMgAt(clampedNow, effectiveDoses);
-  const nowY = mgToY(nowMg, yScale);
+  const nowX  = tx(clampedNow);
+  const nowMg = totalMgAt(clampedNow, doses);
+  const nowY  = mgToY(nowMg, yScale);
 
   const timeLabels = [
     { label: '6AM',  x: tx(6) },
@@ -135,7 +132,7 @@ export function CaffeineWindowCard({
   const yAxisLabels = [yScale, Math.round(yScale / 2), 0].map(mg => ({
     mg,
     y: mgToY(mg, yScale),
-    label: `${mg}`,
+    label: mg === 0 ? 'mg' : `${mg}`,
   }));
 
   const clearanceLabel = formatDecimalHour(clearHour);
