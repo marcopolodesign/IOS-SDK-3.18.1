@@ -66,6 +66,29 @@
 | 7406743701 | TypeError: undefined is not a function (in `beforeSend`) | error | 2026-04-13T00:32:01Z | 2026-04-16T12:32:03Z | Needs manual review — errors originate from old production build `com.focusring.app@1.0.3+25`; fix already shipped in PR #2. Publish latest build to App Store to resolve. |
 | 7394530406 | NSInvalidArgumentException: -[V8Bridge Disconnect:] unrecognized selector | fatal | 2026-04-08T01:52:47Z | 2026-04-16T12:46:45Z | Needs manual review — V8Bridge off-limits per constraints. Requires native iOS engineer. |
 
+## 2026-04-25
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7441113294 | [Worklets] leftRoundedRect on UI thread (sleep-detail.tsx) | fatal | 2026-04-25T12:13:05Z | Needs manual review — `leftRoundedRect` not found in repo; likely deployed via OTA update from newer code. Add `'worklet'` directive to the function. |
+| 7440312497 | Error: [object Object] — getCaffeineEntriesForRange | error | 2026-04-25T01:38:38Z | Auto-fixed (PR #5) |
+| 7440312520 | Error: [object Object] — fetchSleep (DailySleepTrendCard) | warning | 2026-04-25T01:38:38Z | Auto-fixed (PR #5) |
+| 7440315131 | Error: [object Object] — updateSleepBaselineTier | warning | 2026-04-25T01:40:46Z | Auto-fixed (PR #5) |
+| 7440315301 | Error: [object Object] — getSportRecords | error | 2026-04-25T01:40:56Z | Auto-fixed (PR #5) |
+| 7440315317 | Error: [object Object] — getStravaActivities | error | 2026-04-25T01:40:55Z | Auto-fixed (PR #5) |
+| 7440315531 | Error: [object Object] — getStepsReadings | error | 2026-04-25T01:41:02Z | Auto-fixed (PR #5) |
+| 7440315931 | Error: [object Object] — getHRVReadings | error | 2026-04-25T01:41:21Z | Auto-fixed (PR #5) |
+| 7434420739 | autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | Needs manual review — intentional diagnostic; reconnect failure is expected when ring is out of range. Consider downgrading to warning. |
+| 7431794312 | NOT_CONNECTED: No device connected (escalating, 55 events) | warning | 2026-04-22T00:59:35Z | Needs manual review — expected BLE state; high volume suggests callers need a connectivity guard before issuing commands. |
+| 7431794314 | sleep_ring_empty (useHomeData) | warning | 2026-04-22T00:59:34Z | Needs manual review — ring returned no sleep data; normal when ring wasn't worn. |
+| 7434391393 | Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — expected BLE race; consider cancelling pending requests on disconnect. |
+| 7434372098 | getTemperatureData timed out after 10000ms (48 events) | warning | 2026-04-22T17:51:23Z | Needs manual review — high-volume BLE timeout. Temperature command may be unreliable on X3 firmware. |
+
+### 2026-04-25 Notes
+- 13 issues seen within the last 24 hours.
+- **Root cause of 7 `[object Object]` errors:** `reportError()` in `src/utils/sentry.ts` called `String(supabaseError)` which serialises as `[object Object]` since `PostgrestError` has no `toString()`. Fixed by preferring `.message` when available. Single-file fix covers all 7 issues. PR #5 created (`sentry/fix-7440312497`).
+- **[Worklets] leftRoundedRect (7441113294):** Fatal, 29 occurrences in < 5 minutes. `leftRoundedRect` helper is called from a Reanimated `useDerivedValue`/`useAnimatedStyle` context in `sleep-detail.tsx` without the `'worklet'` directive. Function not found in current repo — must be in OTA-deployed code. Requires dev to add `'worklet'` to the function or refactor it out of the animated callback.
+- **NOT_CONNECTED cluster (7431794312):** 55 events, escalating. Multiple callers invoke ring data commands without first checking connection state. Needs a connectivity guard at the call sites.
+
 ### 2026-04-17 Notes
 - 9 unresolved issues total; 2 seen within the last 24 h.
 - **7406743701** (TypeError `beforeSend`): Stack trace is fully minified (`app:///main.jsbundle`, no source maps). Culprit is `beforeSend` in production build `com.focusring.app@1.0.3+25` (dist 25). The `Array.isArray` guard fix was already applied in PR #2 on 2026-04-16. Errors will stop once the updated build is distributed. No further code change needed.
