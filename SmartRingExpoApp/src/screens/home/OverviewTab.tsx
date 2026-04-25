@@ -205,6 +205,9 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           wakeHour={sleep.wakeTime
             ? sleep.wakeTime.getHours() + sleep.wakeTime.getMinutes() / 60
             : undefined}
+          bedHour={sleep.bedTime
+            ? (h => h < 6 ? h + 24 : h)(sleep.bedTime.getHours() + sleep.bedTime.getMinutes() / 60)
+            : undefined}
         />
       </View>
 

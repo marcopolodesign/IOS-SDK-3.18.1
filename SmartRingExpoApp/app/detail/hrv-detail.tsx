@@ -13,7 +13,7 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 const COLLAPSE_END = 80;
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
@@ -101,18 +101,29 @@ export default function HRVDetailScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="hrvGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor="#8B5CF6" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#8B5CF6" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="hrvGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor="#5B21B6" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#5B21B6" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="hrvFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrvFade)" />
+      </Svg>
+
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="hrvGrad" cx="51%" cy="-86%" rx="80%" ry="300%">
-              <Stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.85} />
-              <Stop offset="55%" stopColor="#8B5CF6" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad)" />
-        </Svg>
-
         <DetailPageHeader title="HRV & Stress" marginBottom={spacing.md} />
 
         <TrendBarChart
@@ -203,7 +214,8 @@ export default function HRVDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone: { overflow: 'hidden', paddingBottom: spacing.md },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: { paddingBottom: spacing.md },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   loadingContainer: { alignItems: 'center', paddingTop: 80, gap: spacing.sm },

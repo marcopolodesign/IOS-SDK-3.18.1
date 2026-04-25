@@ -1,6 +1,7 @@
 export const ABSORPTION_H = 0.75;  // 45 min linear ramp to peak
 export const HALF_LIFE_H  = 5;     // hours
 export const SLEEP_THRESHOLD_MG = 100; // max mg compatible with sleep onset
+export const MAX_CAFFEINE_MG     = 400; // daily tolerance ceiling shown in charts
 
 export interface CaffeineDose {
   intakeHour: number;  // decimal hours from midnight, e.g. 8.5 = 8:30 AM
@@ -31,15 +32,14 @@ export function clearanceHour(
   return null;
 }
 
-// Returns decimal-hour window in which caffeine is both effective and safe for sleep.
-// start = wake + 90 min; end = bedtime − ~10.75 h so 100 mg clears by bed.
+// Huberman protocol: delay caffeine 2h after waking (cortisol peak clears naturally);
+// stop 8h before bed (5h half-life → ~25 mg remaining at bedtime, well below threshold).
 export function recommendedWindow(
   wakeHour: number,
   bedHour: number = 23,
 ): { start: number; end: number } {
-  const lastSafeIntake = bedHour - (ABSORPTION_H + 2 * HALF_LIFE_H); // ~10.75 h before bed
-  const start = Math.max(wakeHour + 1.5, 6);
-  const end   = Math.max(start, lastSafeIntake);
+  const start = Math.max(wakeHour + 2, 6);    // 2h post-wake delay
+  const end   = Math.max(start, bedHour - 8); // 8h before bed
   return { start, end };
 }
 

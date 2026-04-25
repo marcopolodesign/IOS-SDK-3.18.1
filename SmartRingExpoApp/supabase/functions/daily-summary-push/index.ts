@@ -69,7 +69,7 @@ serve(async (req: Request) => {
       type === 'morning'
         ? supabase
             .from('sleep_sessions')
-            .select('user_id, start_time, end_time, sleep_score')
+            .select('user_id, start_time, end_time, sleep_score, deep_min, light_min, rem_min')
             .gte('end_time', oneDayAgo)
             .order('end_time', { ascending: false })
         : Promise.resolve({ data: null }),
@@ -126,9 +126,10 @@ serve(async (req: Request) => {
           title = 'Your sleep summary is ready 🌙';
           body = 'See how you slept last night. Tap to view your analysis.';
         } else {
-          const totalMin = Math.round(
-            (new Date(session.end_time).getTime() - new Date(session.start_time).getTime()) / 60000,
-          );
+          const stageTotalMin = (session.deep_min || 0) + (session.light_min || 0) + (session.rem_min || 0);
+          const totalMin = stageTotalMin > 0
+            ? stageTotalMin
+            : Math.round((new Date(session.end_time).getTime() - new Date(session.start_time).getTime()) / 60000);
           const h = Math.floor(totalMin / 60);
           const m = totalMin % 60;
           const scoreText = session.sleep_score ? ` · Score: ${session.sleep_score}` : '';

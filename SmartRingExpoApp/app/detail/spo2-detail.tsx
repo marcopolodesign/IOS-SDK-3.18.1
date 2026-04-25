@@ -115,11 +115,6 @@ function SpO2LineChart({ readings }: { readings: DaySpO2Data['readings'] }) {
     [pts]
   );
 
-  const baselineY = toY(domainMin);
-  const areaPath = linePath.length > 0 && pts.length >= 2
-    ? `${linePath} L ${pts[pts.length - 1].x} ${baselineY} L ${pts[0].x} ${baselineY} Z`
-    : '';
-
   const threshold95Y = domainMin <= 95 && domainMax >= 95 ? toY(95) : null;
 
   const fracs = [0.25, 0.5, 0.75];
@@ -168,13 +163,6 @@ function SpO2LineChart({ readings }: { readings: DaySpO2Data['readings'] }) {
         </View>
       )}
       <Svg width="100%" height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
-        <Defs>
-          <LinearGradient id="spo2LineGrad" gradientUnits="userSpaceOnUse" x1="0" y1={PAD_V} x2="0" y2={baselineY}>
-            <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.18} />
-            <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-
         {/* Y-axis labels */}
         {fracs.map((frac, i) => (
           <SvgText key={i}
@@ -199,11 +187,6 @@ function SpO2LineChart({ readings }: { readings: DaySpO2Data['readings'] }) {
         {/* 95% normal threshold */}
         {threshold95Y != null && (
           <>
-            <Rect
-              x={PAD_LEFT} y={PAD_V}
-              width={chartBodyW} height={threshold95Y - PAD_V}
-              fill="rgba(74,222,128,0.04)"
-            />
             <Line
               x1={PAD_LEFT} x2={PAD_LEFT + chartBodyW}
               y1={threshold95Y} y2={threshold95Y}
@@ -219,9 +202,6 @@ function SpO2LineChart({ readings }: { readings: DaySpO2Data['readings'] }) {
           </>
         )}
 
-        {/* Area fill */}
-        {areaPath.length > 0 && <Path d={areaPath} fill="url(#spo2LineGrad)" />}
-
         {/* White line */}
         {linePath.length > 0 && (
           <Path
@@ -234,13 +214,13 @@ function SpO2LineChart({ readings }: { readings: DaySpO2Data['readings'] }) {
           />
         )}
 
-        {/* Colored dots at each reading */}
+        {/* White dots at each reading */}
         {pts.map((p, i) => (
           <Circle
             key={i}
             cx={p.x} cy={p.y}
             r={2.5}
-            fill={spo2Color(p.r.value)}
+            fill="#FFFFFF"
             stroke="rgba(10,10,15,0.6)"
             strokeWidth={1}
           />
@@ -352,23 +332,29 @@ export default function SpO2DetailScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="spo2Grad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor="#3B82F6" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#3B82F6" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="spo2Grad2" cx="85%" cy="10%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor="#1D4ED8" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#1D4ED8" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="spo2Fade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Fade)" />
+      </Svg>
+
       {/* Gradient zone */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="spo2Grad" cx="51%" cy="-86%" rx="80%" ry="300%">
-              <Stop offset="0%" stopColor="#3B82F6" stopOpacity={0.85} />
-              <Stop offset="55%" stopColor="#3B82F6" stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id="spo2Grad2" cx="85%" cy="15%" rx="45%" ry="60%">
-              <Stop offset="0%" stopColor="#1D4ED8" stopOpacity={0.55} />
-              <Stop offset="100%" stopColor="#1D4ED8" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad)" />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad2)" />
-        </Svg>
-
         <DetailPageHeader title="Blood Oxygen" />
 
         <TrendBarChart
@@ -487,7 +473,8 @@ export default function SpO2DetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone: { overflow: 'hidden' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: {},
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   loadingContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.md },

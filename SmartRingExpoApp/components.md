@@ -4,6 +4,28 @@
 
 ---
 
+## Naming Convention — Cover ↔ Detail
+
+Every metric has two UI surfaces:
+
+| Term | Definition | Example |
+|------|-----------|---------|
+| **Cover** | The card on the Overview tab that summarises a metric and navigates to the detail page | `CaffeineWindowCard` |
+| **Detail** | The full-screen page the cover navigates to (`app/detail/`) | `app/detail/adenosine-detail.tsx` |
+
+Use these terms consistently in code, comments, and conversation. The cover is always the `src/components/home/` card; the detail is always the `app/detail/` screen.
+
+**Known cover → detail pairs:**
+
+| Cover | Detail route |
+|-------|-------------|
+| `CaffeineWindowCard` | `/detail/adenosine-detail` |
+| `DailyHeartRateCard` | `/detail/hr-detail` |
+| `SleepHypnogram` / sleep cards | `/detail/sleep-detail` |
+| `SpO2Card` (when present) | `/detail/spo2-detail` |
+
+---
+
 ## Root Components (`src/components/`)
 
 ### `BatteryIndicator`
@@ -379,6 +401,30 @@
 
 ---
 
+### `CaffeineWindowCard` ← **Adenosine Cover**
+**File:** `src/components/home/CaffeineWindowCard.tsx`
+**Detail page:** `app/detail/adenosine-detail.tsx` (route `/detail/adenosine-detail`)
+**Props:** `wakeHour?: number`, `bedHour?: number` (both passed from `OverviewTab` via `lastNightSleep`)
+**Renders:** Green-gradient card. SVG pharmacokinetic curve (real doses only — no phantom baseline). Three coloured phase-zone blocks (pre=orange, open=teal, closed=red). Sleep-limit dashed line at 100 mg. Phase indicator bar (3 segments). Footer text.
+**Logic:**
+- `recommendedWindow(wakeHour, bedHour)` — Huberman protocol: 2h post-wake delay, 8h before-bed cutoff.
+- `clearHour = clearanceHour(doses)` — actual logged drinks only; null when nothing logged (falls back to `window.end`).
+- `activePhase` is time-based: `now < window.start → pre`, `≤ openEnd → open`, else `closed`.
+- Y-scale always ≥ 400 mg (`MIN_Y_SCALE = MAX_CAFFEINE_MG`); curve hidden when no drinks logged.
+**Data:** `useCaffeineTimeline()` for `doses`. `wakeHour`/`bedHour` from `lastNightSleep` via props.
+**Navigates to:** `/detail/adenosine-detail` on press.
+
+---
+
+### `LogDrinkSheet`
+**File:** `src/components/home/LogDrinkSheet.tsx`
+**Props (ref):** `LogDrinkSheetHandle` — exposes `present()` to open the sheet.
+**Props (callback):** `onLog: (drink) => Promise<void>`
+**Renders:** `@gorhom/bottom-sheet` modal. 9 preset drink tiles (emoji + name + mg), optional name field, caffeine mg stepper (±5 mg), time wheel picker.
+**Used by:** `adenosine-detail` (detail page), potentially the cover.
+
+---
+
 ## Sleep Components (`src/components/sleep/`)
 
 ### `CustomSleepAnalysisCard`
@@ -400,19 +446,33 @@ NewHomeScreen
 └── OverviewTab
     ├── HomeHeader
     ├── SyncStatusSheet (modal)
-    ├── SemiCircularGauge  (readiness/score hero)
+    ├── SemiCircularGauge       (readiness/score hero)
     ├── LiveHeartRateCard
-    ├── DailyHeartRateCard
-    ├── SleepHypnogram
+    ├── DailyHeartRateCard      ← HR cover       → /detail/hr-detail
+    ├── SleepHypnogram          ← sleep covers   → /detail/sleep-detail
     ├── SleepStagesChart
     ├── DailySleepTrendCard
+    ├── CaffeineWindowCard      ← adenosine cover → /detail/adenosine-detail
     ├── DailyTimelineCard
     ├── NapCard
     ├── SleepDebtCard → SleepDebtGauge
     ├── TrainingInsightsCard
-    ├── BaselineProgressCard  (calibration period only)
+    ├── BaselineProgressCard    (calibration period only)
     └── BaselineCompleteOverlay (one-time, on calibration finish)
 ```
+
+## Detail Pages (`app/detail/`)
+
+Each detail page is the full-screen counterpart to its **cover** on the Overview tab.
+
+| Detail file | Cover | Key components |
+|-------------|-------|----------------|
+| `adenosine-detail.tsx` | `CaffeineWindowCard` | `CaffeineBarChart` (PK bars), `WindowPhaseBar` (3-segment axis), `DrinkSuggestions`, `LogDrinkSheet` |
+| `hr-detail.tsx` | `DailyHeartRateCard` | `TrendBarChart`, `MetricsGrid` |
+| `sleep-detail.tsx` | sleep cards | `TrendBarChart`, `MetricsGrid`, `SleepHypnogram` |
+| `spo2-detail.tsx` | SpO2 card | `TrendBarChart`, `SpO2LineChart` |
+
+**Design rule for all detail pages:** No `backgroundColor` on component wrappers — borders only. Primary CTA buttons use white bg + black text.
 
 ## Component Hierarchy — Focus Tab
 

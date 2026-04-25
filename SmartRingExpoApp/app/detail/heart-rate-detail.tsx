@@ -510,23 +510,29 @@ export default function HeartRateDetailScreen() {
         visible={!!selectedActivity}
         onClose={() => setSelectedActivity(null)}
       />
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="hrGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor="#AB0D0D" stopOpacity={1} />
+            <Stop offset="70%" stopColor="#AB0D0D" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="hrGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor="#7B0000" stopOpacity={0.75} />
+            <Stop offset="100%" stopColor="#7B0000" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="hrFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#hrFade)" />
+      </Svg>
+
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="hrGrad" cx="51%" cy="-86%" rx="80%" ry="300%">
-              <Stop offset="0%" stopColor="#AB0D0D" stopOpacity={0.85} />
-              <Stop offset="55%" stopColor="#AB0D0D" stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id="hrGrad2" cx="85%" cy="15%" rx="45%" ry="60%">
-              <Stop offset="0%" stopColor="#7B0000" stopOpacity={0.55} />
-              <Stop offset="100%" stopColor="#7B0000" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad)" />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad2)" />
-        </Svg>
-
         <DetailPageHeader title="Heart Rate" />
 
         <TrendBarChart
@@ -628,7 +634,8 @@ export default function HeartRateDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone: { overflow: 'hidden' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: {},
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
   loadingContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.md },

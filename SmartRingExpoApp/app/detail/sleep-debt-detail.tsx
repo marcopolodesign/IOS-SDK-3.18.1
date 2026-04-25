@@ -14,7 +14,7 @@ import Reanimated, {
   interpolateColor,
   Extrapolation,
 } from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
@@ -89,23 +89,29 @@ export default function SleepDebtDetailScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Full-screen gradient background */}
+      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="debtGrad1" cx="50%" cy="-20%" rx="90%" ry="220%">
+            <Stop offset="0%" stopColor={gradStart} stopOpacity={1} />
+            <Stop offset="70%" stopColor={gradStart} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="debtGrad2" cx="15%" cy="20%" rx="60%" ry="80%">
+            <Stop offset="0%" stopColor={gradEnd} stopOpacity={0.75} />
+            <Stop offset="100%" stopColor={gradEnd} stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="debtFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+            <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad1)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad2)" />
+        <Rect x="0" y="0" width="100" height="100" fill="url(#debtFade)" />
+      </Svg>
+
       {/* Gradient zone: header only (no day selector) */}
       <View style={styles.gradientZone}>
-        <Svg style={StyleSheet.absoluteFill} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
-          <Defs>
-            <RadialGradient id="debtGrad1" cx="50%" cy="-80%" rx="80%" ry="280%">
-              <Stop offset="0%" stopColor={gradStart} stopOpacity={0.8} />
-              <Stop offset="60%" stopColor={gradStart} stopOpacity={0} />
-            </RadialGradient>
-            <RadialGradient id="debtGrad2" cx="15%" cy="20%" rx="50%" ry="65%">
-              <Stop offset="0%" stopColor={gradEnd} stopOpacity={0.4} />
-              <Stop offset="100%" stopColor={gradEnd} stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad1)" />
-          <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad2)" />
-        </Svg>
-
         <DetailPageHeader title={t('sleep_debt.detail_title')} marginBottom={spacing.md} />
       </View>
 
@@ -231,7 +237,8 @@ export default function SleepDebtDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
-  gradientZone: { overflow: 'hidden' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: {},
   headlineSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',

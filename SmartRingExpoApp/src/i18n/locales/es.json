@@ -1006,6 +1006,10 @@
       "mg_unit": "mg",
       "time_label": "Hora de consumo",
       "submit": "Registrar"
-    }
+    },
+    "suggestions_heading": "¿Qué podés tomar ahora?",
+    "suggestions_budget": "{{budget}}mg disponibles en tu presupuesto diario",
+    "suggestions_none": "Ventana cerrada — evitá la cafeína para dormir mejor esta noche",
+    "suggestions_limit": "Llegaste a tu límite de cafeína"
   }
 }
