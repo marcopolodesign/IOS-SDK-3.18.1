@@ -12,6 +12,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
@@ -102,7 +103,8 @@ export default function HRVDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="hrvGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#8B5CF6" stopOpacity={1} />
@@ -120,7 +122,8 @@ export default function HRVDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrvGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrvFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>

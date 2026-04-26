@@ -15,6 +15,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -511,7 +512,8 @@ export default function HeartRateDetailScreen() {
         onClose={() => setSelectedActivity(null)}
       />
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="hrGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#AB0D0D" stopOpacity={1} />
@@ -529,7 +531,8 @@ export default function HeartRateDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#hrFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>

@@ -1,6 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 import { fontSize, fontFamily } from '../../theme/colors';
 
 const BASE_WIDTH = 368;
@@ -15,6 +20,8 @@ interface SemiCircularGaugeProps {
   backgroundStrokeWidth?: number;
   label?: string;
   animated?: boolean;
+  /** When this key changes a 250ms crossfade hides the label+score swap. */
+  phaseKey?: string;
 }
 
 export function SemiCircularGauge({
@@ -24,12 +31,27 @@ export function SemiCircularGauge({
   backgroundStrokeWidth,
   label = 'FOCUS SCORE',
   animated = true,
+  phaseKey,
 }: SemiCircularGaugeProps) {
   const animatedValue = useRef(new Animated.Value(score)).current;
   const [displayScore, setDisplayScore] = React.useState(score);
   const [pathLength, setPathLength] = React.useState(0);
   const lengthPathRef = useRef<Path>(null);
   const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+  // Crossfade the text content when the metric phase changes
+  const textOpacity = useSharedValue(1);
+  const prevPhaseKeyRef = useRef<string | undefined>(phaseKey);
+  const textAnimStyle = useAnimatedStyle(() => ({ opacity: textOpacity.value }));
+
+  useEffect(() => {
+    if (prevPhaseKeyRef.current === phaseKey) return;
+    prevPhaseKeyRef.current = phaseKey;
+    textOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
+      'worklet';
+      if (finished) textOpacity.value = withTiming(1, { duration: 250 });
+    });
+  }, [phaseKey]);
 
   const scaledHeight = (size / BASE_WIDTH) * BASE_HEIGHT;
   const bgStroke = backgroundStrokeWidth ?? Math.max(2, strokeWidth * 0.45);
@@ -154,14 +176,14 @@ export function SemiCircularGauge({
           />
         </Svg>
 
-        {/* Score display */}
-        <View style={[styles.scoreContainer, { top: size / 10 }]}>
+        {/* Score display — fades during phase transitions */}
+        <Reanimated.View style={[styles.scoreContainer, { top: size / 10 }, textAnimStyle]}>
           <Text style={styles.label}>{label}</Text>
           <View style={styles.scoreRow}>
             <Text style={styles.scoreText}>{displayScore}</Text>
             <Text style={styles.percentText}>%</Text>
           </View>
-        </View>
+        </Reanimated.View>
 
         {/* Min/Max labels */}
         <View style={[styles.minMaxContainer, { width: size / 1.2 + 100 }]}>

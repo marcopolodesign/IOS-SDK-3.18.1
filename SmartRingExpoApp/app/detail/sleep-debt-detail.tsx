@@ -13,6 +13,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -90,7 +91,8 @@ export default function SleepDebtDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="debtGrad1" cx="50%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor={gradStart} stopOpacity={1} />
@@ -108,7 +110,8 @@ export default function SleepDebtDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad1)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#debtGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#debtFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header only (no day selector) */}
       <View style={styles.gradientZone}>

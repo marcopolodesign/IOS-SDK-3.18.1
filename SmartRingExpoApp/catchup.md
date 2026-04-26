@@ -4,6 +4,151 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-26: Sleep Hypnogram Cover — Show In-Bed Time in Header
+
+**Source:** Claude Code — Macbook Pro
+
+Added `inBedTime?: Date` to `SleepData` — the raw ring block start (when user got into bed), preserved before `trimAwakeEdges` strips the leading awake segments. Set in `buildBlockResult` as `new Date(block.start)`. Serialized/deserialized in the AsyncStorage cache alongside `bedTime`. The hypnogram `GradientInfoCard` `titleCaption` now shows `inBedTime` (falls back to `bedTime` if absent, e.g. Supabase-only sessions).
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/screens/home/SleepTab.tsx`
+
+---
+
+## 2026-04-26: Sleep Hypnogram Cover — Show Bedtime in Header
+
+**Source:** Claude Code — Macbook Pro
+
+Added `titleCaption` to the hypnogram `GradientInfoCard` in `SleepTab` showing the bedtime (sleep onset time) formatted as a locale time string (e.g. "10:30 PM"). Uses `sleep.bedTime.toLocaleTimeString`.
+
+**Files modified:** `src/screens/home/SleepTab.tsx`
+
+---
+
+## 2026-04-26: Sleep Hypnogram — Persist Segments in Cache
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** After a successful ring sync, the sleep hypnogram was hidden during subsequent syncs on cold start because segments were explicitly cleared (`segments: []`) when loading from the `home_data_cache`.
+
+**Fix:** Sleep segments are now cached alongside other sleep data in `AsyncStorage`. In `saveToCache()`, non-empty segments are serialized as ISO strings. In `loadFromCache()`, they are deserialized back into `SleepSegment` objects (with `Date` instances). If no segments were cached (e.g., Supabase-only fallback from a prior session), it falls back to `[]` as before.
+
+**User-visible:** After the first successful ring sync, re-opening the app and waiting for the next sync will show the hypnogram immediately (using cached segments) rather than showing a blank space during the sync period.
+
+**Files modified:** `src/hooks/useHomeData.ts` (CachedData interface, saveToCache, loadFromCache)
+
+---
+
+## 2026-04-25: Behavior-driven Overview Gauge (phase switching)
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:** The main semi-circular gauge on the Overview tab no longer shows a static "Overall Score." It now switches dynamically to the most relevant metric based on what's happening right now:
+
+| Phase | Trigger | Metric shown |
+|-------|---------|-------------|
+| Wind-down (bedtime gate) | 120 min before → 6h past target bedtime | Debt + late-penalty score |
+| Sleep | Within 2h of last wake-up | Last night's sleep score |
+| Caffeine | Active caffeine ≥ 100 mg | Clearance % (how close to clean) |
+| Strain | EWMA strain ≥ 60 | Strain score |
+| Wind-down (evening gate) | After 20:00 if no other phase active | Pure debt score (readiness is meaningless at night) |
+| Readiness | Default (daytime only) | Focus readiness score |
+
+A 250 ms Reanimated crossfade hides the label/score swap when the phase changes. The `InfoButton` now opens the correct metric explainer for whichever phase is active (fixes the pre-existing `overall_score` label vs. `recovery_score` info-key mismatch).
+
+**User-visible:** Morning after waking up → SLEEP SCORE. Afternoon coffee → CAFFEINE CLEARANCE. Evening near bedtime → WIND DOWN. Active training day → STRAIN. Otherwise → READINESS. Tapping the `i` button always opens the right explainer.
+
+**Files created:**
+- `src/utils/overviewGaugePhase.ts` — pure phase resolver + `deriveTargetBedtime()`
+- `src/hooks/useOverviewGaugePhase.ts` — hook: composes contexts, ticks every 60s, guards against no-op re-renders
+- `src/components/home/WindDownHero.tsx` — wind-down specific hero: moon icon + large bedtime + countdown + debt pill
+
+**Files modified:**
+- `src/components/home/SemiCircularGauge.tsx` — added `phaseKey` prop + Reanimated crossfade
+- `src/screens/home/OverviewTab.tsx` — phase-conditional hero: `WindDownHero` when `gauge.key === 'wind_down'`, `SemiCircularGauge` otherwise
+- `src/data/metricExplanations.ts` — added `wind_down` + `caffeine_clearance` to `MetricKey` union and `getMetricExplanations()`
+- `src/i18n/locales/en.json` + `es.json` — added `overview.wind_down`, `overview.caffeine_clearance`, `overview.sleep_score` (uppercase) + explainer strings for both new keys
+
+---
+
+## 2026-04-25: Detail pages — gradient background fade-in animation
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** All 8 detail pages now animate their full-screen gradient background in with a 600ms Reanimated `FadeIn` on mount. The gradient was previously a static absolute-positioned SVG; it is now wrapped in a `Reanimated.View` with `entering={FadeIn.duration(600)}` and `pointerEvents="none"`, giving every detail page a subtle color bloom entrance.
+
+**Files modified:**
+- `app/detail/heart-rate-detail.tsx` — Added `FadeIn` import, wrapped gradientBg SVG in Reanimated.View
+- `app/detail/hrv-detail.tsx` — Same
+- `app/detail/recovery-detail.tsx` — Same
+- `app/detail/sleep-detail.tsx` — Same
+- `app/detail/sleep-debt-detail.tsx` — Same
+- `app/detail/spo2-detail.tsx` — Same
+- `app/detail/temperature-detail.tsx` — Same
+- `app/detail/adenosine-detail.tsx` — Same
+
+**Key notes:**
+- `pointerEvents="none"` on the wrapper ensures the absolutely-positioned View does not intercept any touch events from the scroll content beneath it.
+- SVG changed from `style={styles.gradientBg}` to `width="100%" height="100%"` to fill the wrapper View; the `gradientBg` style (absolute positioning + height 480) now lives on the `Reanimated.View`.
+
+---
+
+## 2026-04-25: Adenosine detail — 15-min bar slots + full border radius
+
+**Source:** Claude Code — Macbook Pro
+
+- Doubled bar resolution from 30-min to 15-min slots (`* 2` → `* 4`, slot midpoint `0.5/0.25` → `0.25/0.125`).
+- Reduced gap from 4px to 2px to keep bars visible at the narrower width.
+- Replaced top-only rounded `Path` bars with `Rect rx={2} ry={2}` for equal radius on all corners.
+- Removed now-dead `topRoundedRect` helper function.
+
+**Files modified:** `app/detail/adenosine-detail.tsx`
+
+---
+
+## 2026-04-25: Fix MNaN SVG crash — validDate() guard on wakeTime/bedTime
+
+**Source:** Claude Code — Macbook Pro
+
+Fixed `InvalidNumber: MNaN,75.0` SVG crash caused by NaN propagating from invalid Date objects into chart path coordinates.
+
+**Root cause:** When `lastNightSleep.wakeTime` or `bedTime` is an invalid Date (e.g. ring not yet synced), calling `.getHours()` returns `NaN`. `Math.max(NaN, 1) === NaN` in JS, so `timeSpan` becomes NaN, which propagates into every X coordinate in the SVG path (`MNaN,75.0`).
+
+**Fixes applied (3 layers):**
+1. `src/utils/caffeinePk.ts` — `buildMultiDoseCurvePath` now guards `if (!Number.isFinite(timeSpan) || timeSpan <= 0) return ''` before iterating.
+2. `src/components/home/CaffeineWindowCard.tsx` — Added `validDate(d) = d instanceof Date && !isNaN(d.getTime())` helper; fallback to 7 (wake) and 23 (bed) when Date is invalid.
+3. `app/detail/adenosine-detail.tsx` — Same `validDate()` guard applied to the main screen's `wakeHour`/`bedHour` derivation (this was the unpatched half that was still crashing).
+
+**Files modified:** `src/utils/caffeinePk.ts`, `src/components/home/CaffeineWindowCard.tsx`, `app/detail/adenosine-detail.tsx`
+
+---
+
+## 2026-04-25: Adenosine — Dynamic Wake→Bed Time Axis (cover + detail)
+
+**Source:** Claude Code — Macbook Pro
+
+Both the cover chart and the detail bar chart now span exactly from `wakeHour` to `bedHour` instead of the fixed 6 AM → 11 PM window.
+
+**Cover (`CaffeineWindowCard`):** Replaced module-level `TIME_START/END/SPAN` constants with `timeStart = wakeHour`, `timeEnd = bedHour`, `timeSpan = bedHour - wakeHour` computed inside the component. `tx()`, `buildMultiDoseCurvePath`, `peakMgForDoses`, and `clampedNow` all use these dynamic values. Time labels (`12PM`, `3PM`, etc.) are now filtered to only show hours that fall within the dynamic range.
+
+**Detail bar chart (`CaffeineBarChart`):** Added `timeStart` and `timeEnd` props. `totalBars = ceil((timeEnd - timeStart) * 2)`, `slotW`, bar positions, `nowX`, and drink marker positions all computed from the dynamic span. Bars outside the window are filtered.
+
+**Phase bar (`WindowPhaseBar`):** Added `bedHour` prop. `preFrac`, `openFrac`, `closedFrac` now use `timeSpan = bedHour - wakeHour`. Pre segment spans wakeHour → win.start; closed segment ends at bedHour. Since `wakeHour === timeStart`, the ☀ sun label is always at the left edge of the pre segment (simplified `wakeOffsetFrac = 0`).
+
+**Files modified:** `src/components/home/CaffeineWindowCard.tsx`, `app/detail/adenosine-detail.tsx`
+
+---
+
+## 2026-04-25: CaffeineWindowCard — Self-Contained via Context + Full Phase Coverage
+
+**Source:** Claude Code — Macbook Pro
+
+- **Removed prop drilling** — `CaffeineWindowCard` now reads `wakeHour`/`bedHour` directly from `useHomeDataContext()`. Removed `CaffeineWindowCardProps` interface; `OverviewTab` no longer passes sleep-time props to the card.
+- **Phase blocks span full chart** — Pre block restored to `bx1` (6 AM left edge). `"6AM"` label replaced with `"☀ {wakeTime}"` rendered at the actual wake-time X position, keeping full-width phase coverage while surfacing the correct reference point.
+
+**Files modified:** `src/components/home/CaffeineWindowCard.tsx`, `src/screens/home/OverviewTab.tsx`
+
+---
+
 ## 2026-04-25: Sleep Notification — Dedup Fix + Correct Duration in Push
 
 **Source:** Claude Code — Macbook Pro

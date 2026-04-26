@@ -17,6 +17,7 @@ import Reanimated, {
   withTiming,
   withDelay,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -539,6 +540,7 @@ const STAGE_BAR_W = SCREEN_WIDTH - spacing.md * 4;
 const AnimatedPath = Reanimated.createAnimatedComponent(Path);
 
 function leftRoundedRect(w: number, h: number, r: number): string {
+  'worklet';
   const cr = Math.min(r, w / 2, h / 2);
   return `M${cr},0 Q0,0 0,${cr} L0,${h - cr} Q0,${h} ${cr},${h} L${w},${h} L${w},0 Z`;
 }
@@ -777,7 +779,8 @@ export default function SleepDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="sleepGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#7100C2" stopOpacity={1} />
@@ -795,7 +798,8 @@ export default function SleepDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#sleepGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#sleepFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>

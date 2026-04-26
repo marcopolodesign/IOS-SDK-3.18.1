@@ -14,6 +14,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, LinearGradient, Rect, Stop, Line, Circle, Path, Text as SvgText } from 'react-native-svg';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
@@ -333,7 +334,8 @@ export default function SpO2DetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="spo2Grad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#3B82F6" stopOpacity={1} />
@@ -351,7 +353,8 @@ export default function SpO2DetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Grad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#spo2Fade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone */}
       <View style={styles.gradientZone}>

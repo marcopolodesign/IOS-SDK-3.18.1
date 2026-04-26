@@ -21,6 +21,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, Line, LinearGradient, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { InfoButton } from '../../src/components/common/InfoButton';
@@ -760,7 +761,8 @@ export default function RecoveryDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="recoveryGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#10B981" stopOpacity={1} />
@@ -778,7 +780,8 @@ export default function RecoveryDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#recoveryFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>

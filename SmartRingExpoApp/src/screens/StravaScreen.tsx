@@ -557,7 +557,7 @@ export function StravaScreen() {
                   activity={activity}
                   onPress={() =>
                     router.push({
-                      pathname: '/(tabs)/settings/strava-detail',
+                      pathname: '/(tabs)/coach/strava-detail',
                       params: { id: String(activity.id) },
                     })
                   }

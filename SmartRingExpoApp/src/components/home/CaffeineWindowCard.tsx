@@ -25,15 +25,15 @@ import {
   peakMgForDoses,
   SLEEP_THRESHOLD_MG,
   MAX_CAFFEINE_MG,
+  type CaffeineDose,
 } from '../../utils/caffeinePk';
 import { useCaffeineTimeline } from '../../hooks/useCaffeineTimeline';
+import { useHomeDataContext } from '../../context/HomeDataContext';
 
 // ─── Chart geometry ───────────────────────────────────────────────────────────
-const CHART_PAD_L  = 30;
-const CHART_PAD_R  = 8;
-const TIME_START   = 6;    // 6 AM
-const TIME_END     = 23;   // 11 PM
-const TIME_SPAN    = TIME_END - TIME_START;
+const CHART_PAD_L = 30;
+const CHART_PAD_R = 8;
+// TIME_START/END/SPAN are computed dynamically from wakeHour/bedHour inside the component
 const CURVE_TOP_Y  = 10;
 const CURVE_BOT_Y  = 75;
 
@@ -55,27 +55,33 @@ function mgToY(mg: number, yScale: number): number {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-interface CaffeineWindowCardProps {
-  wakeHour?: number;   // decimal hour, from homeData.lastNightSleep.wakeTime
-  bedHour?: number;    // decimal hour, defaults to 23
-}
-
-export function CaffeineWindowCard({
-  wakeHour = 7.0,
-  bedHour = 23,
-}: CaffeineWindowCardProps) {
+export function CaffeineWindowCard() {
   const { t } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = screenWidth - spacing.md * 2;
   const innerW    = cardWidth - CHART_PAD_L - CHART_PAD_R;
 
+  // Reads directly from the global HomeDataContext — no prop drilling needed
+  const homeData = useHomeDataContext();
+  const wakeTime = homeData.lastNightSleep?.wakeTime;
+  const bedTime  = homeData.lastNightSleep?.bedTime;
+  const validDate = (d?: Date) => d instanceof Date && !isNaN(d.getTime());
+  const wakeHour = validDate(wakeTime) ? wakeTime!.getHours() + wakeTime!.getMinutes() / 60 : 7;
+  const bedRaw   = validDate(bedTime)  ? bedTime!.getHours()  + bedTime!.getMinutes()  / 60 : 23;
+  const bedHour  = bedRaw < 6 ? bedRaw + 24 : bedRaw; // post-midnight → +24
+
   const { doses, clearanceHour: loggedClearHour } = useCaffeineTimeline();
+
+  // Dynamic time axis: spans exactly from wake to bed
+  const timeStart = wakeHour;
+  const timeEnd   = bedHour;
+  const timeSpan  = Math.max(timeEnd - timeStart, 1);
 
   const now = new Date();
   const nowHour = now.getHours() + now.getMinutes() / 60;
-  const clampedNow = Math.max(TIME_START, Math.min(TIME_END, nowHour));
+  const clampedNow = Math.max(timeStart, Math.min(timeEnd, nowHour));
 
-  const tx = (h: number) => CHART_PAD_L + ((h - TIME_START) / TIME_SPAN) * innerW;
+  const tx = (h: number) => CHART_PAD_L + ((h - timeStart) / timeSpan) * innerW;
 
   const window = useMemo(
     () => recommendedWindow(wakeHour, bedHour),
@@ -84,17 +90,30 @@ export function CaffeineWindowCard({
 
   const hasDoses = doses.length > 0;
 
-  // Curve uses actual logged doses only — no phantom baseline when empty
-  const yScale = useMemo(
-    () => Math.max(Math.ceil(peakMgForDoses(doses)), MIN_Y_SCALE),
-    [doses],
+  // Placeholder: 400mg dose at window opening — shows ideal timing when nothing logged
+  const placeholderDoses = useMemo<CaffeineDose[]>(
+    () => [{ intakeHour: window.start, amountMg: MAX_CAFFEINE_MG }],
+    [window.start],
   );
 
+  const yScale = useMemo(
+    () => Math.max(Math.ceil(peakMgForDoses(hasDoses ? doses : placeholderDoses, timeStart, timeEnd)), MIN_Y_SCALE),
+    [doses, hasDoses, placeholderDoses, timeStart, timeEnd],
+  );
+
+  // Real curve when drinks logged; ghost dashed curve as placeholder when empty
   const curvePath = useMemo(
     () => hasDoses
-      ? buildMultiDoseCurvePath(doses, innerW, CHART_PAD_L, TIME_START, TIME_END, CURVE_TOP_Y, CURVE_BOT_Y, yScale)
+      ? buildMultiDoseCurvePath(doses, innerW, CHART_PAD_L, timeStart, timeEnd, CURVE_TOP_Y, CURVE_BOT_Y, yScale)
       : '',
-    [doses, hasDoses, innerW, yScale],
+    [doses, hasDoses, innerW, yScale, timeStart, timeEnd],
+  );
+
+  const ghostCurvePath = useMemo(
+    () => !hasDoses
+      ? buildMultiDoseCurvePath(placeholderDoses, innerW, CHART_PAD_L, timeStart, timeEnd, CURVE_TOP_Y, CURVE_BOT_Y, yScale)
+      : '',
+    [hasDoses, placeholderDoses, innerW, yScale, timeStart, timeEnd],
   );
 
   // clearHour from actual drinks only — prevents phantom clearance from default baseline
@@ -104,11 +123,11 @@ export function CaffeineWindowCard({
   const bx1        = CHART_PAD_L + blockInset;
   const blockRight = CHART_PAD_L + innerW - blockInset;
 
-  // Phase zones: pre = before window opens, open = window.start → clearHour/window.end, closed = after
   const openEnd = clearHour ?? window.end;
 
+  // Phase blocks span the full chart width — pre starts at chart left edge
   const bx2 = Math.max(bx1, Math.min(tx(window.start), blockRight));
-  const bx3 = Math.max(bx2, Math.min(tx(openEnd), blockRight));
+  const bx3 = Math.max(bx2, Math.min(tx(openEnd),      blockRight));
 
   const blockW1 = bx2 - bx1;
   const blockW2 = bx3 - bx2;
@@ -122,12 +141,14 @@ export function CaffeineWindowCard({
   const nowMg = totalMgAt(clampedNow, doses);
   const nowY  = mgToY(nowMg, yScale);
 
+  // Dynamic time labels — only show hours that fall within the wake→bed window
   const timeLabels = [
-    { label: '6AM',  x: tx(6) },
-    { label: '12PM', x: tx(12) - 11 },
-    { label: '3PM',  x: tx(15) },
-    { label: '11PM', x: tx(23) - 22 },
-  ];
+    { label: '12PM', h: 12 },
+    { label: '3PM',  h: 15 },
+    { label: '6PM',  h: 18 },
+    { label: '9PM',  h: 21 },
+  ].filter(({ h }) => h > timeStart + 0.75 && h < timeEnd - 0.75)
+   .map(({ label, h }) => ({ label, x: tx(h) - (label.length > 4 ? 11 : 0) }));
 
   const yAxisLabels = [yScale, Math.round(yScale / 2), 0].map(mg => ({
     mg,
@@ -162,7 +183,7 @@ export function CaffeineWindowCard({
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <View style={styles.iconWrapper}>
-                <Text style={styles.iconEmoji}>☕</Text>
+                <Ionicons name="cafe-outline" size={16} color="white" />
               </View>
               <Text style={styles.headerLabel}>{t('adenosine.phase.' + activePhase).toUpperCase()}</Text>
             </View>
@@ -224,7 +245,6 @@ export function CaffeineWindowCard({
                 </SvgText>
               </React.Fragment>
             ))}
-            <SvgText x={2} y={10} fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily={fontFamily.regular}>mg</SvgText>
 
             {/* Sleep threshold */}
             <Line x1={CHART_PAD_L} y1={mgToY(SLEEP_THRESHOLD_MG, yScale)} x2={cardWidth - CHART_PAD_R} y2={mgToY(SLEEP_THRESHOLD_MG, yScale)}
@@ -238,9 +258,17 @@ export function CaffeineWindowCard({
             <Line x1={nowX} y1={0} x2={nowX} y2={nowY - 8}
               stroke="rgba(255,255,255,0.35)" strokeWidth={1} strokeDasharray="3,3" />
 
-            {/* Multi-dose curve (always present — default baseline + logged drinks) */}
-            <Path d={curvePath} fill="none" stroke="white" strokeWidth={2}
-              strokeLinecap="round" strokeLinejoin="round" />
+            {/* Ghost placeholder curve — 400mg at window open, dashed, shown when nothing logged */}
+            {!hasDoses && ghostCurvePath !== '' && (
+              <Path d={ghostCurvePath} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1.5}
+                strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5,4" />
+            )}
+
+            {/* Real curve — only when drinks are logged */}
+            {hasDoses && curvePath !== '' && (
+              <Path d={curvePath} fill="none" stroke="white" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" />
+            )}
 
             {/* NOW dot */}
             <Circle cx={nowX} cy={nowY} r={8}   fill="rgba(255,255,255,0.22)" />
@@ -269,6 +297,21 @@ export function CaffeineWindowCard({
               );
             })()}
           </Svg>
+
+          {/* Wake time label — Ionicons sunny-outline overlaid at wake-time X position */}
+          <View style={{
+            position: 'absolute',
+            left: tx(timeStart), // timeStart = wakeHour, always the left edge
+            top: LABEL_Y - 11,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+          }}>
+            <Ionicons name="sunny-outline" size={9} color="rgba(255,255,255,0.55)" />
+            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10, fontFamily: fontFamily.regular }}>
+              {formatDecimalHour(wakeHour)}
+            </Text>
+          </View>
         </View>
 
         {/* ── Footer ── */}
@@ -318,9 +361,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  iconEmoji: {
-    fontSize: 16,
   },
   headerLabel: {
     color: 'rgba(255,255,255,0.85)',

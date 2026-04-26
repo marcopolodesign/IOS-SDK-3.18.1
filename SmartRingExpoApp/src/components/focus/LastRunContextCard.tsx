@@ -109,7 +109,7 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
           <Text style={styles.emptyText}>{t('last_run.no_strava')}</Text>
           <TouchableOpacity
             style={styles.ctaButton}
-            onPress={() => router.push('/(tabs)/settings/strava')}
+            onPress={() => router.push('/(tabs)/coach/strava')}
             activeOpacity={0.7}
           >
             <Text style={styles.ctaText}>{t('last_run.connect_strava')}</Text>
@@ -118,7 +118,7 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
       ) : lastRun == null ? (
         <>
           <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/settings/strava')} hitSlop={8}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/coach/strava')} hitSlop={8}>
             <Text style={styles.viewStravaLink}>{t('last_run.view_strava')} →</Text>
           </TouchableOpacity>
         </>
@@ -168,7 +168,7 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
           )}
 
           {/* View Strava link */}
-          <TouchableOpacity onPress={() => router.push('/(tabs)/settings/strava')} hitSlop={8}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/coach/strava')} hitSlop={8}>
             <Text style={styles.viewStravaLink}>{t('last_run.view_strava')} →</Text>
           </TouchableOpacity>
         </>

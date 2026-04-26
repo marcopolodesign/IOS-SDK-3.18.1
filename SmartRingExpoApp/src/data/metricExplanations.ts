@@ -25,7 +25,9 @@ export type MetricKey =
   | 'contributor_sleep_quality'
   | 'contributor_temperature'
   | 'score_breakdown'
-  | 'caffeine_window';
+  | 'caffeine_window'
+  | 'wind_down'
+  | 'caffeine_clearance';
 
 export type ChartType = 'score_arc' | 'range_bar' | 'sleep_stages' | 'waveform' | 'none';
 
@@ -470,6 +472,40 @@ export function getMetricExplanations(t: TFunc): Record<MetricKey, MetricExplana
         ],
       },
       accentColor: '#FF6B35',
+    },
+
+    wind_down: {
+      title: t('explainer.wind_down_title'),
+      subtitle: t('explainer.wind_down_subtitle'),
+      body: t('explainer.wind_down_body'),
+      ranges: [
+        t('explainer.wind_down_range_0'),
+        t('explainer.wind_down_range_1'),
+        t('explainer.wind_down_range_2'),
+      ],
+      chart: {
+        type: 'score_arc',
+        zones: [
+          { label: t('explainer.lbl_poor'), min: 0, max: 39, color: '#FF4444' },
+          { label: t('explainer.lbl_fair'), min: 40, max: 64, color: '#FFD700' },
+          { label: t('explainer.lbl_good'), min: 65, max: 84, color: '#6B8EFF' },
+          { label: t('explainer.lbl_optimal'), min: 85, max: 100, color: '#A855F7' },
+        ],
+      },
+      accentColor: '#6B8EFF',
+    },
+
+    caffeine_clearance: {
+      title: t('explainer.caffeine_clearance_title'),
+      subtitle: t('explainer.caffeine_clearance_subtitle'),
+      body: t('explainer.caffeine_clearance_body'),
+      ranges: [
+        t('explainer.caffeine_clearance_range_0'),
+        t('explainer.caffeine_clearance_range_1'),
+        t('explainer.caffeine_clearance_range_2'),
+      ],
+      chart: { type: 'none' },
+      accentColor: '#FFB84D',
     },
 
     caffeine_window: {

@@ -69,7 +69,7 @@ export default function TabLayout() {
           <Label>{t('tabs.health')}</Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="settings">
+        <NativeTabs.Trigger name="coach">
           <Icon src={{
             default: require('../../assets/coach-icon.png'),
             selected: require('../../assets/coach-icon-selected.png'),

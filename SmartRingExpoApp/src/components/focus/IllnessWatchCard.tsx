@@ -180,7 +180,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
           />
           <Text style={styles.summaryText}>{illness.summary}</Text>
           <TouchableOpacity
-            onPress={() => router.push('/(tabs)/settings/illness-detail')}
+            onPress={() => router.push('/(tabs)/coach/illness-detail')}
             style={styles.detailLink}
             hitSlop={8}
           >

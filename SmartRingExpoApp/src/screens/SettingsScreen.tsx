@@ -238,7 +238,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
             <View style={styles.glassCard}>
               <TouchableOpacity
                 style={[styles.glassRow, styles.glassRowFirst]}
-                onPress={() => router.push('/(tabs)/settings/strava')}
+                onPress={() => router.push('/(tabs)/coach/strava')}
                 activeOpacity={0.7}
               >
                 <Text style={styles.rowLabel}>{t('profile.account.strava')}</Text>
@@ -251,7 +251,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.glassRow}
-                onPress={() => router.push('/(tabs)/settings/apple-health')}
+                onPress={() => router.push('/(tabs)/coach/apple-health')}
                 activeOpacity={0.7}
               >
                 <Text style={styles.rowLabel}>{t('profile.account.apple_health')}</Text>

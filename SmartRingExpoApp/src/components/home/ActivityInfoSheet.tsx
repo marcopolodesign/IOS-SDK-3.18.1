@@ -73,7 +73,7 @@ export const ActivityInfoSheet = memo(function ActivityInfoSheet({
     if (!activity || activity.source !== 'strava') return;
     const numericId = activity.id.replace('strava_', '');
     onClose();
-    router.push({ pathname: '/(tabs)/settings/strava-detail', params: { id: numericId } });
+    router.push({ pathname: '/(tabs)/coach/strava-detail', params: { id: numericId } });
   }, [activity, onClose]);
 
   if (!activity) return null;

@@ -301,7 +301,29 @@ Use these terms consistently in code, comments, and conversation. The cover is a
 
 ### `SemiCircularGauge`
 **File:** `src/components/home/SemiCircularGauge.tsx`
-**Renders:** Semi-circular SVG gauge for displaying a metric as a partial arc.
+**Renders:** Semi-circular SVG gauge for displaying a 0–100 score as a partial arc with animated fill and numeric counter.
+
+**Props:**
+- `score: number` — 0–100 value; drives arc fill + counting animation (1500ms, `Easing.out(cubic)`)
+- `label?: string` — uppercase text above the number (default `'FOCUS SCORE'`)
+- `animated?: boolean` — whether to animate score changes (default `true`)
+- `phaseKey?: string` — when this string changes, a 250ms Reanimated crossfade hides the label + score swap so metric switches are not jarring
+- `size?: number`, `strokeWidth?: number`, `backgroundStrokeWidth?: number` — layout overrides
+
+**Behaviour:** Arc fill uses RN `Animated` (dashoffset interpolation). Text crossfade uses Reanimated `useSharedValue`. Both run simultaneously on phase change — the arc animates from the old to new score while the text briefly fades out, then fades back in with the new label and score.
+
+**Data source:** Driven by `useOverviewGaugePhase()` on the Overview tab. The hook resolves which metric to show based on context (sleep phase, caffeine state, strain, readiness, wind-down window).
+
+---
+
+### `WindDownHero`
+**File:** `src/components/home/WindDownHero.tsx`
+**Renders:** Alternative hero for the Overview tab's wind-down phase — replaces the `SemiCircularGauge` entirely when `gauge.key === 'wind_down'`. Shows moon icon, target bedtime in large text, a countdown ("in 33 min" / "33 min past target"), and a sleep-debt pill if debt ≥ 30 min.
+
+**Props:**
+- `targetBedtimeMs: number` — epoch ms of tonight's target bedtime (from `gauge.meta.targetBedtimeMs`)
+- `minsUntilBed: number` — minutes until target (negative = past target), drives countdown text and orange late-state styling
+- `sleepDebtTotalMin: number` — total sleep debt in minutes; pill is hidden below 30 min
 
 ---
 

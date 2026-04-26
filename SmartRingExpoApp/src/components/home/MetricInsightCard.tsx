@@ -193,6 +193,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontFamily: fontFamily.regular,
     marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   metricValue: {
     color: '#FFFFFF',

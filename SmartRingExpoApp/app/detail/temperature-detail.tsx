@@ -13,6 +13,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop, Path, Line, Circle, Text as SvgText } from 'react-native-svg';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
@@ -311,7 +312,8 @@ export default function TemperatureDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="tempGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%" stopColor="#FF8C42" stopOpacity={1} />
@@ -329,7 +331,8 @@ export default function TemperatureDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#tempGrad)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#tempGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#tempFade)" />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>

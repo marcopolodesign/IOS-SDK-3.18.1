@@ -54,6 +54,7 @@ export function buildMultiDoseCurvePath(
   yScaleMg = 400,
 ): string {
   const timeSpan = timeEnd - timeStart;
+  if (!Number.isFinite(timeSpan) || timeSpan <= 0) return '';
   const pts: string[] = [];
   for (let t = timeStart; t <= timeEnd + 0.05; t += 0.12) {
     const tc  = Math.min(t, timeEnd);

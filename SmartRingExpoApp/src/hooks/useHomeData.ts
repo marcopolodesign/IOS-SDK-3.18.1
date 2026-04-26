@@ -87,8 +87,9 @@ export interface SleepData {
   restingHR: number;
   respiratoryRate: number;
   segments: SleepSegment[];
-  bedTime: Date;
+  bedTime: Date;       // sleep onset (first non-awake segment)
   wakeTime: Date;
+  inBedTime?: Date;    // raw ring block start (when user got into bed)
 }
 
 export interface ActivityData {
@@ -182,6 +183,8 @@ interface CachedData {
     respiratoryRate: number;
     bedTime: string;
     wakeTime: string;
+    inBedTime?: string;
+    segments?: Array<{ stage: SleepStage; startTime: string; endTime: string }>;
   };
   activity: ActivityData;
   ringBattery: number;
@@ -571,6 +574,10 @@ async function saveToCache(data: HomeData): Promise<void> {
         respiratoryRate: data.lastNightSleep.respiratoryRate,
         bedTime: data.lastNightSleep.bedTime.toISOString(),
         wakeTime: data.lastNightSleep.wakeTime.toISOString(),
+        inBedTime: data.lastNightSleep.inBedTime?.toISOString(),
+        segments: data.lastNightSleep.segments.length > 0
+          ? data.lastNightSleep.segments.map(s => ({ stage: s.stage, startTime: s.startTime.toISOString(), endTime: s.endTime.toISOString() }))
+          : undefined,
       },
       activity: data.activity,
       ringBattery: data.ringBattery,
@@ -627,9 +634,12 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
       sleepScore: data.sleepScore,
       lastNightSleep: {
         ...data.lastNightSleep,
-        segments: [], // Don't cache segments
+        segments: data.lastNightSleep.segments
+          ? data.lastNightSleep.segments.map(s => ({ stage: s.stage, startTime: new Date(s.startTime), endTime: new Date(s.endTime) }))
+          : [],
         bedTime: new Date(data.lastNightSleep.bedTime),
         wakeTime: new Date(data.lastNightSleep.wakeTime),
+        inBedTime: data.lastNightSleep.inBedTime ? new Date(data.lastNightSleep.inBedTime) : undefined,
       },
       activity: sanitizeActivity(data.activity),
       ringBattery: data.ringBattery,
@@ -979,6 +989,7 @@ function buildBlockResult(
     segments: trimmed.segments,
     bedTime: trimmed.bedTime,
     wakeTime: trimmed.wakeTime,
+    inBedTime: new Date(block.start),
   };
 }
 

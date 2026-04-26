@@ -18,6 +18,7 @@ import Reanimated, {
   interpolate,
   interpolateColor,
   Extrapolation,
+  FadeIn,
 } from 'react-native-reanimated';
 import Svg, {
   Defs,
@@ -30,6 +31,7 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
 import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
@@ -57,10 +59,7 @@ const DAY_ENTRIES  = buildDayNavigatorLabels(30);
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // ─── Bar chart geometry ───────────────────────────────────────────────────────
-const TIME_START  = 6;
-const TIME_END    = 23;
-const TIME_SPAN   = TIME_END - TIME_START;
-const TOTAL_BARS  = TIME_SPAN * 2; // 34 bars of 30 min each
+// TIME_START/END/SPAN/TOTAL_BARS are all dynamic (wake→bed) — passed as props to chart components
 
 const BAR_SVG_W   = SCREEN_WIDTH - spacing.md * 2;
 const BAR_CHART_H = 240;
@@ -79,11 +78,6 @@ function drinkEmoji(drinkType: string): string {
   return CAFFEINE_PRESETS.find(p => p.key === drinkType)?.emoji ?? '☕';
 }
 
-function topRoundedRect(x: number, y: number, w: number, h: number, r: number): string {
-  const cr = Math.min(r, w / 2, h);
-  return `M${x+cr},${y} L${x+w-cr},${y} Q${x+w},${y} ${x+w},${y+cr} L${x+w},${y+h} L${x},${y+h} L${x},${y+cr} Q${x},${y} ${x+cr},${y} Z`;
-}
-
 type BarEntry = { id: string; drink_type: string; name: string | null; consumed_at: string };
 
 // ─── Bar chart — PK-modeled caffeine per 30-min slot with Y-axis + drink markers
@@ -92,46 +86,60 @@ function CaffeineBarChart({
   entries,
   win,
   clearHour,
+  timeStart,
+  timeEnd,
 }: {
   doses: CaffeineDose[];
   entries: BarEntry[];
   win: { start: number; end: number };
   clearHour: number | null;
+  timeStart: number;
+  timeEnd: number;
 }) {
-  const openEnd = clearHour ?? win.end;
-  const slotW   = BAR_INNER_W / TOTAL_BARS;
-  const GAP     = 4;
+  const timeSpan  = Math.max(timeEnd - timeStart, 1);
+  const totalBars = Math.ceil((timeEnd - timeStart) * 4);
+  const openEnd        = clearHour ?? win.end;
+  const slotW          = BAR_INNER_W / totalBars;
+  const GAP            = 2;
+  const isPlaceholder  = doses.length === 0;
 
-  const peak   = useMemo(() => peakMgForDoses(doses, TIME_START, TIME_END), [doses]);
+  // When nothing logged, show 400mg-at-window-open placeholder so bars trace the ideal curve
+  const displayDoses = useMemo<CaffeineDose[]>(
+    () => isPlaceholder ? [{ intakeHour: win.start, amountMg: MAX_CAFFEINE_MG }] : doses,
+    [doses, isPlaceholder, win.start],
+  );
+
+  const peak   = useMemo(() => peakMgForDoses(displayDoses, timeStart, timeEnd), [displayDoses, timeStart, timeEnd]);
   const yScale = useMemo(() => Math.max(peak, MAX_CAFFEINE_MG), [peak]);
 
-  const bars = useMemo(() => Array.from({ length: TOTAL_BARS }, (_, i) => {
-    const slotMid = TIME_START + i * 0.5 + 0.25;
-    const mg   = totalMgAt(slotMid, doses);
-    const barH = mg > 0 ? Math.max((mg / yScale) * BAR_INNER_H, 2) : 8; // 8px floor when empty
+  const bars = useMemo(() => Array.from({ length: totalBars }, (_, i) => {
+    const slotMid = timeStart + i * 0.25 + 0.125;
+    if (slotMid > timeEnd) return null;
+    const mg   = totalMgAt(slotMid, displayDoses);
+    const barH = mg > 0 ? Math.max((mg / yScale) * BAR_INNER_H, 2) : 8;
     const x    = BAR_PAD_L + i * slotW + GAP / 2;
     const y    = BAR_PAD_T + BAR_INNER_H - barH;
     return { x, y, w: Math.max(slotW - GAP, 1), h: barH, dim: mg === 0 };
-  }), [doses, yScale]);
+  }).filter(Boolean), [displayDoses, yScale, timeStart, timeEnd, slotW]);
 
   const line400Y = BAR_PAD_T + BAR_INNER_H - (MAX_CAFFEINE_MG / yScale) * BAR_INNER_H;
   const sleepY   = BAR_PAD_T + BAR_INNER_H - (SLEEP_THRESHOLD_MG / yScale) * BAR_INNER_H;
-  const yTicks   = [200, 300]; // 100 = sleep threshold line; 400 = daily limit line
+  const yTicks   = [200, 300];
 
-  const now    = new Date();
-  const nowHr  = now.getHours() + now.getMinutes() / 60;
-  const clamped = Math.max(TIME_START, Math.min(TIME_END, nowHr));
-  const nowX   = BAR_PAD_L + ((clamped - TIME_START) / TIME_SPAN) * BAR_INNER_W;
+  const now     = new Date();
+  const nowHr   = now.getHours() + now.getMinutes() / 60;
+  const clamped = Math.max(timeStart, Math.min(timeEnd, nowHr));
+  const nowX    = BAR_PAD_L + ((clamped - timeStart) / timeSpan) * BAR_INNER_W;
 
   // Precompute drink marker positions
   const drinkMarkers = useMemo(() => entries.map(e => {
     const h = new Date(e.consumed_at).getHours() + new Date(e.consumed_at).getMinutes() / 60;
-    if (h < TIME_START || h > TIME_END) return null;
-    const x      = BAR_PAD_L + ((h - TIME_START) / TIME_SPAN) * BAR_INNER_W;
+    if (h < timeStart || h > timeEnd) return null;
+    const x      = BAR_PAD_L + ((h - timeStart) / timeSpan) * BAR_INNER_W;
     const mgHere = totalMgAt(h + 0.25, doses);
     const barTop = BAR_PAD_T + BAR_INNER_H - Math.max((mgHere / yScale) * BAR_INNER_H, 2);
     return { id: e.id, x, emoji: drinkEmoji(e.drink_type), emojiLeft: x - 10, emojiTop: Math.max(barTop - 20, 2) };
-  }).filter(Boolean), [entries, doses, yScale]);
+  }).filter(Boolean), [entries, doses, yScale, timeStart, timeEnd, timeSpan]);
 
   return (
     <View style={barChartStyles.wrapper}>
@@ -154,17 +162,17 @@ function CaffeineBarChart({
             mg
           </SvgText>
 
-          {/* 400mg label on left Y axis */}
+          {/* 400 label on left Y axis */}
           <SvgText x={BAR_PAD_L - 5} y={line400Y + 4}
             fill="rgba(255,255,255,0.45)" fontSize={12}
             fontFamily={fontFamily.regular} textAnchor="end">
-            400mg
+            400
           </SvgText>
 
-          {/* Bars — white, rounded top only, flat bottom */}
-          {bars.map((bar, i) => (
-            <Path key={i} d={topRoundedRect(bar.x, bar.y, bar.w, bar.h, 2)}
-              fill="#FFFFFF" opacity={bar.dim ? 0.15 : 0.85} />
+          {/* Bars — white, fully rounded, dimmed when placeholder */}
+          {bars.map((bar, i) => bar && (
+            <Rect key={i} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
+              fill="#FFFFFF" opacity={isPlaceholder ? 0.22 : (bar.dim ? 0.15 : 0.85)} />
           ))}
 
           {/* Drink intake marker lines */}
@@ -224,27 +232,31 @@ function WindowPhaseBar({
   clearHour,
   activePhase,
   wakeHour,
+  bedHour,
 }: {
   win: { start: number; end: number };
   clearHour: number | null;
   activePhase: 'pre' | 'open' | 'closed';
   wakeHour: number;
+  bedHour: number;
 }) {
-  const openEnd = Math.min(clearHour ?? win.end, TIME_END);
+  // Dynamic span: wake time → bed time (matches bar chart X axis exactly)
+  const timeStart = wakeHour;
+  const timeEnd   = bedHour;
+  const timeSpan  = Math.max(timeEnd - timeStart, 1);
+  const openEnd   = Math.min(clearHour ?? win.end, timeEnd);
 
-  // Transparent zone before wake, then the 3 real phases
-  const preWakeFrac = Math.max(0, (wakeHour - TIME_START) / TIME_SPAN);
-  const preFrac     = Math.max(0, (win.start - Math.max(wakeHour, TIME_START)) / TIME_SPAN);
-  const openFrac    = Math.max(0, (openEnd   - win.start) / TIME_SPAN);
-  const closedFrac  = Math.max(0, (TIME_END  - openEnd)   / TIME_SPAN);
+  const preFrac    = Math.max(0, (win.start - timeStart) / timeSpan);
+  const openFrac   = Math.max(0, (openEnd   - win.start) / timeSpan);
+  const closedFrac = Math.max(0, (timeEnd   - openEnd)   / timeSpan);
+
+  // wakeHour === timeStart, so the sun label always sits at the far left of pre
+  const wakeOffsetFrac = 0;
 
   return (
     <View style={phaseBarStyles.outer}>
-      {/* Segments */}
+      {/* Segments — full width coverage */}
       <View style={phaseBarStyles.bars}>
-        {preWakeFrac > 0 && (
-          <View style={{ flex: preWakeFrac }} />
-        )}
         {preFrac > 0 && (
           <View style={[phaseBarStyles.segment, { flex: preFrac,
             backgroundColor: activePhase === 'pre' ? '#FFAC3F' : 'rgba(255,172,63,0.35)' }]} />
@@ -259,15 +271,16 @@ function WindowPhaseBar({
         )}
       </View>
 
-      {/* Labels row */}
+      {/* Labels — ☀ wake time pinned at exact wakeHour position within pre segment */}
       <View style={phaseBarStyles.labels}>
-        {preWakeFrac > 0 && <View style={{ flex: preWakeFrac }} />}
         {preFrac > 0 && (
-          <View style={{ flex: preFrac }}>
-            {/* Sun icon + wake time at the start of the pre-window */}
-            <View style={phaseBarStyles.wakeTag}>
-              <Text style={phaseBarStyles.sunIcon}>☀</Text>
-              <Text style={phaseBarStyles.labelText}>{formatDecimalHour(wakeHour)}</Text>
+          <View style={{ flex: preFrac, flexDirection: 'row', overflow: 'visible' }}>
+            {wakeOffsetFrac > 0 && <View style={{ flex: wakeOffsetFrac }} />}
+            <View style={{ flex: Math.max(1 - wakeOffsetFrac, 0.001) }}>
+              <View style={phaseBarStyles.wakeTag}>
+                <Ionicons name="sunny-outline" size={10} color="rgba(255,255,255,0.6)" />
+                <Text style={phaseBarStyles.labelText}>{formatDecimalHour(wakeHour)}</Text>
+              </View>
             </View>
           </View>
         )}
@@ -292,7 +305,6 @@ const phaseBarStyles = StyleSheet.create({
   segment:   { height: 8, borderRadius: 4 },
   labels:    { flexDirection: 'row', marginTop: 5 },
   wakeTag:   { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  sunIcon:   { fontSize: 10, color: 'rgba(255,255,255,0.6)' },
   labelText: { color: 'rgba(255,255,255,0.4)', fontFamily: fontFamily.regular, fontSize: 10 },
 });
 
@@ -436,9 +448,10 @@ export default function AdenosineDetailScreen() {
 
   const wakeTime = homeData.lastNightSleep?.wakeTime;
   const bedTime  = homeData.lastNightSleep?.bedTime;
-  const wakeHour = wakeTime ? wakeTime.getHours() + wakeTime.getMinutes() / 60 : 7;
+  const validDate = (d?: Date) => d instanceof Date && !isNaN(d.getTime());
+  const wakeHour = validDate(wakeTime) ? wakeTime!.getHours() + wakeTime!.getMinutes() / 60 : 7;
   // post-midnight bedtimes (e.g. 1 AM) are treated as hour 25 so the formula stays consistent
-  const bedRaw   = bedTime ? bedTime.getHours() + bedTime.getMinutes() / 60 : 23;
+  const bedRaw   = validDate(bedTime)  ? bedTime!.getHours()  + bedTime!.getMinutes()  / 60 : 23;
   const bedHour  = bedRaw < 6 ? bedRaw + 24 : bedRaw;
 
   // clearHour from actual drinks only — no phantom 95mg default that clears immediately
@@ -540,7 +553,8 @@ export default function AdenosineDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Full-screen gradient background */}
-      <Svg style={styles.gradientBg} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
         <Defs>
           <RadialGradient id="aGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
             <Stop offset="0%"  stopColor="#0D6B33" stopOpacity={1} />
@@ -558,7 +572,8 @@ export default function AdenosineDetailScreen() {
         <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad)"  />
         <Rect x="0" y="0" width="100" height="100" fill="url(#aGrad2)" />
         <Rect x="0" y="0" width="100" height="100" fill="url(#aFade)"  />
-      </Svg>
+        </Svg>
+      </Reanimated.View>
 
       {/* Gradient zone: header + trend chart */}
       <View style={styles.gradientZone}>
@@ -607,11 +622,17 @@ export default function AdenosineDetailScreen() {
         showsVerticalScrollIndicator={false}
         onScroll={scrollHandler}
       >
-        {/* Main bar chart — PK-modeled caffeine per 30-min slot */}
-        <CaffeineBarChart doses={doses} entries={entries} win={win} clearHour={clearHour} />
+        {/* Main bar chart — dynamic X axis from wake to bed */}
+        <CaffeineBarChart
+          doses={doses} entries={entries} win={win} clearHour={clearHour}
+          timeStart={wakeHour} timeEnd={bedHour}
+        />
 
-        {/* Window phase indicator (3 segments, mirrors overview card) */}
-        <WindowPhaseBar win={win} clearHour={clearHour} activePhase={activePhase} wakeHour={wakeHour} />
+        {/* Window phase indicator — same wake→bed span as bar chart */}
+        <WindowPhaseBar
+          win={win} clearHour={clearHour} activePhase={activePhase}
+          wakeHour={wakeHour} bedHour={bedHour}
+        />
 
         {/* Insight */}
         <View style={styles.insightBlock}>

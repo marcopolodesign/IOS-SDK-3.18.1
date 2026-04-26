@@ -78,7 +78,7 @@ function HorizontalWorkoutCard({ activity }: { activity: UnifiedActivity }) {
   const handlePress = () => {
     if (activity.source !== 'strava') return;
     const numericId = activity.id.replace('strava_', '');
-    router.push({ pathname: '/(tabs)/settings/strava-detail', params: { id: numericId } });
+    router.push({ pathname: '/(tabs)/coach/strava-detail', params: { id: numericId } });
   };
 
   return (

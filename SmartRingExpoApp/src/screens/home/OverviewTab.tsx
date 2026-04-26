@@ -27,6 +27,8 @@ import { useBaselineMode } from '../../context/BaselineModeContext';
 import { BaselineProgressCard } from '../../components/home/BaselineProgressCard';
 import type { SleepDebtCategory } from '../../types/sleepDebt.types';
 import { useRelativeTime } from '../../hooks/useRelativeTime';
+import { useOverviewGaugePhase } from '../../hooks/useOverviewGaugePhase';
+import { WindDownHero } from '../../components/home/WindDownHero';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
   none: '#4ADE80',
@@ -76,9 +78,28 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
 
   const { sleepDebt } = useSleepDebt();
   const baseline = useBaselineMode();
+  const gauge = useOverviewGaugePhase();
   const scoreMessage = getScoreMessage(homeData.overallScore, t);
   const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
+
+  const insightText = React.useMemo(() => {
+    if (gauge.key !== 'wind_down') {
+      return [homeData.userName ? `${homeData.userName} — ` : null, scoreMessage, homeData.insight]
+        .filter(Boolean).join('');
+    }
+    const debt = sleepDebt.totalDebtMin;
+    const minsUntilBed = gauge.meta?.minsUntilBed ?? 0;
+    if (minsUntilBed < 0) {
+      const past = Math.round(-minsUntilBed);
+      return debt >= 30
+        ? `You're ${past} min past your target — and carrying ${Math.floor(debt / 60)}h ${Math.round(debt % 60)}m of sleep debt. Head to bed now.`
+        : `You're ${past} min past your target. Head to bed to protect tomorrow's recovery.`;
+    }
+    return debt >= 30
+      ? `You're carrying ${Math.floor(debt / 60)}h ${Math.round(debt % 60)}m of sleep debt. Getting to bed on time helps recovery.`
+      : `Your sleep debt is low. Stick to your target bedtime to keep it that way.`;
+  }, [gauge.key, gauge.meta?.minsUntilBed, sleepDebt.totalDebtMin, homeData.userName, scoreMessage, homeData.insight]);
 
   const isOnboarding = baseline.isInBaselineMode;
 
@@ -114,15 +135,24 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
         <BaselineProgressCard />
       ) : (
         <>
-          {/* Main Score Gauge */}
+          {/* Main hero — phase-specific component, not always the gauge */}
           <View style={styles.gaugeSection}>
-            <SemiCircularGauge
-              score={homeData.overallScore}
-              label={t('overview.overall_score')}
-              animated={!homeData.isLoading}
-            />
+            {gauge.key === 'wind_down' ? (
+              <WindDownHero
+                targetBedtimeMs={gauge.meta?.targetBedtimeMs ?? Date.now()}
+                minsUntilBed={gauge.meta?.minsUntilBed ?? 0}
+                sleepDebtTotalMin={sleepDebt.totalDebtMin}
+              />
+            ) : (
+              <SemiCircularGauge
+                score={gauge.score}
+                label={t(gauge.labelKey)}
+                animated={!homeData.isLoading}
+                phaseKey={gauge.key}
+              />
+            )}
             <View style={styles.gaugeInfoBtn}>
-              <InfoButton metricKey="recovery_score" />
+              <InfoButton metricKey={gauge.metricKey} />
             </View>
           </View>
 
@@ -134,11 +164,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                 { label: t('overview.readiness'), value: focusData.readiness?.score ?? homeData.readiness },
                 { label: t('overview.sleep'), value: homeData.sleepScore, onPress: () => router.push('/detail/sleep-detail') },
               ]}
-              insight={[
-                homeData.userName ? `${homeData.userName} — ` : null,
-                scoreMessage,
-                homeData.insight,
-              ].filter(Boolean).join('')}
+              insight={insightText}
               scrollY={scrollY}
               isScrolled={isScrolled}
             />
@@ -201,14 +227,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
 
       {/* Caffeine Window */}
       <View style={styles.gradientCardSection}>
-        <CaffeineWindowCard
-          wakeHour={sleep.wakeTime
-            ? sleep.wakeTime.getHours() + sleep.wakeTime.getMinutes() / 60
-            : undefined}
-          bedHour={sleep.bedTime
-            ? (h => h < 6 ? h + 24 : h)(sleep.bedTime.getHours() + sleep.bedTime.getMinutes() / 60)
-            : undefined}
-        />
+        <CaffeineWindowCard />
       </View>
 
       {/* Daily Chronology Timeline */}

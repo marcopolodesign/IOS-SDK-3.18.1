@@ -202,6 +202,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
             <GradientInfoCard
               icon={<SleepScoreIcon />}
               title={hasNaps ? t('sleep.stages') + ' + Nap' : t('sleep.stages')}
+              titleCaption={(sleep.inBedTime ?? sleep.bedTime) ? (sleep.inBedTime ?? sleep.bedTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null}
               showArrow
               onHeaderPress={() => router.push('/detail/sleep-detail')}
               gradientStops={[
