@@ -176,3 +176,25 @@
 - **autoReconnect.jstyle returned failure (7434420739):** Intentional `reportError` at `UnifiedSmartRingService.ts:376`. Consider downgrading to `warning` since this is a normal expected path when ring is out of range.
 - **V8 timeout (7431794956):** V8 service — off-limits per constraints. Not touched.
 - **WatchdogTermination (7406751015):** Recurring since 2026-04-13. Requires Xcode Instruments memory profiling. Possibly related to the BLE sync burst above.
+
+## 2026-04-26
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7441113294 | Error: [Worklets] Tried to synchronously call a non-worklet function `leftRoundedRect` on the UI thread | fatal | 2026-04-25T12:13:05Z | 2026-04-26T12:17:25Z | Needs manual review — `leftRoundedRect` not found in repo; same as 2026-04-25 entry. Add `'worklet';` directive to the function (or hoist it out of the animated callback). |
+| 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | 2026-04-25T21:41:33Z | Needs manual review — intentional telemetry from `JstyleService.ts:normalizeNativeError`; expected runtime condition when ring is not connected. |
+| 7431794314 | Error: sleep_ring_empty | warning | 2026-04-22T00:59:34Z | 2026-04-25T21:41:31Z | Needs manual review — intentional `reportError` at `useHomeData.ts:1531`; fires when ring returns 0 sleep records. Not a code bug. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-04-25T21:41:29Z | Needs manual review — BLE race condition; no in-app stack frames. Consider cancelling pending requests on disconnect. |
+| 7434420739 | Error: autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | 2026-04-25T21:28:23Z | Needs manual review — intentional `reportError` at `UnifiedSmartRingService.ts:383`; expected path when ring is out of range. Consider downgrading to warning. |
+| 7434372098 | Error: getStepsData timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-04-25T20:29:33Z | Needs manual review — BLE native timeout; `withNativeTimeout` is working as intended. |
+
+### 2026-04-26 Notes
+- 25 unresolved issues total; 6 active within the last 24 h.
+- **No auto-fixes applied today.** All 6 active issues are recurring operational conditions already documented in prior runs — none meet the confidence threshold for an automated fix.
+- **leftRoundedRect fatal (7441113294):** Persisting from 2026-04-25. `leftRoundedRect` is still absent from the checked-out repo. The function is being called from a `useAnimatedStyle`/`useDerivedValue` worklet in `app/detail/sleep-detail.tsx` (Sentry frame `sleepDetailTsx1`) without the `'worklet'` directive. Fix: locate `leftRoundedRect` in the deployed OTA bundle and add `'worklet';` as its first statement, or extract it as a pure computation outside the animated callback.
+- **NOT_CONNECTED cluster (7431794312):** 41 events over 3 days. `normalizeNativeError` in `JstyleService.ts` correctly surfaces this as a warning. Root fix would be adding a connection pre-flight guard at call sites before issuing BLE commands.
+- **sleep_ring_empty (7431794314):** Recurring. Intentional diagnostic. No code change needed; consider suppressing in Sentry when Supabase fallback succeeds.
+- **Connection dropped (7434391393):** No stack trace available. Likely the same BLE disconnect-during-pending-request race documented on 2026-04-23. Consider calling `cancelPendingDataRequest()` in the disconnect handler.
+- **autoReconnect.jstyle failure (7434420739):** Intentional `reportError` at `UnifiedSmartRingService.ts:383`. Expected when ring is out of BLE range. Downgrade to `warning` level to reduce noise.
+- **getStepsData timeout (7434372098):** `withNativeTimeout` fires correctly. Not a bug. Consider suppressing Sentry report when a successful reconnect follows within the same session.
+- `gh` CLI not available — PR creation skipped.
