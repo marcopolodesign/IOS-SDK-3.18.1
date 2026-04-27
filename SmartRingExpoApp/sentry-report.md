@@ -198,3 +198,23 @@
 - **autoReconnect.jstyle failure (7434420739):** Intentional `reportError` at `UnifiedSmartRingService.ts:383`. Expected when ring is out of BLE range. Downgrade to `warning` level to reduce noise.
 - **getStepsData timeout (7434372098):** `withNativeTimeout` fires correctly. Not a bug. Consider suppressing Sentry report when a successful reconnect follows within the same session.
 - `gh` CLI not available — PR creation skipped.
+## 2026-04-27
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | Needs manual review — BLE sync attempted while ring disconnected; runtime condition, not a code bug |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — no stack trace; BLE race condition, transient |
+| 7431041612 | Error: Query timeout after 10s | error | 2026-04-21T19:45:57Z | Needs manual review — minified stack; likely StravaService or another Supabase call; see 7444201961 |
+| 7434372098 | Error: getBatteryLevel timed out after 5000ms | warning | 2026-04-22T17:51:23Z | Needs manual review — native BLE timeout; `withNativeTimeout` guard already in place |
+| 7444044573 | Error: sleep_ring_empty | warning | 2026-04-27T08:16:30Z | Needs manual review — ring returned empty sleep records; Supabase fallback active |
+| 7444201961 | Error: Query timeout after 10s | error | 2026-04-27T09:51:33Z | Needs manual review — `StravaService.loadTokensFromDatabase` 10 s timeout; Supabase slow/unavailable; intentional `reportError` |
+| 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | Needs manual review — same pattern as 7434824620 |
+| 7434420739 | Error: autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | Needs manual review — intentional `reportError` in `UnifiedSmartRingService.ts:383` when Jstyle reconnect returns `{success:false}`; consider downgrading to warning |
+| 7441113294 | Error: [Worklets] leftRoundedRect non-worklet on UI thread | fatal | 2026-04-25T12:13:05Z | **Auto-fixed (PR #6)** — inlined `leftRoundedRect` path computation directly in `useAnimatedProps` in `sleep-detail.tsx:577`; eliminates cross-function worklet call that `react-native-worklets` runtime fails to resolve |
+
+### 2026-04-27 Notes
+- 9 issues active within the last 24 hours out of 25 total unresolved.
+- **Auto-fixed:** Worklets fatal 7441113294 — `leftRoundedRect` called as non-worklet from `useAnimatedProps` in `SleepStageBar` (`app/detail/sleep-detail.tsx:577`). The function had the `'worklet'` directive in source but the deployed OTA bundle was compiled before the directive was present (confirmed by previous monitor entries flagging the function as missing). Fix inlines the SVG path computation inside `useAnimatedProps` to eliminate the module-level cross-function call. Branch: `sentry/fix-7441113294` → PR #6.
+- **BLE runtime errors (7434824620, 7431794312, 7434391393, 7434372098):** Recurring connectivity warnings. All are expected runtime conditions (device out of range, BLE stack busy) — not code bugs. No auto-fix possible.
+- **sleep_ring_empty (7444044573):** New occurrence today. Intentional error from ring returning 0 sleep records; Supabase fallback works. No fix needed.
+- **Query timeouts (7431041612, 7444201961):** StravaService `loadTokensFromDatabase` 10 s guard fires when Supabase is slow. Intentional `reportError` call. Consider downgrading severity to `warning` since this is a non-fatal fallback.
+- **autoReconnect.jstyle returned failure (7434420739):** Persisting. Intentional `reportError` at `UnifiedSmartRingService.ts:383`. The auto-reconnect failing is a normal expected path (ring out of range). Recommend downgrading `reportError` severity from `error` to `warning` in `UnifiedSmartRingService.ts:383`.
