@@ -278,7 +278,7 @@ function NewHomeScreenContent() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Background blur — overview only; sits outside the clipped horizontal ScrollView */}
         {activeIndex === 0 && (
-          <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <BlurView intensity={30} tint="systemThinMaterialDark" style={StyleSheet.absoluteFillObject} />
         )}
         {/* Header (pinned) */}
         <HomeHeader

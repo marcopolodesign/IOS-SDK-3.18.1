@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    flexShrink: 1,
+    flex: 1,
   },
   input: {
     color: '#000000',

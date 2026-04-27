@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Path } from 'react-native-svg';
+import { HeartIcon } from '../components/common/HeartIcon';
 import { useSmartRing } from '../hooks';
 import { useOnboarding } from '../context/OnboardingContext';
 import { GlassCard } from '../components/home/GlassCard';
@@ -148,7 +149,7 @@ function HRMeasurementCard({
           ]}
         >
           <View style={[hrStyles.iconGradient, isMeasuring && hrStyles.iconGradientActive]}>
-            <Ionicons name="heart" size={32} color="#fff" />
+            <HeartIcon size={32} color="#fff" />
           </View>
         </Animated.View>
 

@@ -12,6 +12,9 @@ import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
 
 import DailyTimelineCard from '../../components/home/DailyTimelineCard';
 import { CaffeineWindowCard } from '../../components/home/CaffeineWindowCard';
+import { CaffeineBarChart } from '../../components/detail/CaffeineBarChart';
+import { clearanceHour, recommendedWindow, MAX_CAFFEINE_MG, CAFFEINE_PRESETS } from '../../utils/caffeinePk';
+import { formatDecimalHour, getSleepHours } from '../../utils/time';
 import LogEntrySheet from '../../components/home/LogEntrySheet';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { useFocusDataContext } from '../../context/FocusDataContext';
@@ -29,6 +32,7 @@ import type { SleepDebtCategory } from '../../types/sleepDebt.types';
 import { useRelativeTime } from '../../hooks/useRelativeTime';
 import { useOverviewGaugePhase } from '../../hooks/useOverviewGaugePhase';
 import { WindDownHero } from '../../components/home/WindDownHero';
+import { useCaffeineTimeline } from '../../hooks/useCaffeineTimeline';
 
 const DEBT_COLORS: Record<SleepDebtCategory, string> = {
   none: '#4ADE80',
@@ -51,6 +55,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   const focusData = useFocusDataContext();
   const { setActionHandler, showOverlay } = useAddOverlay();
   const { entries: timelineEntries, addEntry } = useTimelineEntries();
+  const { entries: caffeineEntries, doses: caffeineDoses, currentMg: caffeineCurrentMg } = useCaffeineTimeline();
   const [refreshing, setRefreshing] = React.useState(false);
   const [sheetMode, setSheetMode] = React.useState<'recovery' | 'activity' | null>(null);
   const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
@@ -83,7 +88,27 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
   const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
 
+  // Caffeine window computations — used for the inline bar chart below the gauge
+  const { wakeHour: caffeineWakeHour, bedHour: caffeineBedHour } = getSleepHours(sleep.wakeTime, sleep.bedTime);
+  const caffeineClearHour = React.useMemo(() => clearanceHour(caffeineDoses), [caffeineDoses]);
+  const caffeineWindow = React.useMemo(() => recommendedWindow(caffeineWakeHour, caffeineBedHour), [caffeineWakeHour, caffeineBedHour]);
+  const caffeineNow = new Date();
+  const caffeineNowHour = caffeineNow.getHours() + caffeineNow.getMinutes() / 60;
+  const caffeineActivePhase: 'pre' | 'open' | 'closed' =
+    caffeineNowHour < caffeineWindow.start ? 'pre' : caffeineNowHour <= caffeineWindow.end ? 'open' : 'closed';
+
   const insightText = React.useMemo(() => {
+    if (gauge.key === 'caffeine') {
+      const windowEndTime = formatDecimalHour(caffeineWindow.end);
+      const clearTime = formatDecimalHour(caffeineClearHour);
+      const budget = Math.max(0, Math.round(MAX_CAFFEINE_MG - caffeineCurrentMg));
+      const topDrinks = CAFFEINE_PRESETS.filter(p => p.key !== 'custom' && p.defaultMg <= budget).slice(0, 2);
+      if (caffeineActivePhase === 'closed' || topDrinks.length === 0) {
+        return `Caffeine clears at ${clearTime}. Skip more for quality sleep tonight.`;
+      }
+      const drinkNames = topDrinks.map(d => t(`adenosine.preset.${d.key}`)).join(' or ');
+      return `Window open until ${windowEndTime}. You can still have a ${drinkNames}.`;
+    }
     if (gauge.key !== 'wind_down') {
       return [homeData.userName ? `${homeData.userName} — ` : null, scoreMessage, homeData.insight]
         .filter(Boolean).join('');
@@ -99,7 +124,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
     return debt >= 30
       ? `You're carrying ${Math.floor(debt / 60)}h ${Math.round(debt % 60)}m of sleep debt. Getting to bed on time helps recovery.`
       : `Your sleep debt is low. Stick to your target bedtime to keep it that way.`;
-  }, [gauge.key, gauge.meta?.minsUntilBed, sleepDebt.totalDebtMin, homeData.userName, scoreMessage, homeData.insight]);
+  }, [gauge.key, gauge.meta?.minsUntilBed, sleepDebt.totalDebtMin, homeData.userName, scoreMessage, homeData.insight, caffeineClearHour, caffeineWindow.end, caffeineCurrentMg, caffeineActivePhase, t]);
 
   const isOnboarding = baseline.isInBaselineMode;
 
@@ -142,6 +167,16 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                 targetBedtimeMs={gauge.meta?.targetBedtimeMs ?? Date.now()}
                 minsUntilBed={gauge.meta?.minsUntilBed ?? 0}
                 sleepDebtTotalMin={sleepDebt.totalDebtMin}
+              />
+            ) : gauge.key === 'caffeine' ? (
+              <CaffeineBarChart
+                doses={caffeineDoses}
+                entries={caffeineEntries}
+                win={caffeineWindow}
+                clearHour={caffeineClearHour}
+                timeStart={caffeineWakeHour}
+                timeEnd={caffeineBedHour}
+                height={200}
               />
             ) : (
               <SemiCircularGauge
@@ -238,6 +273,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           manualEntries={timelineEntries}
           unifiedActivities={homeData.unifiedActivities}
           todayNaps={homeData.todayNaps}
+          caffeineEntries={caffeineEntries}
           onAddPress={() => showOverlay()}
         />
       </View>

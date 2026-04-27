@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
+import { HeartIcon } from '../../src/components/common/HeartIcon';
 import { useTranslation } from 'react-i18next';
 import { useOnboarding } from '../../src/context/OnboardingContext';
 import { stravaService } from '../../src/services/StravaService';
@@ -135,7 +136,7 @@ export default function IntegrationsScreen() {
             disabled={healthConnected || healthConnecting}
           >
             <View style={[styles.integrationIconWrap, styles.appleHealthIconBg]}>
-              <Ionicons name="heart" size={20} color="#fff" />
+              <HeartIcon size={20} color="#fff" />
             </View>
 
             <View style={styles.integrationInfo}>

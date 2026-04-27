@@ -4,6 +4,151 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-27: Caffeine Gauge — Raw mg Display + Inline Bar Chart on Overview
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** When the overview gauge is in the caffeine phase, the center now shows the raw mg value in system ("112 mg") instead of the abstract "72% clearance" percentage. A compact adenosine bar chart (160px) with a colored phase strip appears directly below the gauge, and the insight text slot switches from the generic recovery message to a caffeine-specific line showing the window close time and top available beverages (e.g. "Window open until 2:30 PM. You can still have an Espresso or Green tea."). The `CaffeineWindowCard` bezier-curve cover is hidden when this phase is active to avoid duplication.
+
+**Files created:**
+- `src/components/detail/CaffeineBarChart.tsx` — Shared `CaffeineBarChart` (PK-modeled bar chart), `CaffeineWindowPhaseBar` (colored pre/open/closed strip), and `DrinkSuggestions` components extracted for reuse across OverviewTab and adenosine-detail
+
+**Files modified:**
+- `src/components/home/SemiCircularGauge.tsx` — Added optional `displayValue?: number` and `displayUnit?: string` props; center text shows these when provided instead of the animated score + `%`
+- `src/utils/overviewGaugePhase.ts` — Added `displayValue` and `displayUnit` to `GaugePhase` interface; caffeine phase sets `displayValue = Math.round(caffeineCurrentMg)` and `displayUnit = 'mg'`
+- `src/screens/home/OverviewTab.tsx` — Expanded `useCaffeineTimeline` destructuring; added caffeine window computations (`getSleepHours`, `clearanceHour`, `recommendedWindow`, `activePhase`); inserted caffeine bar chart section below gauge; updated `insightText` for caffeine phase; hides `CaffeineWindowCard` when phase is caffeine; passes `caffeineEntries` to `DailyTimelineCard`
+- `src/components/home/CaffeineWindowCard.tsx` — Replaced inline `validDate` + wakeHour/bedHour pattern with `getSleepHours()`
+- `src/utils/time.ts` — Added `getSleepHours(wakeTime?, bedTime?)` utility that handles post-midnight bedtimes and missing data defaults (eliminates a repeated 3-site pattern)
+- `src/i18n/locales/en.json` — `overview.caffeine_clearance` → "IN YOUR SYSTEM" (gauge label)
+- `src/i18n/locales/es.json` — `overview.caffeine_clearance` → "EN TU SISTEMA"
+
+**Key notes:**
+- Arc fill still uses clearance % (72%) — high = mostly cleared, which matches "good = high" gauge semantics. Only the center number and unit change.
+- `caffeineActivePhase` is time-based (window.start/end), same logic as in adenosine-detail. Phase bar uses `clearHour ?? window.end` for the open segment end.
+- `CaffeineBarChart.tsx` is the shared component; `adenosine-detail.tsx` retains its own inline versions (they differ slightly — the detail uses `totalBars * 4` at 0.25h resolution vs the original 0.5h; the new shared component uses 0.25h resolution matching adenosine-detail).
+
+---
+
+### 2026-04-27: Trends Detail Template — Sleep Trends Screen (Phase 1)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added a new "trends-over-time" layer to the Trends tab. Tapping any cover card now opens a new full-screen trends page for that domain, showing Daily / Weekly / Monthly views for every key metric. Built as a single generic `TrendsDetailScreen` parameterized by a `TrendsDomain` config — all 4 covers (Sleep, Recovery, Activity, Running) route to it. Phase 1 fully implements the Sleep domain (9 metrics); Recovery/Activity/Running show a "Coming soon" empty state until Phases 2–4.
+
+**Files created:**
+- `src/utils/sleepDerivations.ts` — Pure functions: `deriveLatencyMin`, `deriveSleepOnset`, `deriveEfficiency`, `deriveTimeInBedMin`, `toNightDecimalHour`, `toDecimalHour`, `formatClockHour`, `formatMinutes`
+- `src/screens/trendsDetail/domains.ts` — `TrendsDomain` + `MetricDefinition` types; `SLEEP_DOMAIN` (9 metrics with extract functions), stub domains for Recovery/Activity/Running
+- `src/hooks/useTrendsData.ts` — Unified data hook: wraps `useMetricHistory('sleep')`, builds 14-day / 8-week / 6-month buckets, aggregates per-metric series (mean / sum / medianClockTime)
+- `src/components/trendsDetail/RangeModeTabs.tsx` — 3-pill segmented control (Daily / Weekly / Monthly)
+- `src/components/trendsDetail/ClockTimeBarChart.tsx` — Wraps `TrendBarChart` for clock-time metrics (bedTime, sleepOnset, wakeTime); decimal-hour Y axis with domain-specific range
+- `src/components/trendsDetail/MetricSection.tsx` — Per-metric card: label + current value header, bar/clockTime chart, avg/min/max sub-stats row; borders only (no bg fill)
+- `src/screens/TrendsDetailScreen.tsx` — Generic screen: gradient bg matching domain color, nav row with `BackArrow` + domain chip, hero title, `RangeModeTabs`, stacked `MetricSection` list
+- `app/detail/sleep-trends.tsx` — Route shell → `<TrendsDetailScreen domain="sleep" />`
+- `app/detail/recovery-trends.tsx` — Route shell → `<TrendsDetailScreen domain="recovery" />`
+- `app/detail/activity-trends.tsx` — Route shell → `<TrendsDetailScreen domain="activity" />`
+- `app/detail/running-trends.tsx` — Route shell → `<TrendsDetailScreen domain="running" />`
+
+**Files modified:**
+- `app/_layout.tsx` — Registered 4 new `Stack.Screen`s: `detail/sleep-trends`, `detail/recovery-trends`, `detail/activity-trends`, `detail/running-trends` (all `slide_from_right`)
+- `src/components/trends/SleepTrendCover.tsx` — `router.push` changed to `/detail/sleep-trends`; removed local `formatMinutes` copy, now imports from `sleepDerivations`
+- `src/components/trends/RecoveryTrendCover.tsx` — `router.push` changed to `/detail/recovery-trends`
+- `src/components/trends/ActivityTrendCover.tsx` — `router.push` changed to `/detail/activity-trends`
+- `src/components/trends/RunningTrendCover.tsx` — `router.push` changed to `/detail/running-trends` (was `/(tabs)/coach/strava`)
+- `src/i18n/locales/en.json` — Added `trends_detail` block: screen_title, coming_soon, domain labels, range labels + descriptions, 9 metric labels, stat labels (avg/min/max), trend direction labels
+- `src/i18n/locales/es.json` — Full Spanish translation of `trends_detail` block
+
+**Key notes:**
+- Sleep 9 metrics: BedTime, DeepSleep, LatencyMin, SleepScore, Efficiency (Oura formula), TimeInBed, SleepOnset, WakeTime, TotalSleep
+- Latency and SleepOnset derived from `DaySleepData.segments` (first non-awake segment marks sleep onset; sum of leading awake duration = latency)
+- Clock-time metrics (BedTime, SleepOnset, WakeTime) use `toNightDecimalHour` (hours < 12 mapped to +24 to handle midnight crossover); Y range [18, 30] for bed/onset, [3, 13] for wake
+- Daily = last 14 days, Weekly = last 8 Monday-anchored weeks, Monthly = last 6 months
+- Existing `/detail/sleep-detail` (single-day deep-dive) stays untouched and remains reachable from Today/Overview cards
+- `useTrendsData` always calls `useMetricHistory('sleep', { fullDays: 180 })` regardless of domain (React hook rules); non-sleep domains return empty series until Phase 2–4 adds their data branches
+- Phase 2–4 only need: add `MetricDefinition[]` to the relevant domain stub + extend `useTrendsData` branch + wire i18n keys
+
+---
+
+### 2026-04-27: Coach → AI Chat — fade transition
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced the `fullScreenModal` (slide-up) presentation on `/chat` with `animation: 'fade'`. Since both FocusScreen and AIChatScreen share the same gradient background, the crossfade makes the background appear continuous — only the content elements fade in/out.
+
+**Files modified:**
+- `app/_layout.tsx` — `chat` Stack.Screen: removed `presentation: 'fullScreenModal'`, added `animation: 'fade'`
+
+**Key notes:**
+- All other routes unaffected (detail screens keep `slide_from_right`, settings/profile keep `slide_from_bottom`)
+- Swipe-down dismiss is replaced by left-edge back gesture; close button on AIChatScreen handles dismissal anyway
+
+---
+
+### 2026-04-27: Coach tab — matching gradient background
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The Coach tab (FocusScreen) now uses the same animated dark-red gradient background as the AI Chat screen — identical `LinearGradient`, animated overlay, and floating blob SVG that gently drifts in the top-right corner.
+
+**Files modified:**
+- `src/screens/FocusScreen.tsx` — Replaced plain `View` + `colors.background` with `LinearGradient` (`#000000` → `rgba(127,10,10,0.73)`), added `Reanimated` animated overlay gradient (breathing opacity 0→0.55 over 9.8s) and animated blob SVG (slow float translate over 7.2s). Removed unused `colors` import.
+
+**Key notes:**
+- Blob SVG, gradient stops, animation durations, and easing are identical to `AIChatScreen` for visual continuity.
+
+---
+
+### 2026-04-27: Custom heart icon SVG — replaced all Ionicons heart instances
+
+**Source:** Claude Code — Macbook Pro
+
+Replaced all `<Ionicons name="heart" />` and `heart-outline` icon usages with a custom SVG heart icon. Created `src/components/common/HeartIcon.tsx` (takes `size` and `color` props, uses react-native-svg). Applied to:
+- `StyledRingScreen` — live HR icon (size 32, white)
+- `AppleHealthScreen` — non-iOS placeholder and connect card (size 48, #FF375F), and the Heart Rate GlassDataCard header (size 20, via heart-outline string)
+- `integrations.tsx` — Apple Health integration row icon (size 20, white)
+- `DailyTimelineCard` — heart-outline chip icon for avg HR chips (size 10)
+
+**Files modified:** `src/components/common/HeartIcon.tsx` (new), `src/screens/StyledRingScreen.tsx`, `src/screens/AppleHealthScreen.tsx`, `app/(onboarding)/integrations.tsx`, `src/components/home/DailyTimelineCard.tsx`
+
+---
+
+### 2026-04-27: Adenosine window — always wake-time based, never drink-based
+
+**Source:** Claude Code — Macbook Pro
+
+Fixed: logging a caffeine drink was shifting the adenosine window boundaries (pre/open/closed phases). Root cause: `openEnd` in both the cover card and detail screen was computed as `clearHour ?? win.end` — when drinks were logged `clearHour` (PK-model clearance time) replaced `win.end` as the boundary between "open" and "closed" phases, visually shrinking or expanding the colored blocks.
+
+Fix: `openEnd` is now always `win.end` (derived purely from wake time via `recommendedWindow`). The caffeine clearance time (`clearHour`) is still shown as informational text ("Caffeine clears at X") but has zero effect on window boundaries or phase calculation. Also removed the now-unused `clearHour` prop from `WindowPhaseBar` and the dead `openEnd` local in `CaffeineBarChart`.
+
+**Files modified:** `src/components/home/CaffeineWindowCard.tsx`, `app/detail/adenosine-detail.tsx`
+
+---
+
+### 2026-04-27: Timeline — caffeine drink events
+
+**Source:** Claude Code — Macbook Pro
+
+Added caffeine consumption to the Daily Chronology timeline. Each drink logged today appears as a green `cafe-outline` event in chronological order alongside sleep, naps, and activities. Label = drink name (or `drink_type`), detail = `"${mg}mg"`. Realtime updates propagate via `useCaffeineTimeline` already running in `OverviewTab`.
+
+**Files modified:** `src/components/home/DailyTimelineCard.tsx` (new `caffeine` kind + `caffeineEntries` prop), `src/screens/home/OverviewTab.tsx` (hook call + prop)
+
+---
+
+### 2026-04-27: Adenosine detail — ghost bars, icon replace, cover Realtime fix
+
+**Source:** Claude Code — Macbook Pro
+
+Three visual/data fixes on the adenosine (caffeine) detail screen and its cover card:
+
+1. **Ghost reference bars always visible** (`app/detail/adenosine-detail.tsx` — `CaffeineBarChart`): The ideal 400mg-at-window-open bar curve now renders persistently behind the real coffee bars as a dim ghost (`opacity: 0.10`). When drinks are logged, bright white real bars sit on top; the ghost bars are visible in slots not yet reached by actual caffeine. When nothing is logged the bars stay at `opacity: 0.22` (prior behavior). `placeholderBars` early-returns `bars` when `isPlaceholder=true` to avoid double PK computation.
+
+2. **Emoji → Ionicons everywhere** (`adenosine-detail.tsx`): Removed the `drinkEmoji()` helper and all emoji `Text` elements. Three sites replaced with `<Ionicons name="cafe-outline" />`: drink marker icons above chart spikes (size 14), "what you can have now" suggestion cards (size 24), and the logged drink list rows (size 22). `DRINK_ICON_SIZE = 14` constant eliminates the magic half-size offset.
+
+3. **Cover Realtime update fix** (`src/hooks/useCaffeineTimeline.ts`): Both the cover card (`CaffeineWindowCard` on Overview) and the detail screen instantiate `useCaffeineTimeline()`. They previously shared the hardcoded channel name `'caffeine-drinks-timeline'`, causing the cover's subscription to be shadowed when the detail screen mounted. Fixed with a module-level counter (`_subCounter`) that gives each hook instance a unique channel name (`caffeine-drinks-1`, `caffeine-drinks-2`, …). Cover now reacts to drinks logged in the detail screen in real time.
+
+**Files modified:** `app/detail/adenosine-detail.tsx`, `src/hooks/useCaffeineTimeline.ts`
+
+---
+
 ### 2026-04-27: Overview tab — background blur layer
 
 Added a single `BlurView` (intensity 20, tint "dark", `absoluteFillObject`) inside `NewHomeScreen`'s `container` View, scoped to the overview tab only (`activeIndex === 0`). Rendered as the **first** child before `HomeHeader` and `contentWrapper` so it's naturally behind all UI without any explicit z-index. Only shown on overview — unmounts cleanly when switching to Sleep/Activity tabs.
@@ -4914,3 +5059,132 @@ Native bridge extracts `isCharging` from X3 SDK `dicData`. ⚡ bolt shown in Hom
 - `.claude/skills/eas-update.md`
 
 **Source:** Claude Code — automated sentry monitor session
+
+---
+
+## 2026-04-27: Trends Tab — replaces Health tab
+
+**What changed:**
+
+The Health tab is replaced by a new **Trends** tab. Instead of single-day score cards, the tab is a single scroll of three chart-first covers, each tapping into the existing detail pages.
+
+**New covers:**
+
+- **Sleep** — 7-day bar chart of sleep duration with personal baseline band (±1σ); sub-stats: avg score · avg deep · avg REM. Navigates to `/detail/sleep-detail`.
+- **Recovery** — 30-day HRV line chart (monotone cubic) with personal baseline band; sub-stats: RHR · SpO₂ · temperature. Navigates to `/detail/recovery-detail`.
+- **Activity** — 7-day steps bar chart (no band — activity is goal-relative, not baseline-relative); sub-stats: strain · workouts · avg steps. Navigates to `/detail/activity-detail`.
+
+**Baseline band:** `bandFromBaseline(arr)` returns `{ min, max, mean }` (±1σ) or `null` when < 3 samples. Covers show "still calibrating" subtitle in that case. Baseline key in AsyncStorage is `focus_baselines_v3` (not v1 as stale docs suggested).
+
+**Files created:**
+- `src/utils/baselineStats.ts` — `mean`, `stdDev`, `bandFromBaseline`
+- `src/components/trends/TrendLineChart.tsx` — SVG line+area+band chart (memoized)
+- `src/components/trends/TrendSubStat.tsx` — shared `TrendSubStat` + `TrendSubStatDivider`
+- `src/components/trends/trendLayout.ts` — shared `TREND_CHART_W` constant
+- `src/components/trends/SleepTrendCover.tsx`
+- `src/components/trends/RecoveryTrendCover.tsx`
+- `src/components/trends/ActivityTrendCover.tsx`
+- `src/screens/TrendsScreen.tsx`
+- `app/(tabs)/trends.tsx`
+
+**Files modified:**
+- `app/(tabs)/_layout.tsx` — health → trends tab (SF symbol: chart.bar)
+- `src/components/detail/TrendBarChart.tsx` — added optional `bandRange` prop
+- `src/i18n/locales/en.json` + `es.json` — added `tabs.trends` + `trends.*` namespace
+
+**Files deleted:**
+- `app/(tabs)/health.tsx`
+- `src/screens/StyledHealthScreen.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-27: Trends — edge-to-edge cards + trend status line
+
+- Removed `paddingHorizontal: 20` from TrendsScreen scroll content — cards now go edge-to-edge. Title keeps its own `paddingHorizontal: 20`.
+- Added a one-line trend status description inside each cover above the chart (hidden while loading). Examples: "↑ More sleep than usual", "↓ HRV declining", "→ Consistent effort".
+- Added `trendDirection(values, recentCount)` to `src/utils/baselineStats.ts` — compares avg of most-recent N values vs older values; returns `'up' | 'down' | 'stable'` (5% threshold, most-recent-first input).
+- Added 9 i18n keys (`trends.sleep_improving/declining/stable`, `recovery_*`, `activity_*`) to `en.json` and `es.json`.
+
+**Files modified:**
+- `src/screens/TrendsScreen.tsx`
+- `src/utils/baselineStats.ts`
+- `src/components/trends/SleepTrendCover.tsx`
+- `src/components/trends/RecoveryTrendCover.tsx`
+- `src/components/trends/ActivityTrendCover.tsx`
+- `src/i18n/locales/en.json` + `es.json`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-27: Trends — header alignment + blue/violet background
+
+- **Baseline % moved to `headerRight`**: now space-between with the title in the gradient card header row (icon · title ········ baseline% ›). Used `showArrow={false}` + custom `TrendHeaderRight` component (muted text + chevron icon) added to `TrendSubStat.tsx`.
+- **`headerSubtitle` simplified** to just the unit: `"7-day avg"` (Sleep), `"ms"` (Recovery), `"steps"` (Activity).
+- **Blue/violet gradient background** on `TrendsScreen` — two stacked `LinearGradient` layers (same technique as AIChatScreen): deep navy base (`#06060F → #0C0C28 → rgba(22,8,55)`) + a violet crossfade overlay.
+
+**Files modified:**
+- `src/components/trends/TrendSubStat.tsx` — added `TrendHeaderRight`
+- `src/components/trends/SleepTrendCover.tsx`
+- `src/components/trends/RecoveryTrendCover.tsx`
+- `src/components/trends/ActivityTrendCover.tsx`
+- `src/screens/TrendsScreen.tsx`
+- `src/i18n/locales/en.json` + `es.json` — added `trends.avg_label`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-27: Trends — bg fix + card margin
+
+- Fixed gradient background not rendering: inner `SafeAreaView` had `backgroundColor: colors.background` covering the gradient layers. Changed it to a transparent `safeArea` style (`flex: 1` only).
+- Added `paddingHorizontal: 5` to scroll content — cards now have a 5px margin on each side.
+
+**Files modified:** `src/screens/TrendsScreen.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-27: Trends — glass blur cards + 10px margins
+
+- Each cover card wrapped in `BlurView` (intensity 22, tint "dark") for frosted glass effect. `GradientInfoCard` set to `backgroundColor: transparent` so the blur shows through; content container uses `rgba(255,255,255,0.07)`.
+- Shared `CARD_BLUR_STYLE` (borderRadius 20, overflow hidden, 1px white border) exported from `trendLayout.ts`.
+- `paddingHorizontal` increased from 5 to 10; title padding aligned to 10.
+
+**Files modified:**
+- `src/components/trends/trendLayout.ts`
+- `src/components/trends/SleepTrendCover.tsx`
+- `src/components/trends/RecoveryTrendCover.tsx`
+- `src/components/trends/ActivityTrendCover.tsx`
+- `src/screens/TrendsScreen.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+## 2026-04-27: Trends — Running cover (4th card)
+
+Added a **Running** cover as the 4th card on the Trends tab. Only renders when Strava run data exists (returns `null` otherwise).
+
+**Data:** `useRunningHistory` hook — queries `strava_activities` for the last 8 weeks, filters for Run/TrailRun/VirtualRun/Treadmill, groups by calendar week (Monday key), returns `WeekRunData[]` most-recent-first.
+
+**Cover:**
+- Header value: this week's km (e.g. "24.5 km")
+- `headerRight`: "this week ›" label
+- 8-week bar chart of weekly km (Strava orange `#FC4C02`)
+- Status line: "↑ More km than usual" / "↓ Less mileage lately" / "→ Consistent mileage"
+- Sub-stats: avg pace (min:sec /km) · total runs · longest run
+- Taps into `/(tabs)/coach/strava`
+
+**Files created:**
+- `src/hooks/useRunningHistory.ts`
+- `src/components/trends/RunningTrendCover.tsx`
+
+**Files modified:**
+- `src/screens/TrendsScreen.tsx`
+- `src/i18n/locales/en.json` + `es.json`
+
+**Source:** Claude Code — Macbook Pro

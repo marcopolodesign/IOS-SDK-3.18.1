@@ -1,3 +1,15 @@
+/**
+ * Extracts wake and bed hours (decimal) from optional Date values.
+ * Handles post-midnight bedtimes (e.g. 1 AM → 25.0) and missing data defaults.
+ */
+export function getSleepHours(wakeTime?: Date, bedTime?: Date): { wakeHour: number; bedHour: number } {
+  const valid = (d?: Date) => d instanceof Date && !isNaN(d.getTime());
+  const wakeHour = valid(wakeTime) ? wakeTime!.getHours() + wakeTime!.getMinutes() / 60 : 7;
+  const bedRaw   = valid(bedTime)  ? bedTime!.getHours()  + bedTime!.getMinutes()  / 60 : 23;
+  const bedHour  = bedRaw < 6 ? bedRaw + 24 : bedRaw;
+  return { wakeHour, bedHour };
+}
+
 // Formats a decimal hour (e.g. 8.5 → "8:30 AM", null → "—")
 export function formatDecimalHour(hour: number | null): string {
   if (hour === null) return '—';

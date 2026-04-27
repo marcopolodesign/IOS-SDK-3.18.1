@@ -39,6 +39,10 @@ export interface TrendBarChartProps {
   roundedBars?: boolean;
   /** When roundedBars=false, opacity for unselected bars. Default: 0.28. */
   unselectedOpacity?: number;
+  /** Shaded baseline band drawn behind bars. Color defaults to rgba(255,255,255,0.07). */
+  bandRange?: { min: number; max: number; color?: string };
+  /** Render date labels below bars (after the SVG). Default: false (legacy overlap). */
+  labelsBelow?: boolean;
 }
 
 export function TrendBarChart({
@@ -57,6 +61,8 @@ export function TrendBarChart({
   guideLines,
   roundedBars = true,
   unselectedOpacity = 0.28,
+  bandRange,
+  labelsBelow = false,
 }: TrendBarChartProps) {
   const scrollRef = useRef<ScrollView>(null);
   const lastHapticColRef = useRef<number>(-1);
@@ -130,30 +136,50 @@ export function TrendBarChart({
       onScroll={e => handleScroll(e.nativeEvent.contentOffset.x)}
     >
       <View style={{ width: contentW }}>
-        {/* Date labels */}
-        <View style={[styles.labelsRow, { marginBottom: -15, marginTop: 12 }]}>
-          {reversed.map((d, i) => {
-            const origIndex = reversed.length - 1 - i;
-            const isSelected = origIndex === selectedIndex;
-            const { day, month } = dateLabels[i];
-            return (
-              <TouchableOpacity
-                key={d.dateKey}
-                style={[styles.labelCell, { width: colWidth }]}
-                onPress={() => onSelectDay(origIndex)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.labelDay, isSelected && styles.labelDaySelected]}>{day}</Text>
-                <Text style={[styles.labelMonth, isSelected && styles.labelMonthSelected]}>{month}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* Legacy: labels overlap-positioned above bars (default for detail screens) */}
+        {!labelsBelow && (
+          <View style={[styles.labelsRow, { marginBottom: -15, marginTop: 12 }]}>
+            {reversed.map((d, i) => {
+              const origIndex = reversed.length - 1 - i;
+              const isSelected = origIndex === selectedIndex;
+              const { day, month } = dateLabels[i];
+              return (
+                <TouchableOpacity
+                  key={d.dateKey}
+                  style={[styles.labelCell, { width: colWidth }]}
+                  onPress={() => onSelectDay(origIndex)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.labelDay, isSelected && styles.labelDaySelected]}>{day}</Text>
+                  <Text style={[styles.labelMonth, isSelected && styles.labelMonthSelected]}>{month}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* Bar chart + trendline */}
         <View style={{ width: contentW, height: chartHeight }}>
           <Svg width={contentW} height={chartHeight}>
             <G>
+              {/* Baseline band */}
+              {bandRange && (() => {
+                const clampedMax = Math.min(bandRange.max, maxValue);
+                const clampedMin = Math.max(bandRange.min, minValue);
+                if (clampedMin >= clampedMax) return null;
+                const bandTopY = baseline - ((clampedMax - minValue) / denom) * maxBarH;
+                const bandBotY = baseline - ((clampedMin - minValue) / denom) * maxBarH;
+                return (
+                  <Rect
+                    x={0} y={bandTopY}
+                    width={contentW}
+                    height={Math.max(0, bandBotY - bandTopY)}
+                    fill={bandRange.color ?? 'rgba(255,255,255,0.07)'}
+                    rx={2}
+                  />
+                );
+              })()}
+
               {/* Optional guide lines */}
               {guideLines?.map(threshold => {
                 const lineY = baseline - ((threshold - minValue) / denom) * maxBarH;
@@ -230,6 +256,28 @@ export function TrendBarChart({
             </G>
           </Svg>
         </View>
+
+        {/* Labels below bars */}
+        {labelsBelow && (
+          <View style={[styles.labelsRow, { marginTop: 6 }]}>
+            {reversed.map((d, i) => {
+              const origIndex = reversed.length - 1 - i;
+              const isSelected = origIndex === selectedIndex;
+              const { day, month } = dateLabels[i];
+              return (
+                <TouchableOpacity
+                  key={d.dateKey}
+                  style={[styles.labelCell, { width: colWidth }]}
+                  onPress={() => onSelectDay(origIndex)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.labelDay, isSelected && styles.labelDaySelected]}>{day}</Text>
+                  <Text style={[styles.labelMonth, isSelected && styles.labelMonthSelected]}>{month}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </View>
     </ScrollView>
   );

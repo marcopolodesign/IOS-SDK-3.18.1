@@ -162,7 +162,11 @@ function RootLayout() {
           <Stack.Screen name="detail/activity-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/recovery-detail" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="detail/sleep-debt-detail" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="chat" options={{ presentation: 'fullScreenModal', headerShown: false }} />
+          <Stack.Screen name="detail/sleep-trends" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/recovery-trends" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/activity-trends" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="detail/running-trends" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="chat" options={{ animation: 'fade', headerShown: false }} />
           <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="profile" options={{ animation: 'slide_from_bottom' }} />
         </Stack>

@@ -1,13 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -264,11 +272,13 @@ function SignalCard({
   latestRow,
   history,
   t,
+  onInfo,
 }: {
   sig: SignalConfig;
   latestRow: IllnessScore;
   history: IllnessScore[];
   t: (k: string, opts?: Record<string, string>) => string;
+  onInfo: () => void;
 }) {
   // Fall back to the most recent non-null value — today's record may be partial
   const sorted = [...history].sort((a, b) => b.score_date.localeCompare(a.score_date));
@@ -288,13 +298,29 @@ function SignalCard({
 
   return (
     <View style={styles.signalCard}>
-      <Text style={styles.signalTitle}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
+      <View style={styles.signalTitleRow}>
+        <Text style={styles.signalTitle}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
+        <Pressable onPress={onInfo} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Svg width={18} height={18} viewBox="0 0 20 20">
+            <Circle cx={10} cy={10} r={9} stroke="rgba(255,255,255,0.45)" strokeWidth={1.5} fill="none" />
+            <Circle cx={10} cy={6.5} r={1.2} fill="rgba(255,255,255,0.45)" />
+            <SvgText x={10} y={15.5} fontSize={8} fontWeight="700" fill="rgba(255,255,255,0.45)" textAnchor="middle">i</SvgText>
+          </Svg>
+        </Pressable>
+      </View>
 
       <View style={styles.valueRow}>
-        <Text style={styles.valueBig}>{displayVal}</Text>
-        {hasData && (
-          <Text style={styles.valueUnit}>{sig.unit.toUpperCase()}</Text>
-        )}
+        <View style={styles.valueLeft}>
+          <Text style={styles.valueBig}>{displayVal}</Text>
+          {hasData && (
+            <Text style={styles.valueUnit}>{sig.unit.toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={styles.severityChip}>
+          <Text style={[styles.severityChipText, { color: severity === 'normal' ? '#FFFFFF' : severityColor(severity) }]}>
+            {t(`illness_watch.severity_${severity}`).toUpperCase()}
+          </Text>
+        </View>
       </View>
 
       <SignalChart
@@ -343,7 +369,13 @@ function TrendBars({
         {bars.map((bar) => {
           const isToday = bar.score_date === today;
           const isSelected = bar.score_date === selectedDate;
+          const isElevated = bar.status === 'WATCH' || bar.status === 'SICK';
+          const accentColor = scoreBarColor(bar.status);
           const barH = Math.max(8, Math.round((bar.score / maxScore) * BAR_MAX_H));
+          const barColor = isElevated
+            ? accentColor
+            : isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.45)';
+          const scoreColor = isElevated ? accentColor : '#FFFFFF';
           return (
             <TouchableOpacity
               key={bar.score_date}
@@ -351,7 +383,7 @@ function TrendBars({
               onPress={() => setSelectedDate(isSelected ? null : bar.score_date)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.trendScore, { opacity: isSelected || isToday ? 1 : 0.5 }]}>
+              <Text style={[styles.trendScore, { color: scoreColor, opacity: isSelected || isToday ? 1 : 0.55 }]}>
                 {bar.score}
               </Text>
               <View
@@ -359,7 +391,7 @@ function TrendBars({
                   styles.trendBar,
                   {
                     height: barH,
-                    backgroundColor: isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
+                    backgroundColor: barColor,
                     opacity: isSelected || isToday ? 1 : 0.65,
                   },
                 ]}
@@ -400,6 +432,21 @@ export default function IllnessDetailScreen() {
   const [latestRow, setLatestRow] = useState<IllnessScore | null>(null);
   const [history, setHistory] = useState<IllnessScore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeSignal, setActiveSignal] = useState<SignalConfig | null>(null);
+  const infoSheetRef = useRef<BottomSheetModal>(null);
+
+  const openInfo = useCallback((sig: SignalConfig) => {
+    setActiveSignal(sig);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    infoSheetRef.current?.present();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.65} pressBehavior="close" />
+    ),
+    [],
+  );
 
   useEffect(() => {
     (async () => {
@@ -531,6 +578,7 @@ export default function IllnessDetailScreen() {
             latestRow={latestRow}
             history={history}
             t={t}
+            onInfo={() => openInfo(sig)}
           />
         ))}
 
@@ -546,6 +594,30 @@ export default function IllnessDetailScreen() {
 
         <View style={styles.bottomPad} />
       </ScrollView>
+
+      {/* ── Signal info sheet ─────────────────────────────────────────── */}
+      <BottomSheetModal
+        ref={infoSheetRef}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        backgroundStyle={styles.sheetBackground}
+        handleComponent={null}
+        maxDynamicContentSize={560}
+      >
+        <BottomSheetView style={styles.sheetContent}>
+          {activeSignal && (
+            <>
+              <Text style={styles.sheetTitle}>
+                {t(SIGNAL_LABEL_KEYS[activeSignal.i18nKey])}
+              </Text>
+              <Text style={styles.sheetBody}>
+                {t(`illness_watch.detail_explain_${activeSignal.i18nKey}`)}
+              </Text>
+            </>
+          )}
+        </BottomSheetView>
+      </BottomSheetModal>
     </SafeAreaView>
   );
 }
@@ -653,17 +725,27 @@ const styles = StyleSheet.create({
   signalCard: {
     marginBottom: 28,
   },
+  signalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   signalTitle: {
     fontFamily: fontFamily.regular,
     fontSize: 15,
     color: 'rgba(255,255,255,0.7)',
-    marginBottom: 4,
   },
   valueRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  valueLeft: {
+    flexDirection: 'row',
     alignItems: 'baseline',
     gap: 6,
-    marginBottom: 12,
   },
   valueBig: {
     fontFamily: fontFamily.demiBold,
@@ -675,6 +757,17 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 16,
     color: 'rgba(255,255,255,0.5)',
+  },
+  severityChip: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  severityChipText: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
   },
   warningText: {
     fontFamily: fontFamily.regular,
@@ -754,5 +847,30 @@ const styles = StyleSheet.create({
   },
   bottomPad: {
     height: 20,
+  },
+
+  // Info bottom sheet
+  sheetBackground: {
+    backgroundColor: '#111',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  sheetContent: {
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 48,
+    gap: 14,
+  },
+  sheetTitle: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: 20,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+  },
+  sheetBody: {
+    fontFamily: fontFamily.regular,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.65)',
+    lineHeight: 24,
   },
 });

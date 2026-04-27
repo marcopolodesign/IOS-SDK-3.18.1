@@ -2,7 +2,44 @@
   "tabs": {
     "today": "Today",
     "health": "Health",
+    "trends": "Trends",
     "coach": "Coach"
+  },
+  "trends": {
+    "title": "Trends",
+    "sleep_title": "Sleep",
+    "recovery_title": "Recovery",
+    "activity_title": "Activity",
+    "still_calibrating": "still calibrating",
+    "above_baseline": "above baseline",
+    "below_baseline": "below baseline",
+    "avg_steps": "7-day avg",
+    "avg_label": "7-day avg",
+    "strain_label": "Strain",
+    "workouts_label": "Workouts",
+    "avg_score": "Avg Score",
+    "deep_label": "Avg Deep",
+    "rem_label": "Avg REM",
+    "rhr_label": "RHR",
+    "spo2_label": "SpO₂",
+    "temp_label": "Temp",
+    "sleep_improving": "↑ More sleep than usual",
+    "sleep_declining": "↓ Less sleep than usual",
+    "sleep_stable": "→ Consistent this week",
+    "recovery_improving": "↑ HRV trending up",
+    "recovery_declining": "↓ HRV declining",
+    "recovery_stable": "→ Recovery steady",
+    "activity_improving": "↑ More active this week",
+    "activity_declining": "↓ Less active lately",
+    "activity_stable": "→ Consistent effort",
+    "running_title": "Running",
+    "running_this_week": "this week",
+    "running_improving": "↑ More km than usual",
+    "running_declining": "↓ Less mileage lately",
+    "running_stable": "→ Consistent mileage",
+    "avg_pace": "Avg Pace",
+    "total_runs": "Runs",
+    "longest_run": "Longest Run"
   },
   "home": {
     "greeting_morning": "Good morning",
@@ -33,7 +70,7 @@
     "title": "Overview",
     "overall_score": "OVERALL SCORE",
     "wind_down": "WIND DOWN",
-    "caffeine_clearance": "CAFFEINE CLEARANCE",
+    "caffeine_clearance": "CONSUMED CAFFEINE",
     "strain": "STRAIN",
     "readiness": "READINESS",
     "sleep": "SLEEP",
@@ -1031,5 +1068,47 @@
     "suggestions_budget": "{{budget}}mg remaining in your daily budget",
     "suggestions_none": "Window closed — skip caffeine for quality sleep tonight",
     "suggestions_limit": "You're at your caffeine limit"
+  },
+  "trends_detail": {
+    "screen_title": "{{domain}} Trends",
+    "coming_soon": "Coming soon",
+    "domain": {
+      "sleep": "Sleep",
+      "recovery": "Recovery",
+      "activity": "Activity",
+      "running": "Running"
+    },
+    "range": {
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    },
+    "range_desc": {
+      "daily": "Last 14 days",
+      "weekly": "Last 8 weeks",
+      "monthly": "Last 6 months"
+    },
+    "metric": {
+      "bedTime": "Bed Time",
+      "deepSleep": "Deep Sleep",
+      "latency": "Sleep Latency",
+      "sleepScore": "Sleep Score",
+      "efficiency": "Efficiency",
+      "timeInBed": "Time in Bed",
+      "sleepOnset": "Sleep Time",
+      "wakeTime": "Wake Time",
+      "totalSleep": "Total Sleep"
+    },
+    "stat": {
+      "avg": "Avg",
+      "min": "Min",
+      "max": "Max"
+    },
+    "trend": {
+      "up": "Improving",
+      "down": "Declining",
+      "stable": "Stable",
+      "no_data": "No data"
+    }
   }
 }

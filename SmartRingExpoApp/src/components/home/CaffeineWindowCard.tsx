@@ -16,7 +16,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
 import { InfoButton } from '../common/InfoButton';
 import { fontFamily, spacing } from '../../theme/colors';
-import { formatDecimalHour } from '../../utils/time';
+import { formatDecimalHour, getSleepHours } from '../../utils/time';
 import {
   buildMultiDoseCurvePath,
   totalMgAt,
@@ -63,12 +63,10 @@ export function CaffeineWindowCard() {
 
   // Reads directly from the global HomeDataContext — no prop drilling needed
   const homeData = useHomeDataContext();
-  const wakeTime = homeData.lastNightSleep?.wakeTime;
-  const bedTime  = homeData.lastNightSleep?.bedTime;
-  const validDate = (d?: Date) => d instanceof Date && !isNaN(d.getTime());
-  const wakeHour = validDate(wakeTime) ? wakeTime!.getHours() + wakeTime!.getMinutes() / 60 : 7;
-  const bedRaw   = validDate(bedTime)  ? bedTime!.getHours()  + bedTime!.getMinutes()  / 60 : 23;
-  const bedHour  = bedRaw < 6 ? bedRaw + 24 : bedRaw; // post-midnight → +24
+  const { wakeHour, bedHour } = getSleepHours(
+    homeData.lastNightSleep?.wakeTime,
+    homeData.lastNightSleep?.bedTime,
+  ); // post-midnight → +24
 
   const { doses, clearanceHour: loggedClearHour } = useCaffeineTimeline();
 
@@ -123,7 +121,7 @@ export function CaffeineWindowCard() {
   const bx1        = CHART_PAD_L + blockInset;
   const blockRight = CHART_PAD_L + innerW - blockInset;
 
-  const openEnd = clearHour ?? window.end;
+  const openEnd = window.end;
 
   // Phase blocks span the full chart width — pre starts at chart left edge
   const bx2 = Math.max(bx1, Math.min(tx(window.start), blockRight));

@@ -22,6 +22,10 @@ interface SemiCircularGaugeProps {
   animated?: boolean;
   /** When this key changes a 250ms crossfade hides the label+score swap. */
   phaseKey?: string;
+  /** Override the animated score number shown in center (e.g. raw mg value). */
+  displayValue?: number;
+  /** Override the unit suffix shown after the number (default "%"). */
+  displayUnit?: string;
 }
 
 export function SemiCircularGauge({
@@ -32,6 +36,8 @@ export function SemiCircularGauge({
   label = 'FOCUS SCORE',
   animated = true,
   phaseKey,
+  displayValue,
+  displayUnit,
 }: SemiCircularGaugeProps) {
   const animatedValue = useRef(new Animated.Value(score)).current;
   const [displayScore, setDisplayScore] = React.useState(score);
@@ -180,8 +186,8 @@ export function SemiCircularGauge({
         <Reanimated.View style={[styles.scoreContainer, { top: size / 10 }, textAnimStyle]}>
           <Text style={styles.label}>{label}</Text>
           <View style={styles.scoreRow}>
-            <Text style={styles.scoreText}>{displayScore}</Text>
-            <Text style={styles.percentText}>%</Text>
+            <Text style={styles.scoreText}>{displayValue ?? displayScore}</Text>
+            <Text style={styles.percentText}>{displayUnit ?? '%'}</Text>
           </View>
         </Reanimated.View>
 

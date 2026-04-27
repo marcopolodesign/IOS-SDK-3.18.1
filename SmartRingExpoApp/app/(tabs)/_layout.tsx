@@ -64,9 +64,9 @@ export default function TabLayout() {
           <Label>{t('tabs.today')}</Label>
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="health">
-          <Icon sf={{ default: 'heart', selected: 'heart.fill' }} />
-          <Label>{t('tabs.health')}</Label>
+        <NativeTabs.Trigger name="trends">
+          <Icon sf={{ default: 'chart.bar', selected: 'chart.bar.fill' }} />
+          <Label>{t('tabs.trends')}</Label>
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger name="coach">

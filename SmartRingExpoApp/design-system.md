@@ -331,15 +331,33 @@ Each tab uses a distinct radial/bloom overlay over the black background:
 ```
 
 ### Badge / Chip
+
+> **Rule: no borders on chips unless explicitly requested.**
+> Default chip style is a white semi-transparent background (`rgba(255,255,255,0.15)`) with white text. This keeps chips visually lightweight on dark surfaces. Borders are only added when a specific design explicitly calls for them (e.g. a severity chip that needs a colored outline to communicate urgency).
+>
+> **Reference:** the `CLEAR` / `WATCH` / `SICK` chip on the Illness Watch detail screen (top-right of the nav row) is the canonical example — no border, white bg at 15% opacity, white text.
+
 ```tsx
-// Status badge
+// Default chip — no border, white bg opacity
 <View style={{
-  backgroundColor: `${colors.primary}20`,
+  backgroundColor: 'rgba(255,255,255,0.15)',
+  paddingHorizontal: 14,
+  paddingVertical: 5,
+  borderRadius: borderRadius.full,
+}}>
+  <Text style={{ fontSize: fontSize.sm, fontFamily: fontFamily.demiBold, color: '#FFFFFF', letterSpacing: 1 }}>
+    CLEAR
+  </Text>
+</View>
+
+// Accent chip (status badge with color tint) — only when color context matters
+<View style={{
+  backgroundColor: `${accentColor}20`,
   paddingHorizontal: spacing.sm,
   paddingVertical: spacing.xs,
   borderRadius: borderRadius.sm,
 }}>
-  <Text style={{ fontSize: fontSize.xs, fontFamily: fontFamily.demiBold, color: colors.primary }}>
+  <Text style={{ fontSize: fontSize.xs, fontFamily: fontFamily.demiBold, color: accentColor }}>
     EN
   </Text>
 </View>

@@ -2,7 +2,44 @@
   "tabs": {
     "today": "Hoy",
     "health": "Salud",
+    "trends": "Tendencias",
     "coach": "Coach"
+  },
+  "trends": {
+    "title": "Tendencias",
+    "sleep_title": "Sueño",
+    "recovery_title": "Recuperación",
+    "activity_title": "Actividad",
+    "still_calibrating": "calibrando",
+    "above_baseline": "sobre tu base",
+    "below_baseline": "bajo tu base",
+    "avg_steps": "prom. 7 días",
+    "avg_label": "prom. 7 días",
+    "strain_label": "Carga",
+    "workouts_label": "Entrenam.",
+    "avg_score": "Punt. Prom.",
+    "deep_label": "Prom. Prof.",
+    "rem_label": "Prom. REM",
+    "rhr_label": "FC Reposo",
+    "spo2_label": "SpO₂",
+    "temp_label": "Temp",
+    "sleep_improving": "↑ Durmiendo más que lo habitual",
+    "sleep_declining": "↓ Menos sueño de lo habitual",
+    "sleep_stable": "→ Semana consistente",
+    "recovery_improving": "↑ VFC en alza",
+    "recovery_declining": "↓ VFC en descenso",
+    "recovery_stable": "→ Recuperación estable",
+    "activity_improving": "↑ Semana más activa",
+    "activity_declining": "↓ Menos actividad últimamente",
+    "activity_stable": "→ Esfuerzo consistente",
+    "running_title": "Carrera",
+    "running_this_week": "esta semana",
+    "running_improving": "↑ Más km que lo habitual",
+    "running_declining": "↓ Menos kilómetros últimamente",
+    "running_stable": "→ Kilometraje constante",
+    "avg_pace": "Paso Prom.",
+    "total_runs": "Salidas",
+    "longest_run": "Carrera Más Larga"
   },
   "home": {
     "greeting_morning": "Buenos días",
@@ -33,7 +70,7 @@
     "title": "Resumen",
     "overall_score": "PUNTUACIÓN TOTAL",
     "wind_down": "MODO DESCANSO",
-    "caffeine_clearance": "LIMPIEZA DE CAFEÍNA",
+    "caffeine_clearance": "CAFEÍNA CONSUMIDA",
     "strain": "ESFUERZO",
     "readiness": "PREPARACIÓN",
     "sleep": "SUEÑO",
@@ -1031,5 +1068,47 @@
     "suggestions_budget": "{{budget}}mg disponibles en tu presupuesto diario",
     "suggestions_none": "Ventana cerrada — evitá la cafeína para dormir mejor esta noche",
     "suggestions_limit": "Llegaste a tu límite de cafeína"
+  },
+  "trends_detail": {
+    "screen_title": "Tendencias de {{domain}}",
+    "coming_soon": "Próximamente",
+    "domain": {
+      "sleep": "Sueño",
+      "recovery": "Recuperación",
+      "activity": "Actividad",
+      "running": "Running"
+    },
+    "range": {
+      "daily": "Diario",
+      "weekly": "Semanal",
+      "monthly": "Mensual"
+    },
+    "range_desc": {
+      "daily": "Últimos 14 días",
+      "weekly": "Últimas 8 semanas",
+      "monthly": "Últimos 6 meses"
+    },
+    "metric": {
+      "bedTime": "Hora de dormir",
+      "deepSleep": "Sueño profundo",
+      "latency": "Latencia de sueño",
+      "sleepScore": "Puntaje de sueño",
+      "efficiency": "Eficiencia",
+      "timeInBed": "Tiempo en cama",
+      "sleepOnset": "Hora de inicio",
+      "wakeTime": "Hora de despertar",
+      "totalSleep": "Sueño total"
+    },
+    "stat": {
+      "avg": "Prom",
+      "min": "Mín",
+      "max": "Máx"
+    },
+    "trend": {
+      "up": "Mejorando",
+      "down": "Bajando",
+      "stable": "Estable",
+      "no_data": "Sin datos"
+    }
   }
 }

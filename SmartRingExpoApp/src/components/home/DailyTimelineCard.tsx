@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { HeartIcon } from '../common/HeartIcon';
 import { useTranslation } from 'react-i18next';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import type { SleepData } from '../../hooks/useHomeData';
@@ -18,7 +19,8 @@ type TimelineEventKind =
   | 'recovery'
   | 'manual_activity'
   | 'strava_activity'
-  | 'nap';
+  | 'nap'
+  | 'caffeine';
 
 interface TimelineEvent {
   id: string;
@@ -75,6 +77,7 @@ const EVENT_CONFIG: Record<
   manual_activity: { icon: 'bicycle-outline',       color: '#00D4AA' },
   strava_activity: { icon: 'trophy-outline',         color: '#FC4C02' },
   nap:             { icon: 'moon-outline',           color: '#B16BFF' },
+  caffeine:        { icon: 'cafe-outline',           color: '#1F9F50' },
 };
 
 function recoveryIcon(subtype: RecoverySubtype | string): React.ComponentProps<typeof Ionicons>['name'] {
@@ -115,7 +118,9 @@ function MetricsRow({ event, accentColor }: { event: TimelineEvent; accentColor:
       {chips.map((chip, i) => (
         <View key={i} style={metricStyles.chip}>
           {chip.icon && (
-            <Ionicons name={chip.icon} size={10} color={accentColor} style={metricStyles.chipIcon} />
+            chip.icon === 'heart-outline'
+              ? <View style={metricStyles.chipIcon}><HeartIcon size={10} color={accentColor} /></View>
+              : <Ionicons name={chip.icon} size={10} color={accentColor} style={metricStyles.chipIcon} />
           )}
           <Text style={[metricStyles.chipText, { color: accentColor }]}>{chip.label}</Text>
         </View>
@@ -163,6 +168,13 @@ interface DailyTimelineCardProps {
     endTime: string;
     totalMin: number;
   }>;
+  caffeineEntries?: Array<{
+    id: string;
+    consumed_at: string;
+    drink_type: string;
+    name: string | null;
+    caffeine_mg: number;
+  }>;
   onAddPress?: () => void;
 }
 
@@ -174,6 +186,7 @@ export default function DailyTimelineCard({
   manualEntries,
   unifiedActivities = [],
   todayNaps = [],
+  caffeineEntries = [],
   onAddPress,
 }: DailyTimelineCardProps) {
   const { t } = useTranslation();
@@ -268,8 +281,20 @@ export default function DailyTimelineCard({
       });
     });
 
+    // Caffeine drinks
+    caffeineEntries.forEach(entry => {
+      const time = new Date(entry.consumed_at).getTime();
+      list.push({
+        id: `caffeine_${entry.id}`,
+        kind: 'caffeine',
+        time,
+        label: entry.name || entry.drink_type,
+        detail: `${Math.round(entry.caffeine_mg)}mg`,
+      });
+    });
+
     return list.sort((a, b) => a.time - b.time);
-  }, [sleep, activitySessions, manualEntries, unifiedActivities, todayNaps]);
+  }, [sleep, activitySessions, manualEntries, unifiedActivities, todayNaps, caffeineEntries]);
 
   // Kinds that get the metrics chip row instead of plain detail text
   const isMetricKind = (kind: TimelineEventKind) =>

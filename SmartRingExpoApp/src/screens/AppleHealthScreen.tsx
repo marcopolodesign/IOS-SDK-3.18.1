@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { HeartIcon } from '../components/common/HeartIcon';
 import { useTranslation } from 'react-i18next';
 import { colors, spacing, borderRadius, fontSize, fontFamily } from '../theme/colors';
 import { useHealthKit } from '../hooks';
@@ -59,7 +60,7 @@ export const AppleHealthScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.centerContent}>
-          <Ionicons name="heart" size={48} color="#FF375F" />
+          <HeartIcon size={48} color="#FF375F" />
           <Text style={styles.title}>{t('apple_health.title')}</Text>
           <Text style={styles.subtitle}>{t('apple_health.ios_only')}</Text>
         </View>
@@ -84,7 +85,9 @@ export const AppleHealthScreen: React.FC = () => {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {!isConnected ? (
           <View style={styles.connectCard}>
-            <Ionicons name="heart" size={48} color="#FF375F" style={{ marginBottom: spacing.lg }} />
+            <View style={{ marginBottom: spacing.lg }}>
+              <HeartIcon size={48} color="#FF375F" />
+            </View>
             <Text style={styles.connectTitle}>{t('apple_health.connect_title')}</Text>
             <Text style={styles.connectDescription}>{t('apple_health.connect_desc')}</Text>
             <Pressable
@@ -192,7 +195,9 @@ const GlassDataCard: React.FC<{
 }> = ({ title, icon, value, unit, color, details }) => (
   <View style={styles.dataCard}>
     <View style={styles.dataCardHeader}>
-      <Ionicons name={icon as any} size={20} color={color} />
+      {icon === 'heart-outline'
+        ? <HeartIcon size={20} color={color} />
+        : <Ionicons name={icon as any} size={20} color={color} />}
       <Text style={styles.dataCardTitle}>{title}</Text>
     </View>
     <View style={styles.dataCardValue}>

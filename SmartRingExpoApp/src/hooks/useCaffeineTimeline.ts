@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/SupabaseService';
+
+let _subCounter = 0;
 import supabaseService from '../services/SupabaseService';
 import { reportError } from '../utils/sentry';
 import {
@@ -47,6 +49,7 @@ export interface UseCaffeineTimeline {
 }
 
 export function useCaffeineTimeline(date: Date = new Date()): UseCaffeineTimeline {
+  const channelId = useRef(`caffeine-drinks-${++_subCounter}`);
   const [entries, setEntries] = useState<DrinkRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -76,7 +79,7 @@ export function useCaffeineTimeline(date: Date = new Date()): UseCaffeineTimelin
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (cancelled || !user) return;
       channel = supabase
-        .channel('caffeine-drinks-timeline')
+        .channel(channelId.current)
         .on(
           'postgres_changes',
           {

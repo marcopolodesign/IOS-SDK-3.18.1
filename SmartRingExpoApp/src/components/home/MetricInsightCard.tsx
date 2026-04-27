@@ -111,6 +111,21 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
     };
   });
 
+  // Invisible mirror of rightGroupStyle — keeps icon+text centered when send icon is visible
+  const leftSpacerStyle = useAnimatedStyle(() => {
+    const progress = interpolate(
+      activeScrollY.value,
+      [COLLAPSE_START, COLLAPSE_END],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    return {
+      maxWidth: interpolate(progress, [0, 1], [0, 120]),
+      overflow: 'hidden',
+      opacity: 0,
+    };
+  });
+
   const handleOpenChat = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/chat');
@@ -149,6 +164,7 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
           activeOpacity={0.8}
           onPress={handleOpenChat}
         >
+          <Animated.View style={leftSpacerStyle} />
           <View style={styles.askCoachLeft}>
             <FocusIcon />
           </View>
@@ -241,7 +257,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontFamily: fontFamily.demiBold,
     flex: 1,
-    textAlign: 'left',
+    textAlign: 'center',
   },
 });
 

@@ -8,6 +8,10 @@ export interface GaugePhase {
   score: number;
   labelKey: string;
   metricKey: MetricKey;
+  /** Override the number shown in the gauge center (arc fill still uses score). */
+  displayValue?: number;
+  /** Override the unit suffix shown after the center number (default "%"). */
+  displayUnit?: string;
   /** Extra data for phases that need non-gauge UI (e.g. wind-down countdown) */
   meta?: {
     targetBedtimeMs: number;
@@ -103,6 +107,8 @@ export function resolveGaugePhase(ctx: GaugeContext): GaugePhase {
       score: clearancePct,
       labelKey: 'overview.caffeine_clearance',
       metricKey: 'caffeine_clearance',
+      displayValue: Math.round(caffeineCurrentMg),
+      displayUnit: '/400mg',
     };
   }
 
