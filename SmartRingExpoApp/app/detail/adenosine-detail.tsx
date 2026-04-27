@@ -122,6 +122,20 @@ function CaffeineBarChart({
     return { x, y, w: Math.max(slotW - GAP, 1), h: barH, dim: mg === 0 };
   }).filter(Boolean), [displayDoses, yScale, timeStart, timeEnd, slotW]);
 
+  const placeholderBars = useMemo(() => {
+    if (isPlaceholder) return bars;
+    const phDoses: CaffeineDose[] = [{ intakeHour: win.start, amountMg: MAX_CAFFEINE_MG }];
+    return Array.from({ length: totalBars }, (_, i) => {
+      const slotMid = timeStart + i * 0.25 + 0.125;
+      if (slotMid > timeEnd) return null;
+      const mg   = totalMgAt(slotMid, phDoses);
+      const barH = mg > 0 ? Math.max((mg / yScale) * BAR_INNER_H, 2) : 8;
+      const x    = BAR_PAD_L + i * slotW + GAP / 2;
+      const y    = BAR_PAD_T + BAR_INNER_H - barH;
+      return { x, y, w: Math.max(slotW - GAP, 1), h: barH };
+    }).filter(Boolean);
+  }, [isPlaceholder, bars, win.start, timeStart, timeEnd, totalBars, slotW, yScale]);
+
   const line400Y = BAR_PAD_T + BAR_INNER_H - (MAX_CAFFEINE_MG / yScale) * BAR_INNER_H;
   const sleepY   = BAR_PAD_T + BAR_INNER_H - (SLEEP_THRESHOLD_MG / yScale) * BAR_INNER_H;
   const yTicks   = [200, 300];
@@ -169,10 +183,16 @@ function CaffeineBarChart({
             400
           </SvgText>
 
-          {/* Bars — white, fully rounded, dimmed when placeholder */}
-          {bars.map((bar, i) => bar && (
-            <Rect key={i} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
-              fill="#FFFFFF" opacity={isPlaceholder ? 0.22 : (bar.dim ? 0.15 : 0.85)} />
+          {/* Ghost bars — ideal 400mg curve, always behind real bars */}
+          {placeholderBars.map((bar, i) => bar && (
+            <Rect key={`ph-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
+              fill="#FFFFFF" opacity={isPlaceholder ? 0.22 : 0.10} />
+          ))}
+
+          {/* Real bars — only when drinks logged */}
+          {!isPlaceholder && bars.map((bar, i) => bar && (
+            <Rect key={`r-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
+              fill="#FFFFFF" opacity={bar.dim ? 0.15 : 0.85} />
           ))}
 
           {/* Drink intake marker lines */}

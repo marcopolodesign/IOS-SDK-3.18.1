@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import { fontFamily, fontSize, spacing } from '../../theme/colors';
 import { useTypewriter } from '../../hooks/useTypewriter';
+import { RollingNumber, isNumericInt } from '../common/RollingNumber';
 
 type Metric = {
   label: string;
@@ -147,7 +148,16 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
               disabled={!metric.onPress}
             >
               <Text style={styles.metricLabel}>{metric.label}</Text>
-              <Text style={styles.metricValue}>{formatValue(metric.value)}</Text>
+              {isNumericInt(metric.value) ? (
+                <RollingNumber
+                  value={Number(metric.value)}
+                  style={styles.metricValue}
+                  digitHeight={38}
+                  gap={-3}
+                />
+              ) : (
+                <Text style={styles.metricValue}>{formatValue(metric.value)}</Text>
+              )}
             </TouchableOpacity>
             {index < metrics.length - 1 && <View style={styles.divider} />}
           </React.Fragment>
@@ -165,12 +175,12 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
           onPress={handleOpenChat}
         >
           <Animated.View style={leftSpacerStyle} />
-          <View style={styles.askCoachLeft}>
+          <View style={styles.askCoachCenter}>
             <FocusIcon />
+            <Text style={styles.askCoachText} numberOfLines={1}>
+              {isScrolled ? t('overview.ask_coach') : typewriterText}
+            </Text>
           </View>
-          <Text style={styles.askCoachText} numberOfLines={1}>
-            {isScrolled ? t('overview.ask_coach') : typewriterText}
-          </Text>
           <Animated.View style={[styles.askCoachRight, rightGroupStyle]}>
             <SendIcon />
           </Animated.View>
@@ -242,10 +252,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
-  askCoachLeft: {
+  askCoachCenter: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
+    justifyContent: 'flex-start',
+    gap: 10,
   },
   askCoachRight: {
     flexDirection: 'row',
@@ -256,8 +268,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: fontSize.md,
     fontFamily: fontFamily.demiBold,
-    flex: 1,
-    textAlign: 'center',
+    flexShrink: 1,
   },
 });
 

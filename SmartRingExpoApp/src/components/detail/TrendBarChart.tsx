@@ -259,7 +259,7 @@ export function TrendBarChart({
 
         {/* Labels below bars */}
         {labelsBelow && (
-          <View style={[styles.labelsRow, { marginTop: 6 }]}>
+          <View style={[styles.labelsRow, { marginTop: 2 }]}>
             {reversed.map((d, i) => {
               const origIndex = reversed.length - 1 - i;
               const isSelected = origIndex === selectedIndex;

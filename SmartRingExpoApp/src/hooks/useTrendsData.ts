@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useMetricHistory, type DaySleepData } from './useMetricHistory';
+import { useMetricHistory, type DaySleepData, type DayHRData, type DayHRVData, type DayHRTrendsData } from './useMetricHistory';
 import type { TrendsDomain, RangeMode, MetricDefinition } from '../screens/trendsDetail/domains';
 
 export interface TrendBucket {
@@ -105,8 +105,11 @@ function aggregateSeries(
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useTrendsData(domain: TrendsDomain | null, rangeMode: RangeMode) {
-  // Always call hooks at top level (React rules). Phase 2-4 will add more hooks here.
+  // All hooks called unconditionally (React rules).
   const sleepHistory = useMetricHistory<DaySleepData>('sleep', { initialDays: 14, fullDays: 180 });
+  const isHRDomain = domain?.key === 'hr';
+  const hrHistory = useMetricHistory<DayHRData>('heartRate', { initialDays: 14, fullDays: 180, enabled: isHRDomain });
+  const hrvHistory = useMetricHistory<DayHRVData>('hrv', { initialDays: 14, fullDays: 180, enabled: isHRDomain });
 
   const buckets = useMemo<TrendBucket[]>(() => {
     if (rangeMode === 'daily') return buildDailyBuckets();
@@ -116,8 +119,24 @@ export function useTrendsData(domain: TrendsDomain | null, rangeMode: RangeMode)
 
   const rawData = useMemo<Map<string, any>>(() => {
     if (domain?.key === 'sleep') return sleepHistory.data;
+    if (isHRDomain) {
+      const merged = new Map<string, DayHRTrendsData>();
+      const allKeys = new Set([...hrHistory.data.keys(), ...hrvHistory.data.keys()]);
+      for (const key of allKeys) {
+        const hr = hrHistory.data.get(key);
+        const hrv = hrvHistory.data.get(key);
+        merged.set(key, {
+          date: key,
+          restingHR: hr?.restingHR ?? 0,
+          avgHR: hr?.avgHR ?? 0,
+          peakHR: hr?.peakHR ?? 0,
+          sdnn: hrv?.sdnn ?? null,
+        });
+      }
+      return merged;
+    }
     return new Map();
-  }, [domain?.key, sleepHistory.data]);
+  }, [domain?.key, isHRDomain, sleepHistory.data, hrHistory.data, hrvHistory.data]);
 
   const series = useMemo<Map<string, TrendSeries>>(() => {
     const result = new Map<string, TrendSeries>();
@@ -128,7 +147,10 @@ export function useTrendsData(domain: TrendsDomain | null, rangeMode: RangeMode)
     return result;
   }, [domain, rawData, buckets, rangeMode]);
 
-  const isLoading = domain?.key === 'sleep' ? sleepHistory.isLoading : false;
+  const isLoading =
+    domain?.key === 'sleep' ? sleepHistory.isLoading :
+    isHRDomain ? (hrHistory.isLoading || hrvHistory.isLoading) :
+    false;
 
   return { series, buckets, isLoading };
 }

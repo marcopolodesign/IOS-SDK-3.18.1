@@ -73,6 +73,7 @@ export interface IllnessWatch {
 export type EffortVerdict = 'as_expected' | 'harder_than_expected' | 'easier_than_expected';
 
 export interface LastRunContext {
+  stravaActivityId: number;
   runName: string;
   runDate: string;        // ISO date string
   distanceKm: number;

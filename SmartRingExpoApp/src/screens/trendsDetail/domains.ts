@@ -1,4 +1,4 @@
-import type { DaySleepData } from '../../hooks/useMetricHistory';
+import type { DaySleepData, DayHRTrendsData } from '../../hooks/useMetricHistory';
 import {
   deriveLatencyMin,
   deriveSleepOnset,
@@ -11,8 +11,8 @@ import {
 } from '../../utils/sleepDerivations';
 
 export type RangeMode = 'daily' | 'weekly' | 'monthly';
-export type ChartType = 'bar' | 'clockTime';
-export type DomainKey = 'sleep' | 'recovery' | 'activity' | 'running';
+export type ChartType = 'bar' | 'clockTime' | 'line';
+export type DomainKey = 'sleep' | 'recovery' | 'activity' | 'running' | 'hr';
 
 export interface MetricDefinition {
   key: string;
@@ -50,9 +50,8 @@ const SLEEP_METRICS: MetricDefinition[] = [
   {
     key: 'bedTime',
     labelKey: 'trends_detail.metric.bedTime',
-    chartType: 'clockTime',
+    chartType: 'line',
     color: '#B16BFF',
-    clockRange: [18, 30],
     aggregator: 'medianClockTime',
     extract: (d: DaySleepData) => toNightDecimalHour(d.bedTime),
     formatValue: (v) => formatClockHour(v),
@@ -69,11 +68,9 @@ const SLEEP_METRICS: MetricDefinition[] = [
   {
     key: 'latency',
     labelKey: 'trends_detail.metric.latency',
-    chartType: 'bar',
+    chartType: 'line',
     color: '#FFB84D',
     aggregator: 'mean',
-    minValue: 0,
-    maxValue: 60,
     extract: (d: DaySleepData) => {
       const lat = deriveLatencyMin(d.bedTime, d.segments);
       return lat > 0 ? lat : null;
@@ -83,22 +80,18 @@ const SLEEP_METRICS: MetricDefinition[] = [
   {
     key: 'sleepScore',
     labelKey: 'trends_detail.metric.sleepScore',
-    chartType: 'bar',
+    chartType: 'line',
     color: '#6B8EFF',
     aggregator: 'mean',
-    minValue: 0,
-    maxValue: 100,
     extract: (d: DaySleepData) => d.score > 0 ? d.score : null,
     formatValue: (v) => String(Math.round(v)),
   },
   {
     key: 'efficiency',
     labelKey: 'trends_detail.metric.efficiency',
-    chartType: 'bar',
+    chartType: 'line',
     color: '#6BFFF5',
     aggregator: 'mean',
-    minValue: 0,
-    maxValue: 100,
     extract: (d: DaySleepData) => {
       const e = deriveEfficiency(d.deepMin, d.lightMin, d.remMin, d.awakeMin);
       return e > 0 ? e : null;
@@ -120,9 +113,8 @@ const SLEEP_METRICS: MetricDefinition[] = [
   {
     key: 'sleepOnset',
     labelKey: 'trends_detail.metric.sleepOnset',
-    chartType: 'clockTime',
+    chartType: 'line',
     color: '#8AAAFF',
-    clockRange: [18, 30],
     aggregator: 'medianClockTime',
     extract: (d: DaySleepData) => {
       const onset = deriveSleepOnset(d.bedTime, d.segments);
@@ -133,9 +125,8 @@ const SLEEP_METRICS: MetricDefinition[] = [
   {
     key: 'wakeTime',
     labelKey: 'trends_detail.metric.wakeTime',
-    chartType: 'clockTime',
+    chartType: 'line',
     color: '#FFD166',
-    clockRange: [3, 13],
     aggregator: 'medianClockTime',
     extract: (d: DaySleepData) => toDecimalHour(d.wakeTime),
     formatValue: (v) => formatClockHour(v % 24),
@@ -181,4 +172,50 @@ export const RUNNING_DOMAIN: TrendsDomain = {
   titleKey: 'trends_detail.domain.running',
   gradientColor: '#7C2800',
   metrics: [],
+};
+
+// ─── HR domain ────────────────────────────────────────────────────────────────
+
+const HR_METRICS: MetricDefinition[] = [
+  {
+    key: 'restingHR',
+    labelKey: 'trends_detail.metric.restingHR',
+    chartType: 'line',
+    color: '#FF6B6B',
+    aggregator: 'mean',
+    extract: (d: DayHRTrendsData) => d.restingHR > 0 ? d.restingHR : null,
+    minValue: 30,
+    maxValue: 120,
+    formatValue: (v) => `${Math.round(v)} bpm`,
+  },
+  {
+    key: 'avgHR',
+    labelKey: 'trends_detail.metric.avgHR',
+    chartType: 'bar',
+    color: '#FF9999',
+    aggregator: 'mean',
+    extract: (d: DayHRTrendsData) => d.avgHR > 0 ? d.avgHR : null,
+    minValue: 30,
+    maxValue: 150,
+    formatValue: (v) => `${Math.round(v)} bpm`,
+  },
+  {
+    key: 'sdnn',
+    labelKey: 'trends_detail.metric.sdnn',
+    chartType: 'bar',
+    color: '#6B8EFF',
+    aggregator: 'mean',
+    extract: (d: DayHRTrendsData) => d.sdnn != null && d.sdnn > 0 ? d.sdnn : null,
+    minValue: 0,
+    maxValue: 120,
+    formatValue: (v) => `${Math.round(v)} ms`,
+  },
+];
+
+export const HR_DOMAIN: TrendsDomain = {
+  key: 'hr',
+  titleKey: 'trends_detail.domain.hr',
+  gradientColor: '#7B0000',
+  gradientColor2: '#3A0000',
+  metrics: HR_METRICS,
 };

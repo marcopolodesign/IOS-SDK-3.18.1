@@ -105,6 +105,14 @@ export interface DayReadinessData {
   restingHR: number | null;
 }
 
+export interface DayHRTrendsData {
+  date: string;
+  restingHR: number;
+  avgHR: number;
+  peakHR: number;
+  sdnn: number | null;
+}
+
 export type MetricDataMap = {
   sleep: Map<string, DaySleepData>;
   heartRate: Map<string, DayHRData>;
@@ -723,10 +731,11 @@ async function fetchActivityFromRing(): Promise<Map<string, DayActivityData>> {
 
 export function useMetricHistory<T>(
   type: MetricType,
-  options?: { initialDays?: number; fullDays?: number }
+  options?: { initialDays?: number; fullDays?: number; enabled?: boolean }
 ): MetricHistoryState<T> {
   const initialDays = options?.initialDays ?? 7;
   const fullDays = options?.fullDays ?? initialDays;
+  const enabled = options?.enabled ?? true;
   const cacheRef = useRef<Map<string, T> | null>(null);
   // Tracks whether cacheRef already holds the full extended dataset
   const cacheIsCompleteRef = useRef(false);
@@ -735,6 +744,10 @@ export function useMetricHistory<T>(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setIsLoading(false);
+      return;
+    }
     let cancelled = false;
 
     async function load() {
@@ -851,7 +864,7 @@ export function useMetricHistory<T>(
 
     load();
     return () => { cancelled = true; };
-  }, [type]);
+  }, [type, enabled]);
 
   // Build available days from the data map, sorted descending
   const availableDays = Array.from(data.keys()).sort((a, b) => b.localeCompare(a));

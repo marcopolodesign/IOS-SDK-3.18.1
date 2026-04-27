@@ -628,6 +628,7 @@ export default function HeartRateDetailScreen() {
             <View style={styles.liveCardWrapper}>
               <LiveHeartRateCard />
             </View>
+
           </>
         )}
       </Reanimated.ScrollView>

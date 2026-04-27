@@ -39,7 +39,13 @@
     "running_stable": "→ Kilometraje constante",
     "avg_pace": "Paso Prom.",
     "total_runs": "Salidas",
-    "longest_run": "Carrera Más Larga"
+    "longest_run": "Carrera Más Larga",
+    "hr_title": "Frecuencia Cardíaca",
+    "hr_improving": "↓ FC en reposo bajando",
+    "hr_declining": "↑ FC en reposo elevada",
+    "hr_stable": "→ FC en reposo estable",
+    "avg_hr_label": "FC prom.",
+    "hrv_label": "VFC"
   },
   "home": {
     "greeting_morning": "Buenos días",
@@ -299,6 +305,9 @@
     "subtitle_go": "Lista para esforzarte",
     "subtitle_easy": "Tómatelo con calma",
     "subtitle_rest": "Día de descanso",
+    "body_go": "Tu cuerpo se recuperó bien. VFC y sueño están fuertes — estás lista para un esfuerzo alto hoy.",
+    "body_easy": "La recuperación es parcial. Mantén la actividad ligera para que tu cuerpo termine de recuperarse.",
+    "body_rest": "Tu sistema está bajo carga. Un día de descanso completo ahora acelera la recuperación para mañana.",
     "building_title": "Construyendo tu línea base",
     "building_body": "Necesitamos unos días de datos del dispositivo para calcular las puntuaciones de componentes (VFC, sueño, FC en reposo). Sigue usando el dispositivo y aparecerán aquí.",
     "building_progress": "{{done}}/5 días",
@@ -1076,7 +1085,8 @@
       "sleep": "Sueño",
       "recovery": "Recuperación",
       "activity": "Actividad",
-      "running": "Running"
+      "running": "Running",
+      "hr": "Frecuencia Cardíaca"
     },
     "range": {
       "daily": "Diario",
@@ -1097,7 +1107,10 @@
       "timeInBed": "Tiempo en cama",
       "sleepOnset": "Hora de inicio",
       "wakeTime": "Hora de despertar",
-      "totalSleep": "Sueño total"
+      "totalSleep": "Sueño total",
+      "restingHR": "FC en reposo",
+      "avgHR": "FC promedio",
+      "sdnn": "VFC (SDNN)"
     },
     "stat": {
       "avg": "Prom",

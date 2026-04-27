@@ -6,13 +6,10 @@
 import React, { useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  ScrollView,
   RefreshControl,
   Dimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   useSharedValue,
@@ -20,17 +17,16 @@ import Reanimated, {
   withRepeat,
   withTiming,
   Easing,
+  interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
-import { useTranslation } from 'react-i18next';
-import { fontFamily, fontSize, spacing } from '../theme/colors';
+import { spacing } from '../theme/colors';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
-import { ReadinessCard } from '../components/focus/ReadinessCard';
 import { IllnessWatchCard } from '../components/focus/IllnessWatchCard';
 import { LastRunContextCard } from '../components/focus/LastRunContextCard';
 import { AskCoachButton } from '../components/focus/AskCoachButton';
-import { BaselineJourneyCard } from '../components/focus/BaselineJourneyCard';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BLOB_HEIGHT = SCREEN_HEIGHT * 0.9;
@@ -50,21 +46,16 @@ const BLOB_SVG = `<svg width="440" height="754" viewBox="0 0 440 754" fill="none
 </defs>
 </svg>`;
 
-function getTodayLabel(): string {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function FocusScreen() {
-  const { t } = useTranslation();
   const focusData = useFocusDataContext();
   const hasStrava = focusData.lastRun != null || focusData.isLoading;
-  const daysLogged = focusData.baselines?.daysLogged ?? 0;
+
+  const scrollY = useSharedValue(0);
+  const cardOpacity = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [10, 160], [0.15, 1], Extrapolation.CLAMP),
+  }));
 
   const blobFloat = useSharedValue(0);
   const overlayOpacity = useSharedValue(0);
@@ -109,10 +100,11 @@ export default function FocusScreen() {
       <Reanimated.View style={[styles.blob, blobAnimStyle]} pointerEvents="none">
         <SvgXml xml={BLOB_SVG} width={BLOB_WIDTH} height={BLOB_HEIGHT} />
       </Reanimated.View>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
+      <Reanimated.ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
+          onScroll={(e) => { scrollY.value = e.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={focusData.isLoading}
@@ -122,71 +114,34 @@ export default function FocusScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>{t('focus.title')}</Text>
-            <Text style={styles.headerDate}>{getTodayLabel()}</Text>
-          </View>
-
-          {/* Score Ring */}
           <FocusScoreRing
             score={focusData.readiness?.score ?? null}
             recommendation={focusData.readiness?.recommendation ?? null}
             isLoading={focusData.isLoading}
+            readiness={focusData.readiness}
           />
 
-          {/* Recovery timeline — inline, no card wrapper */}
-          {!focusData.isLoading && (
-            <View style={styles.inlineSection}>
-              <BaselineJourneyCard
-                daysLogged={daysLogged}
-                baselines={focusData.baselines}
-                readiness={focusData.readiness}
-              />
-            </View>
-          )}
-
-          {/* Loading skeleton */}
-          {focusData.isLoading && (
-            <View style={styles.inlineSection}>
-              <View style={[styles.skeletonLine, { height: 24, width: '55%', marginBottom: 16 }]} />
-              <View style={[styles.skeletonLine, { height: 10, borderRadius: 5, marginBottom: 8 }]} />
-              <View style={[styles.skeletonLine, { height: 80, borderRadius: 12 }]} />
-            </View>
-          )}
-
-          {/* ── Ask Coach button -- inline, above metric cards ── */}
           <View style={styles.cardWrap}>
             <AskCoachButton />
           </View>
 
-          {/* Metric cards */}
-          <View style={styles.cardWrap}>
-            <ReadinessCard
-              readiness={focusData.readiness}
-              baselines={focusData.baselines}
-              isLoading={focusData.isLoading}
-            />
-          </View>
-
-          <View style={styles.cardWrap}>
+          <Reanimated.View style={[styles.cardWrap, cardOpacity]}>
             <IllnessWatchCard
               illness={focusData.illness}
               isLoading={focusData.isLoading}
             />
-          </View>
+          </Reanimated.View>
 
-          <View style={styles.cardWrap}>
+          <Reanimated.View style={[styles.cardWrap, cardOpacity]}>
             <LastRunContextCard
               lastRun={focusData.lastRun}
               isLoading={focusData.isLoading}
               hasStrava={hasStrava}
             />
-          </View>
+          </Reanimated.View>
 
           <View style={{ height: 40 }} />
-        </ScrollView>
-      </SafeAreaView>
+        </Reanimated.ScrollView>
     </LinearGradient>
   );
 }
@@ -200,41 +155,11 @@ const styles = StyleSheet.create({
     top: 0,
     right: -BLOB_WIDTH * 0.18,
   },
-  safeArea: {
-    flex: 1,
-  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingBottom: spacing.xxl,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  headerTitle: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.xxl,
-    color: '#FFFFFF',
-  },
-  headerDate: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.4)',
-    paddingBottom: 3,
-  },
-  inlineSection: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  skeletonLine: {
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   cardWrap: {
     marginHorizontal: spacing.md,

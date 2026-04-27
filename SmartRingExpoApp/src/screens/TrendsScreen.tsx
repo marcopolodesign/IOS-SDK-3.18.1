@@ -13,6 +13,7 @@ import { SleepTrendCover } from '../components/trends/SleepTrendCover';
 import { RecoveryTrendCover } from '../components/trends/RecoveryTrendCover';
 import { ActivityTrendCover } from '../components/trends/ActivityTrendCover';
 import { RunningTrendCover } from '../components/trends/RunningTrendCover';
+import { HRTrendCover } from '../components/trends/HRTrendCover';
 import { loadBaselines } from '../services/ReadinessService';
 import { useHomeDataContext } from '../context/HomeDataContext';
 import { colors, fontFamily, spacing, fontSize } from '../theme/colors';
@@ -107,6 +108,7 @@ export function TrendsScreen() {
           <Text style={styles.title}>{t('trends.title')}</Text>
           <SleepTrendCover baselines={baselines} />
           <RecoveryTrendCover baselines={baselines} />
+          <HRTrendCover baselines={baselines} />
           <ActivityTrendCover />
           <RunningTrendCover />
         </ScrollView>

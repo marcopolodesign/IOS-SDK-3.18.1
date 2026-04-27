@@ -9,6 +9,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { BackArrow } from '../components/detail/BackArrow';
 import { RangeModeTabs } from '../components/trendsDetail/RangeModeTabs';
@@ -19,6 +21,7 @@ import {
   RECOVERY_DOMAIN,
   ACTIVITY_DOMAIN,
   RUNNING_DOMAIN,
+  HR_DOMAIN,
   type DomainKey,
   type RangeMode,
   type TrendsDomain,
@@ -30,6 +33,7 @@ const DOMAIN_MAP: Record<DomainKey, TrendsDomain> = {
   recovery: RECOVERY_DOMAIN,
   activity: ACTIVITY_DOMAIN,
   running: RUNNING_DOMAIN,
+  hr: HR_DOMAIN,
 };
 
 interface Props {
@@ -43,6 +47,29 @@ export default function TrendsDetailScreen({ domain: domainKey }: Props) {
   const { series, buckets, isLoading } = useTrendsData(domain, rangeMode);
 
   return (
+    <View style={styles.container}>
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <Defs>
+            <RadialGradient id="trendsGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+              <Stop offset="0%" stopColor="#5B21B6" stopOpacity={1} />
+              <Stop offset="70%" stopColor="#5B21B6" stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id="trendsGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+              <Stop offset="0%" stopColor="#1E1B4B" stopOpacity={0.75} />
+              <Stop offset="100%" stopColor="#1E1B4B" stopOpacity={0} />
+            </RadialGradient>
+            <SvgLinearGradient id="trendsFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+              <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+            </SvgLinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#trendsGrad)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#trendsGrad2)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#trendsFade)" />
+        </Svg>
+      </Reanimated.View>
+
     <SafeAreaView style={styles.screen} edges={['top']}>
       {/* Scrollable metrics */}
       <ScrollView
@@ -88,13 +115,24 @@ export default function TrendsDetailScreen({ domain: domainKey }: Props) {
         <RangeModeTabs mode={rangeMode} onChange={setRangeMode} />
       </BlurView>
     </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0A0A0F',
+  },
+  gradientBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 480,
+  },
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,

@@ -39,7 +39,13 @@
     "running_stable": "→ Consistent mileage",
     "avg_pace": "Avg Pace",
     "total_runs": "Runs",
-    "longest_run": "Longest Run"
+    "longest_run": "Longest Run",
+    "hr_title": "Heart Rate",
+    "hr_improving": "↓ Resting HR trending down",
+    "hr_declining": "↑ Resting HR elevated",
+    "hr_stable": "→ Resting HR steady",
+    "avg_hr_label": "Avg HR",
+    "hrv_label": "HRV"
   },
   "home": {
     "greeting_morning": "Good morning",
@@ -285,6 +291,9 @@
     "subtitle_go": "Ready to push",
     "subtitle_easy": "Take it easy",
     "subtitle_rest": "Rest day",
+    "body_go": "Your body has bounced back. HRV and sleep are strong — you're primed for high effort today.",
+    "body_easy": "Recovery is partial. Keep today's effort light to let your body finish the repair.",
+    "body_rest": "Your system is under load. A full rest day now pays off with faster recovery tomorrow.",
     "building_title": "Building your baseline",
     "building_body": "We need a few days of device data to calculate individual component scores (HRV, sleep, resting HR). Keep wearing your device and they'll appear here automatically.",
     "building_progress": "{{done}}/5 days",
@@ -1076,7 +1085,8 @@
       "sleep": "Sleep",
       "recovery": "Recovery",
       "activity": "Activity",
-      "running": "Running"
+      "running": "Running",
+      "hr": "Heart Rate"
     },
     "range": {
       "daily": "Daily",
@@ -1097,7 +1107,10 @@
       "timeInBed": "Time in Bed",
       "sleepOnset": "Sleep Time",
       "wakeTime": "Wake Time",
-      "totalSleep": "Total Sleep"
+      "totalSleep": "Total Sleep",
+      "restingHR": "Resting HR",
+      "avgHR": "Average HR",
+      "sdnn": "HRV (SDNN)"
     },
     "stat": {
       "avg": "Avg",

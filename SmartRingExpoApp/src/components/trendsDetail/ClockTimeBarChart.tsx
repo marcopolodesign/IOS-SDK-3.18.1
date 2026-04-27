@@ -13,6 +13,8 @@ interface Props {
   chartHeight?: number;
   colWidth?: number;
   barWidth?: number;
+  selectedIndex?: number;
+  onSelectDay?: (index: number) => void;
 }
 
 /** Wraps TrendBarChart for clock-time metrics (bedTime, sleepOnset, wakeTime).
@@ -26,6 +28,8 @@ export function ClockTimeBarChart({
   chartHeight = 100,
   colWidth,
   barWidth,
+  selectedIndex = 0,
+  onSelectDay,
 }: Props) {
   const defaultColW = Math.max(28, Math.floor(SCREEN_W / Math.max(1, buckets.length)));
   const defaultBarW = Math.max(16, defaultColW - 8);
@@ -37,8 +41,8 @@ export function ClockTimeBarChart({
         dateKey: s.bucketKey,
         value: s.value ?? 0,
       }))}
-      selectedIndex={0}
-      onSelectDay={() => {}}
+      selectedIndex={selectedIndex}
+      onSelectDay={onSelectDay ?? (() => {})}
       colorFn={() => color}
       minValue={clockRange[0]}
       maxValue={clockRange[1]}

@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { TrendBarChart } from '../detail/TrendBarChart';
+import { TrendLineChart } from '../trends/TrendLineChart';
 import { ClockTimeBarChart } from './ClockTimeBarChart';
 import { fontFamily, spacing } from '../../theme/colors';
 import type { MetricDefinition } from '../../screens/trendsDetail/domains';
@@ -9,6 +10,17 @@ import type { TrendBucket, TrendSeries } from '../../hooks/useTrendsData';
 
 const SCREEN_W = Dimensions.get('window').width;
 const CHART_H = 110;
+
+function formatHoverDate(dateKey: string): string {
+  if (dateKey.length === 7) {
+    // Monthly bucket: YYYY-MM
+    const d = new Date(dateKey + '-01T12:00:00');
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+  // Daily or weekly (YYYY-MM-DD)
+  const d = new Date(dateKey + 'T12:00:00');
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+}
 
 interface Props {
   metric: MetricDefinition;
@@ -19,6 +31,31 @@ interface Props {
 
 export function MetricSection({ metric, buckets, series, isLoading }: Props) {
   const { t } = useTranslation();
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  // Line charts use onActiveChange; bar/clockTime derive from selectedIdx
+  const [lineHoverKey, setLineHoverKey] = useState<string | null>(null);
+
+  const { displayTitle, displayValue } = useMemo(() => {
+    if (metric.chartType === 'line') {
+      if (!lineHoverKey) return { displayTitle: null, displayValue: null };
+      const entry = series.find(s => s.bucketKey === lineHoverKey);
+      const val = entry?.value ?? null;
+      return {
+        displayTitle: formatHoverDate(lineHoverKey),
+        displayValue: val !== null && val > 0 ? metric.formatValue(val) : '--',
+      };
+    }
+    // Bar: only override when scrolled away from default (idx 0 = most recent)
+    if (selectedIdx === 0) return { displayTitle: null, displayValue: null };
+    const bucket = buckets[selectedIdx];
+    if (!bucket) return { displayTitle: null, displayValue: null };
+    const entry = series.find(s => s.bucketKey === bucket.dateKey);
+    const val = entry?.value ?? null;
+    return {
+      displayTitle: formatHoverDate(bucket.dateKey),
+      displayValue: val !== null && val > 0 ? metric.formatValue(val) : '--',
+    };
+  }, [metric, lineHoverKey, selectedIdx, buckets, series]);
 
   const { currentValue, avgValue, minValue, maxValue } = useMemo(() => {
     let current: number | null = null;
@@ -55,20 +92,32 @@ export function MetricSection({ metric, buckets, series, isLoading }: Props) {
 
   return (
     <View style={styles.section}>
-      {/* Title row — matches IllnessDetailScreen signalTitleRow */}
+      {/* Title row */}
       <View style={styles.titleRow}>
-        <Text style={styles.title}>{t(metric.labelKey)}</Text>
+        <Text style={styles.title}>{displayTitle ?? t(metric.labelKey)}</Text>
       </View>
 
-      {/* Value row — matches IllnessDetailScreen valueRow */}
+      {/* Value row */}
       <View style={styles.valueRow}>
-        <Text style={styles.valueBig}>{isLoading ? '--' : formattedCurrent}</Text>
+        <Text style={styles.valueBig}>{isLoading ? '--' : (displayValue ?? formattedCurrent)}</Text>
       </View>
 
       {/* Chart */}
       <View style={styles.chartWrap}>
         {isLoading ? (
           <ActivityIndicator color={metric.color} size="small" style={styles.loader} />
+        ) : metric.chartType === 'line' ? (
+          <TrendLineChart
+            data={series.map(s => ({ dateKey: s.bucketKey, value: s.value ?? 0 }))}
+            height={CHART_H}
+            width={SCREEN_W - spacing.lg * 2}
+            color="#FFFFFF"
+            showAllDots
+            showDateLabels
+            showYAxis
+            formatValue={metric.formatValue}
+            onActiveChange={setLineHoverKey}
+          />
         ) : metric.chartType === 'clockTime' && metric.clockRange ? (
           <ClockTimeBarChart
             buckets={buckets}
@@ -78,13 +127,15 @@ export function MetricSection({ metric, buckets, series, isLoading }: Props) {
             chartHeight={CHART_H}
             colWidth={colW}
             barWidth={barW}
+            selectedIndex={selectedIdx}
+            onSelectDay={setSelectedIdx}
           />
         ) : (
           <TrendBarChart
             dayEntries={buckets}
             values={series.map(s => ({ dateKey: s.bucketKey, value: s.value ?? 0 }))}
-            selectedIndex={0}
-            onSelectDay={() => {}}
+            selectedIndex={selectedIdx}
+            onSelectDay={setSelectedIdx}
             colorFn={() => metric.color}
             maxValue={maxBarVal}
             minValue={metric.minValue ?? 0}
@@ -127,7 +178,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    overflow: 'hidden',
   },
   titleRow: {
     flexDirection: 'row',
@@ -151,8 +201,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   chartWrap: {
-    overflow: 'hidden',
-    height: CHART_H + 36,
+    overflow: 'visible',
   },
   loader: {
     marginTop: CHART_H / 2 - 12,

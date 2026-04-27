@@ -576,6 +576,7 @@ export async function computeLastRunContext(
     });
 
     return {
+      stravaActivityId: act.id,
       runName: act.name ?? 'Run',
       runDate,
       distanceKm,

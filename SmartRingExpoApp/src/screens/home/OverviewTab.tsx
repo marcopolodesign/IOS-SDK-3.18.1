@@ -177,6 +177,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                 timeStart={caffeineWakeHour}
                 timeEnd={caffeineBedHour}
                 height={200}
+                heroMode
               />
             ) : (
               <SemiCircularGauge

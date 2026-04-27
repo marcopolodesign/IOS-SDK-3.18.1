@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import React from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
-import { GradientInfoCard } from '../common/GradientInfoCard';
-import { colors, fontFamily, fontSize } from '../../theme/colors';
+import { colors, fontFamily, fontSize, spacing } from '../../theme/colors';
 import type { IllnessWatch, IllnessStatus } from '../../types/focus.types';
 
 interface IllnessWatchCardProps {
@@ -12,31 +13,10 @@ interface IllnessWatchCardProps {
   isLoading: boolean;
 }
 
-function ShieldIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-        stroke="#6B8EFF"
-        strokeWidth={1.8}
-        fill="rgba(107,142,255,0.2)"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 export function statusColor(status: IllnessStatus): string {
   if (status === 'CLEAR') return colors.success;
   if (status === 'WATCH') return colors.warning;
   return colors.error;
-}
-
-function gradientColor(status: IllnessStatus): string {
-  if (status === 'CLEAR') return '#00533F';
-  if (status === 'WATCH') return '#4A3000';
-  return '#4A0000';
 }
 
 export type Severity = 'normal' | 'mild' | 'moderate' | 'severe';
@@ -57,6 +37,13 @@ export function severityColor(s: Severity): string {
 }
 
 export function SeverityPill({ severity, label }: { severity: Severity; label: string }) {
+  if (severity === 'normal') {
+    return (
+      <View style={[styles.pill, styles.pillNormal]}>
+        <Text style={[styles.pillText, styles.pillTextNormal]}>{label}</Text>
+      </View>
+    );
+  }
   const bg = severityColor(severity) + '28';
   const border = severityColor(severity) + '66';
   const text = severityColor(severity);
@@ -91,15 +78,10 @@ function SignalRow({
 
 export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
 
   const status = illness?.status ?? 'CLEAR';
-  const dotColor = statusColor(status);
-  const bgColor = gradientColor(status);
-
-  // Derive per-signal severity from illness data.
-  // Server scores provide sub_* values; client fallback maps signals to mild severity.
   const score = illness?.score ?? 0;
+
   const nhrSeverity: Severity = illness
     ? (illness.signals.restingHRElevated ? getSeverityFromDelta(illness.details.hrDelta) : 'normal')
     : 'normal';
@@ -116,93 +98,93 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
     ? (illness.signals.sleepFragmented ? 'mild' : 'normal')
     : 'normal';
 
+  const canNavigate = !isLoading && illness != null;
+
   return (
-    <GradientInfoCard
-      icon={<ShieldIcon />}
-      title={t('illness_watch.card_title')}
-      showArrow={false}
-      gradientStops={[
-        { offset: 0, color: bgColor, opacity: 1 },
-        { offset: 0.6, color: bgColor, opacity: 0 },
-      ]}
-      gradientCenter={{ x: 0.5, y: -0.5 }}
-      gradientRadii={{ rx: '100%', ry: '250%' }}
-      headerRight={
+    <View style={styles.glowWrap}>
+      <Pressable
+        onPress={() => router.push('/(tabs)/coach/illness-detail')}
+        disabled={!canNavigate}
+        style={({ pressed }) => [styles.card, pressed && canNavigate && styles.cardPressed]}
+      >
+      {/* Glassmorphic blur base */}
+      <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
+
+      {/* Edge glow — 4 linear fades that blend seamlessly at corners */}
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>{t('illness_watch.card_title')}</Text>
+          {!isLoading && illness != null && (
+            <Text style={styles.titleSub}>{illness.summary}</Text>
+          )}
+        </View>
         <View style={styles.headerRight}>
           {!isLoading && (
             <>
               {score > 0 && (
-                <Text style={[styles.scoreText, { color: dotColor }]}>{score}</Text>
+                <Text style={styles.scoreText}>{score}</Text>
               )}
-              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-              <Text style={[styles.statusText, { color: dotColor }]}>{status}</Text>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>{status}</Text>
             </>
           )}
-          <TouchableOpacity onPress={() => setExpanded(v => !v)} hitSlop={12} disabled={isLoading}>
-            <Text style={styles.chevron}>{expanded ? '∧' : '∨'}</Text>
-          </TouchableOpacity>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.55)" />
         </View>
-      }
-    >
-      {isLoading ? (
-        <View style={[styles.skeleton, { width: '70%' }]} />
-      ) : illness == null ? (
-        <Text style={styles.emptyText}>{t('illness_watch.empty_sync')}</Text>
-      ) : expanded ? (
-        <View style={styles.signals}>
-          {illness.stale && (
-            <Text style={styles.staleWarning}>{t('illness_watch.stale_warning')}</Text>
-          )}
-          <SignalRow
-            label={t('illness_watch.signal_nocturnal_hr')}
-            magnitude={illness.details.hrDelta}
-            severity={nhrSeverity}
-          />
-          <SignalRow
-            label={t('illness_watch.signal_hrv')}
-            magnitude={illness.details.hrvDelta}
-            severity={hrvSeverity}
-          />
-          <SignalRow
-            label={t('illness_watch.signal_spo2_min')}
-            magnitude={illness.details.spo2Delta}
-            severity={spo2Severity}
-          />
-          <SignalRow
-            label={t('illness_watch.signal_temperature')}
-            magnitude={illness.details.tempDelta}
-            severity={tempSeverity}
-          />
-          <SignalRow
-            label={t('illness_watch.signal_sleep')}
-            magnitude={illness.details.sleepDelta}
-            severity={sleepSeverity}
-          />
-          <Text style={styles.summaryText}>{illness.summary}</Text>
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/coach/illness-detail')}
-            style={styles.detailLink}
-            hitSlop={8}
-          >
-            <Text style={styles.detailLinkText}>{t('illness_watch.detail_view_details')} →</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          {illness.stale && (
-            <Text style={styles.staleWarning}>{t('illness_watch.stale_warning')}</Text>
-          )}
-          <Text style={styles.summaryText}>{illness.summary}</Text>
-        </>
-      )}
-    </GradientInfoCard>
+      </View>
+
+      {/* Body */}
+      <View style={styles.body}>
+        {isLoading ? (
+          <View style={[styles.skeleton, { width: '70%' }]} />
+        ) : illness == null ? (
+          <Text style={styles.emptyText}>{t('illness_watch.empty_sync')}</Text>
+        ) : (
+          <View style={styles.signals}>
+            {illness.stale && (
+              <Text style={styles.staleWarning}>{t('illness_watch.stale_warning')}</Text>
+            )}
+            <SignalRow
+              label={t('illness_watch.signal_nocturnal_hr')}
+              magnitude={illness.details.hrDelta}
+              severity={nhrSeverity}
+            />
+            <SignalRow
+              label={t('illness_watch.signal_hrv')}
+              magnitude={illness.details.hrvDelta}
+              severity={hrvSeverity}
+            />
+            <SignalRow
+              label={t('illness_watch.signal_spo2_min')}
+              magnitude={illness.details.spo2Delta}
+              severity={spo2Severity}
+            />
+            <SignalRow
+              label={t('illness_watch.signal_temperature')}
+              magnitude={illness.details.tempDelta}
+              severity={tempSeverity}
+            />
+            <SignalRow
+              label={t('illness_watch.signal_sleep')}
+              magnitude={illness.details.sleepDelta}
+              severity={sleepSeverity}
+            />
+          </View>
+        )}
+      </View>
+    </Pressable>
+    </View>
   );
 }
 
-/** Derive a rough severity tier from a magnitude label string (used for client fallback) */
+/** Derive a rough severity tier from a magnitude label string */
 function getSeverityFromDelta(delta: string | null | undefined): Severity {
   if (!delta) return 'mild';
-  // HR delta: "+X bpm"
   const hrMatch = delta.match(/([+-]?\d+)\s*bpm/);
   if (hrMatch) {
     const v = Math.abs(parseInt(hrMatch[1], 10));
@@ -210,7 +192,6 @@ function getSeverityFromDelta(delta: string | null | undefined): Severity {
     if (v >= 10) return 'moderate';
     return 'mild';
   }
-  // HRV delta: "-X%"
   const pctMatch = delta.match(/([+-]?\d+)%/);
   if (pctMatch) {
     const v = Math.abs(parseInt(pctMatch[1], 10));
@@ -218,7 +199,6 @@ function getSeverityFromDelta(delta: string | null | undefined): Severity {
     if (v >= 25) return 'moderate';
     return 'mild';
   }
-  // Temp delta: "+X.X°C"
   const tempMatch = delta.match(/([+-]?\d+\.?\d*)[°]/);
   if (tempMatch) {
     const v = Math.abs(parseFloat(tempMatch[1]));
@@ -230,6 +210,58 @@ function getSeverityFromDelta(delta: string | null | undefined): Severity {
 }
 
 const styles = StyleSheet.create({
+  glowWrap: {
+    borderRadius: 20,
+    shadowColor: 'rgba(255,255,255,0.6)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+  },
+  card: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  cardPressed: {
+    opacity: 0.82,
+  },
+  edgeLeft: {
+    position: 'absolute', top: 0, left: 0, bottom: 0, width: '15%',
+  },
+  edgeRight: {
+    position: 'absolute', top: 0, right: 0, bottom: 0, width: '15%',
+  },
+  edgeTop: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: '15%',
+  },
+  edgeBottom: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  titleBlock: {
+    flex: 1,
+    gap: 3,
+  },
+  title: {
+    color: '#FFFFFF',
+    fontFamily: fontFamily.demiBold,
+    fontSize: 22,
+    letterSpacing: 0.2,
+  },
+  titleSub: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 17,
+  },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -238,25 +270,27 @@ const styles = StyleSheet.create({
   scoreText: {
     fontFamily: fontFamily.demiBold,
     fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.7)',
     letterSpacing: 0.3,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
   statusText: {
     fontFamily: fontFamily.demiBold,
     fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.7)',
     letterSpacing: 0.5,
   },
-  chevron: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.45)',
+  body: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
   signals: {
-    gap: 7,
+    gap: 8,
   },
   signalRow: {
     flexDirection: 'row',
@@ -266,13 +300,13 @@ const styles = StyleSheet.create({
   signalLabel: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.6)',
+    color: '#FFFFFF',
     flex: 1,
   },
   signalMagnitude: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(255,255,255,0.85)',
     marginRight: 2,
   },
   pill: {
@@ -281,38 +315,28 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
+  pillNormal: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
   pillText: {
     fontFamily: fontFamily.demiBold,
     fontSize: 11,
     letterSpacing: 0.3,
   },
-  summaryText: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.45)',
-    lineHeight: 19,
-    marginTop: 2,
+  pillTextNormal: {
+    color: '#FFFFFF',
   },
   staleWarning: {
     fontFamily: fontFamily.regular,
     fontSize: 11,
-    color: 'rgba(255,255,255,0.35)',
+    color: 'rgba(255,255,255,0.7)',
     marginBottom: 2,
-  },
-  detailLink: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  detailLinkText: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.sm,
-    color: colors.tertiary,
-    letterSpacing: 0.2,
   },
   emptyText: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.35)',
+    color: 'rgba(255,255,255,0.7)',
   },
   skeleton: {
     height: 12,

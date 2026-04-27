@@ -4,6 +4,191 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-27: Coach tab — scroll-opacity cards + border beam animation + border radius polish
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:**
+- **Scroll-driven opacity (FocusScreen):** IllnessWatchCard and LastRunContextCard start at 0.15 opacity and animate to full opacity as the user scrolls (~160px), matching Overview tab behavior. Uses `Reanimated.ScrollView` + `interpolate`.
+- **Border beam (AskCoachButton):** SVG `strokeDashoffset` animation loops a 90px beam segment around the input's rounded border. Two layers — a wide soft glow (`strokeWidth 8, opacity 0.22`) and a crisp sharp beam (`strokeWidth 1.5, opacity 0.9`). Dimensions measured via `onLayout`; animation starts once layout is known.
+- **AI input border radius:** Changed from 50 (pill) to 20 to match the metric cards.
+- **Both focus cards get `borderWidth: 1` border** (`rgba(255,255,255,0.15)`).
+- **LastRunContextCard:** Whole card pressable → navigates to Strava activity detail page; `stravaActivityId` added to `LastRunContext` type + `ReadinessService`.
+
+**Files modified:** `src/screens/FocusScreen.tsx`, `src/components/focus/AskCoachButton.tsx`, `src/components/focus/IllnessWatchCard.tsx`, `src/components/focus/LastRunContextCard.tsx`, `src/types/focus.types.ts`, `src/services/ReadinessService.ts`
+
+---
+
+### 2026-04-27: FocusScoreRing — Deeper fade, subtitle bigger, body inline, metrics up
+
+**Source:** Claude Code — Macbook Pro
+
+Arc fade extended: transparent zone widened to offset 0.22 before any opacity starts, peak reduced to 0.88 — arc stays much closer to transparent at both endpoints. "Take it easy" bumped to `fontSize.xl` / `fontFamily.demiBold` / white. Body text moved from `metricsBlock` into the `hero` section, immediately below the subtitle (centered). `metricsBlock.marginTop` tightened from `spacing.xl` → `spacing.md`.
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`
+
+---
+
+### 2026-04-27: FocusScoreRing — All Content Inside Arc + Bi-Directional Fade
+
+**Source:** Claude Code — Macbook Pro
+
+All content now lives inside a single component: SVG arc is `position: absolute` behind a naturally flowing content column (`paddingTop: CY−66` to align the hero with the circle centre). Body text and all four metric rows are part of the same block — no separate `metricsSection` outside the arc. Arc gradient switched to a vertical gradient (from `y = CY+0.5R` transparent → `y = CY−R` bright): since both arc endpoints share the same y-level, they both fade to transparent simultaneously — start AND finish fade.
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`
+
+---
+
+### 2026-04-27: LastRunContextCard — Glassmorphic Chrome (parity with IllnessWatchCard)
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:** Applied identical glassmorphic treatment as IllnessWatchCard — `BlurView systemUltraThinMaterialDark`, 4 edge `LinearGradient` fades (outer 15%, opacity 0.22), outer white shadow glow wrapper. Icon removed. Title "Last Run" is now 22px demiBold, no uppercase, with distance + date as subtitle below. Body text lifted to white. CTA button now white bg + black text per design rule. Collapse chevron uses `Ionicons chevron-up/down` instead of text glyphs.
+
+**Files modified:** `src/components/focus/LastRunContextCard.tsx`
+
+---
+
+### 2026-04-27: FocusScoreRing — Subtitle Inside Arc, Score Bigger, Metrics Below
+
+**Source:** Claude Code — Macbook Pro
+
+Restructured the coach ring layout: "Take it easy" (subtitle) now lives inside the arc directly below the score number. Score bumped 68 → 82px (`digitHeight: 84`). `CONTENT_TOP` recalculated for taller block (READINESS + score + subtitle ≈ 132px → `CY - 66`). `metricsSection` now shows body explanation + metric rows only.
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`
+
+---
+
+### 2026-04-27: HR Trends — Cover Card on Trends Tab + Detail Screen
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Added Heart Rate trends end-to-end: `HRTrendCover` card on the Trends tab (same pattern as Sleep/Recovery/Activity/Running covers) + `/detail/hr-trends` full detail screen with three metrics (Resting HR line, Average HR bar, HRV SDNN bar) and daily/weekly/monthly range switching. Entry point is the Trends tab, not the HR detail screen.
+
+**Files created:**
+- `app/detail/hr-trends.tsx` — Route shell: `<TrendsDetailScreen domain="hr" />`
+- `src/components/trends/HRTrendCover.tsx` — Cover card for the Trends tab; shows today's resting HR, 30-day line chart, baseline comparison subtitle, trend status line ("↓ Resting HR trending down"), sub-stats: RHR / Avg HR / HRV; taps to `/detail/hr-trends`
+- `src/components/detail/TrendsNavRow.tsx` — Reusable bordered row with label + chevron (for future wiring of other detail screens to their trend pages)
+
+**Files modified:**
+- `src/screens/TrendsScreen.tsx` — Added `<HRTrendCover baselines={baselines} />` after `RecoveryTrendCover`
+- `src/screens/trendsDetail/domains.ts` — Added `'hr'` to `DomainKey`, `HR_METRICS` (restingHR/avgHR/sdnn), `HR_DOMAIN`
+- `src/hooks/useTrendsData.ts` — Added `hrHistory` + `hrvHistory` hooks (gated by `enabled: isHRDomain`), merged into `Map<dateKey, DayHRTrendsData>`; updated `isLoading`
+- `src/hooks/useMetricHistory.ts` — Added `DayHRTrendsData` interface; added `enabled` option (default `true`) to skip fetches for inactive domains
+- `src/screens/TrendsDetailScreen.tsx` — Added `hr: HR_DOMAIN` to `DOMAIN_MAP`
+- `src/i18n/locales/en.json` — Added `trends.hr_title/hr_improving/hr_declining/hr_stable/avg_hr_label/hrv_label` + `trends_detail.domain.hr` + metric keys
+- `src/i18n/locales/es.json` — Same keys in Spanish
+
+**Key notes:**
+- Trend direction for HR is inverted vs HRV: `dir === 'down'` → improving (lower resting HR = better cardiovascular fitness)
+- `enabled` gate prevents HR/HRV Supabase queries when user is on Sleep/Activity/Recovery trends screens
+- `DayHRTrendsData` merges `DayHRData` + `DayHRVData` per-dateKey at the `rawData` level in `useTrendsData`
+
+---
+
+### 2026-04-27: FocusScoreRing — Add Recommendation Body Text
+
+**Source:** Claude Code — Macbook Pro
+
+Added a one-line explanation below the recommendation title (e.g., "Recovery is partial. Keep today's effort light to let your body finish the repair."). Added `body_go`, `body_easy`, `body_rest` keys to `en.json` and `es.json`. Rendered as `styles.metricBody` (`fontSize.sm`, `rgba(255,255,255,0.45)`, `lineHeight: 20`) between the title and the metric rows.
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+### 2026-04-27: IllnessWatchCard — Glassmorphic Chrome + Title Refinement
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:** Card chrome replaced with true glassmorphism — `BlurView intensity={60} tint="dark"` lets the Coach tab's red background bleed through. Added a dark overlay (`rgba(8,8,20,0.45)`) to deepen the glass, a double-border effect (outer `rgba(255,255,255,0.18)` + inner inset ring `rgba(255,255,255,0.10)` at 1px inset) to reproduce the glowing-border look from the reference screenshot. Top-edge `LinearGradient` inner glow retained. Shield icon removed. Title is now 18px, semibold (`fontFamily.demiBold`), no uppercase.
+
+**Files modified:** `src/components/focus/IllnessWatchCard.tsx`
+
+---
+
+### 2026-04-27: IllnessWatchCard — Always Expanded + Dark-Navy Chrome + White Content
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed (user-visible):**
+- Card is now always expanded — all 5 signal rows (Nocturnal HR, HRV, SpO₂, Skin Temp, Sleep) are visible immediately, no expand toggle.
+- Tapping anywhere on the card opens the Illness Detail screen. The "View full analysis →" CTA is removed (redundant).
+- New visual chrome: dark-navy background (`colors.surface` / `#1A1A2E`), hairline white border (`rgba(255,255,255,0.08)`), and a subtle white top-edge inner glow (linear gradient `rgba(255,255,255,0.10)` → transparent).
+- Header chevron is now `Ionicons chevron-forward` (visual only); status score/dot/CLEAR-WATCH-SICK keep their color.
+- All body text is white. Severity pills for `normal` signals are white; `mild`/`moderate`/`severe` pills keep yellow/orange/red as warning flags.
+
+**Files modified:** `src/components/focus/IllnessWatchCard.tsx`
+
+---
+
+### 2026-04-27: FocusScoreRing — Full Redesign: Metrics Inside Ring + White Arc
+
+**Source:** Claude Code — Macbook Pro
+
+Redesigned `FocusScoreRing` with two modes: full (when `readiness` prop is provided) and compact (AIChatScreen artifact — unchanged interface).
+
+**Inside the arc**: "READINESS" label (uppercase, letterSpacing 1, `rgba(255,255,255,0.6)`) + `RollingNumber` score at 68px/digitHeight 72 — same rolling-digit animation as overview hero.
+
+**Gradient fix**: extended the full-transparent zone with two zero-opacity stops at offsets 0 and 0.15 before the fade begins (0 → 0 → 0.35 → 0.72 → 0.95), ensuring a complete fade to transparent at the arc start.
+
+**Below the arc** (full mode): recommendation subtitle title (e.g., "Take it easy") + 4 `MetricRow` components — HRV, Sleep, Resting HR, Training — each with white track/fill bars (`rgba(255,255,255,0.1)` track / `rgba(255,255,255,0.7)` fill) and muted white status labels. Loading skeleton rows shown when `isLoading`.
+
+**FocusScreen**: passes `readiness={focusData.readiness}` to ring, `ReadinessCard` removed from the scroll view (still exists for AIChatScreen artifacts).
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`, `src/screens/FocusScreen.tsx`
+
+---
+
+### 2026-04-27: FocusScoreRing — Semicircle Arc with White Gradient
+
+**Source:** Claude Code — Macbook Pro
+
+Rebuilt `FocusScoreRing` from scratch. Full-circle ring replaced with a 240° semicircle arc (open gap of 120° at the bottom, endpoints at 8 o'clock and 4 o'clock). Track is barely visible (`rgba(255,255,255,0.08)`). Filled arc uses a `linearGradient` from transparent at the start edge (bottom-left) to `rgba(255,255,255,0.95)` at the top, fading in as progress increases. Glow at the tip: 3 nested circles (dim halo → mid ring → bright dot). Score text bumped to 68px, "Readiness" label below in muted white, pill changed to border-only (white border + white text). SVG sized to full usable width (`SCREEN_W - 48`), arc geometry computed from first principles using SVG clockwise angles.
+
+**Files modified:** `src/components/focus/FocusScoreRing.tsx`
+
+---
+
+### 2026-04-27: FocusScreen — Remove Title and Date from Coach Tab
+
+**Source:** Claude Code — Macbook Pro
+
+Removed the header block (title + date subtitle) from FocusScreen entirely. Coach tab now goes straight into the score ring with no text header. Cleaned up `useTranslation`, `getTodayLabel`, `Text`, `fontFamily`, `fontSize` — all now unused.
+
+**Files modified:** `src/screens/FocusScreen.tsx`
+
+---
+
+### 2026-04-27: FocusScreen + AskCoachButton — Dark Input Style, Bolder Header
+
+**Source:** Claude Code — Macbook Pro
+
+Restyled `AskCoachButton` to match `AIChatScreen`'s input bar: translucent dark background (`rgba(255,255,255,0.1)`), white border (`rgba(255,255,255,0.25)`), pill radius (50), white text/placeholder, white icon (70% opacity), circular dark send button (`rgba(0,0,0,0.45)`) with up-arrow instead of right-arrow. Fixed Coach screen header not registering visually — bumped title to `fontFamily.demiBold` / `fontSize.xxl` (was `regular`/`lg`) and subtitle to `fontSize.md` at 45% white opacity.
+
+**Files modified:** `src/components/focus/AskCoachButton.tsx`, `src/screens/FocusScreen.tsx`
+
+---
+
+### 2026-04-27: FocusScreen — Simplified Header, Removed BaselineJourneyCard
+
+**Source:** Claude Code — Macbook Pro
+
+Replaced the two-column header (bold title left + date right) with a centered minimal header matching the AIChatScreen style: "Coach" title centered in `fontFamily.regular`/`fontSize.lg`, today's date as a muted subtitle below. Removed `BaselineJourneyCard` (the "To reach…" tips block) and its loading skeleton — they no longer render on the Coach tab. Cleaned up `daysLogged` variable and `BaselineJourneyCard` import.
+
+**Files modified:** `src/screens/FocusScreen.tsx`
+
+---
+
+### 2026-04-27: TrendsDetailScreen — Purple Radial Gradient Background
+
+**Source:** Claude Code — Macbook Pro
+
+Added the same SVG-based radial gradient background used on all detail pages to `TrendsDetailScreen`. Wrapped root in a `View` (`#0A0A0F` bg) with an absolute `Reanimated.View` (FadeIn 600ms, height 480) containing two `RadialGradient`s (purple `#5B21B6` top-center, deep indigo `#1E1B4B` top-right) plus a vertical `LinearGradient` fade to solid at the bottom. `SafeAreaView` sits on top of the gradient layer.
+
+**Files modified:** `src/screens/TrendsDetailScreen.tsx`
+
+---
+
 ### 2026-04-27: Caffeine Gauge — Raw mg Display + Inline Bar Chart on Overview
 
 **Source:** Claude Code — Macbook Pro

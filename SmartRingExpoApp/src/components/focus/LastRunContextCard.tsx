@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { GradientInfoCard } from '../common/GradientInfoCard';
-import { colors, fontFamily, fontSize, borderRadius } from '../../theme/colors';
+import { colors, fontFamily, fontSize, borderRadius, spacing } from '../../theme/colors';
 import type { LastRunContext, EffortVerdict } from '../../types/focus.types';
 
 interface LastRunContextCardProps {
@@ -13,27 +14,9 @@ interface LastRunContextCardProps {
   hasStrava: boolean;
 }
 
-function RunIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-        stroke="#FFB84D"
-        strokeWidth={1.8}
-        fill="rgba(255,184,77,0.2)"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 function useFormatRunDate() {
   const { t } = useTranslation();
   return (iso: string): string => {
-    // iso is YYYY-MM-DD (date-only string from Strava/Supabase).
-    // new Date("YYYY-MM-DD") parses as UTC midnight, which causes off-by-one
-    // in negative UTC offset timezones. Compare local date strings instead.
     const runDate = iso.slice(0, 10);
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -43,7 +26,6 @@ function useFormatRunDate() {
 
     if (runDate === localToday) return t('last_run.date_today');
     if (runDate === localYesterday) return t('last_run.date_yesterday');
-    // Use noon to avoid DST edge cases in diff calculation
     const runNoon = new Date(`${runDate}T12:00:00`);
     const daysAgo = Math.round((now.getTime() - runNoon.getTime()) / 86400000);
     if (daysAgo < 7) return t('last_run.date_days_ago', { days: daysAgo });
@@ -51,11 +33,6 @@ function useFormatRunDate() {
   };
 }
 
-function formatPace(minsPerKm: number): string {
-  const mins = Math.floor(minsPerKm);
-  const secs = Math.round((minsPerKm % 1) * 60);
-  return `${mins}:${String(secs).padStart(2, '0')}/km`;
-}
 
 function useVerdictLabel() {
   const { t } = useTranslation();
@@ -76,198 +53,162 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
   const { t } = useTranslation();
   const formatRunDate = useFormatRunDate();
   const verdictLabel = useVerdictLabel();
-  const [expanded, setExpanded] = useState(false);
+  const titleSub = lastRun
+    ? `${lastRun.distanceKm.toFixed(1)} km · ${formatRunDate(lastRun.runDate)} • ${verdictLabel(lastRun.effortVerdict)}`
+    : null;
 
   return (
-    <GradientInfoCard
-      icon={<RunIcon />}
-      title={t('last_run.card_title')}
-      headerValue={lastRun ? `${lastRun.distanceKm.toFixed(1)} km` : undefined}
-      headerSubtitle={lastRun ? formatRunDate(lastRun.runDate) : undefined}
-      showArrow={false}
-      gradientStops={[
-        { offset: 0, color: '#3D2200', opacity: 1 },
-        { offset: 0.6, color: '#3D2200', opacity: 0 },
-      ]}
-      gradientCenter={{ x: 0.5, y: -0.5 }}
-      gradientRadii={{ rx: '100%', ry: '250%' }}
-      headerRight={
-        lastRun != null ? (
-          <TouchableOpacity onPress={() => setExpanded(v => !v)} hitSlop={12}>
-            <Text style={styles.chevron}>{expanded ? '∧' : '∨'}</Text>
-          </TouchableOpacity>
-        ) : undefined
-      }
-    >
-      {isLoading ? (
-        <>
-          <View style={[styles.skeleton, { width: '50%', marginBottom: 6 }]} />
-          <View style={[styles.skeleton, { width: '75%' }]} />
-        </>
-      ) : !hasStrava && lastRun == null ? (
-        <View style={styles.noStravaBody}>
-          <Text style={styles.emptyText}>{t('last_run.no_strava')}</Text>
-          <TouchableOpacity
-            style={styles.ctaButton}
-            onPress={() => router.push('/(tabs)/coach/strava')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.ctaText}>{t('last_run.connect_strava')}</Text>
-          </TouchableOpacity>
+    <View style={styles.glowWrap}>
+      <Pressable
+        onPress={() => lastRun != null
+          ? router.push({ pathname: '/(tabs)/coach/strava-detail', params: { id: String(lastRun.stravaActivityId) } })
+          : undefined
+        }
+        disabled={lastRun == null || isLoading}
+        style={({ pressed }) => [styles.card, pressed && lastRun != null && styles.cardPressed]}
+      >
+        {/* Glassmorphic blur base */}
+        <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
+
+        {/* Edge glow — 4 linear fades */}
+        <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+        <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+        <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+        <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>{t('last_run.card_title')}</Text>
+            {!isLoading && titleSub != null && (
+              <Text style={styles.titleSub}>{titleSub}</Text>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.55)" />
         </View>
-      ) : lastRun == null ? (
-        <>
-          <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/coach/strava')} hitSlop={8}>
-            <Text style={styles.viewStravaLink}>{t('last_run.view_strava')} →</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
-          {/* Run summary row */}
-          <View style={styles.runRow}>
-            <Text style={styles.runName}>{lastRun.runName}</Text>
-            <Text style={styles.runPace}>{formatPace(lastRun.paceMinsPerKm)}</Text>
-          </View>
 
-          {/* Verdict badge */}
-          <View style={[styles.verdictBadge, { backgroundColor: verdictColor(lastRun.effortVerdict) + '22', borderColor: verdictColor(lastRun.effortVerdict) + '55' }]}>
-            <Text style={[styles.verdictText, { color: verdictColor(lastRun.effortVerdict) }]}>
-              {verdictLabel(lastRun.effortVerdict)}
-            </Text>
-          </View>
-
-          {/* Always-visible explanation + HR comparison */}
-          <Text style={styles.explanation}>"{lastRun.explanation}"</Text>
-          <Text style={styles.hrComparison}>
-            {t('last_run.hr_comparison', {
-              actual: Math.round(lastRun.avgHR),
-              expected: Math.round(lastRun.expectedHR),
-            })}
-          </Text>
-
-          {/* Expanded body state (sleep score + HRV rows) */}
-          {expanded && (
-            <View style={styles.expandedSection}>
-              <Text style={styles.sectionHeading}>{t('last_run.body_state')}</Text>
-              <View style={styles.bodyStateRow}>
-                <Text style={styles.bodyStateLabel}>{t('last_run.sleep_time')}</Text>
-                <Text style={styles.bodyStateValue}>
-                  {lastRun.bodyStateAtRun.sleepMinutes != null
-                    ? `${Math.floor(lastRun.bodyStateAtRun.sleepMinutes / 60)}h ${lastRun.bodyStateAtRun.sleepMinutes % 60}m`
-                    : '--'}
-                </Text>
-              </View>
-              <View style={styles.bodyStateRow}>
-                <Text style={styles.bodyStateLabel}>{t('last_run.hrv_vs_norm')}</Text>
-                <Text style={styles.bodyStateValue}>
-                  {lastRun.bodyStateAtRun.hrvVsNorm ?? '--'}
-                </Text>
-              </View>
+        {/* Body */}
+        <View style={styles.body}>
+          {isLoading ? (
+            <>
+              <View style={[styles.skeleton, { width: '50%', marginBottom: 6 }]} />
+              <View style={[styles.skeleton, { width: '75%' }]} />
+            </>
+          ) : !hasStrava && lastRun == null ? (
+            <View style={styles.noStravaBody}>
+              <Text style={styles.emptyText}>{t('last_run.no_strava')}</Text>
+              <TouchableOpacity
+                style={styles.ctaButton}
+                onPress={() => router.push('/(tabs)/coach/strava')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.ctaText}>{t('last_run.connect_strava')}</Text>
+              </TouchableOpacity>
             </View>
+          ) : lastRun == null ? (
+            <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>
+          ) : (
+            <>
+              <Text style={styles.explanation}>"{lastRun.explanation}"</Text>
+              <Text style={styles.hrComparison}>
+                {t('last_run.hr_comparison', {
+                  actual: Math.round(lastRun.avgHR),
+                  expected: Math.round(lastRun.expectedHR),
+                })}
+              </Text>
+            </>
           )}
-
-          {/* View Strava link */}
-          <TouchableOpacity onPress={() => router.push('/(tabs)/coach/strava')} hitSlop={8}>
-            <Text style={styles.viewStravaLink}>{t('last_run.view_strava')} →</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </GradientInfoCard>
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  chevron: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.45)',
+  glowWrap: {
+    borderRadius: 20,
+    shadowColor: 'rgba(255,255,255,0.6)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
   },
-  runRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  runName: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.md,
-    color: '#FFFFFF',
-  },
-  runPace: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.5)',
-  },
-  verdictBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: borderRadius.sm,
+  card: {
+    borderRadius: 20,
+    overflow: 'hidden',
     borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  verdictText: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.xs,
-    letterSpacing: 0.5,
+  cardPressed: {
+    opacity: 0.82,
   },
-  expandedSection: {
-    gap: 6,
-    marginTop: 4,
+  edgeLeft: {
+    position: 'absolute', top: 0, left: 0, bottom: 0, width: '15%',
   },
-  sectionHeading: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.4)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+  edgeRight: {
+    position: 'absolute', top: 0, right: 0, bottom: 0, width: '15%',
   },
-  bodyStateRow: {
+  edgeTop: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: '15%',
+  },
+  edgeBottom: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%',
+  },
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  bodyStateLabel: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.5)',
+  titleBlock: {
+    flex: 1,
+    gap: 3,
   },
-  bodyStateValue: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
+  title: {
     color: '#FFFFFF',
+    fontFamily: fontFamily.demiBold,
+    fontSize: 22,
+    letterSpacing: 0.2,
   },
+  titleSub: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  body: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: 8,
+  },
+
+
+
   explanation: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(255,255,255,0.7)',
     fontStyle: 'italic',
     lineHeight: 20,
-    marginTop: 4,
   },
   hrComparison: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.xs,
-    color: 'rgba(255,255,255,0.35)',
-    marginTop: 2,
+    color: 'rgba(255,255,255,0.45)',
   },
-  viewStravaLink: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    marginTop: 10,
-    opacity: 0.85,
-  },
+
   noStravaBody: {
     gap: 10,
   },
   emptyText: {
     fontFamily: fontFamily.regular,
     fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.35)',
+    color: 'rgba(255,255,255,0.7)',
   },
   ctaButton: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.primary,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: borderRadius.sm,
@@ -275,7 +216,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontFamily: fontFamily.demiBold,
     fontSize: fontSize.sm,
-    color: colors.textInverse,
+    color: '#000000',
   },
   skeleton: {
     height: 12,

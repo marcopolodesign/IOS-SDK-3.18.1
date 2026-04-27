@@ -1,6 +1,7 @@
 // Shared caffeine visualization components — used in adenosine-detail and OverviewTab caffeine section.
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { RollingNumber } from '../common/RollingNumber';
 import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +29,7 @@ export type BarEntry = {
   consumed_at: string;
 };
 
-// ─── Bar chart — PK-modeled caffeine per 30-min slot with Y-axis + drink markers ─
+// ─── Bar chart — PK-modeled caffeine per slot with optional hero mode ─────────
 export function CaffeineBarChart({
   doses,
   entries,
@@ -37,6 +38,7 @@ export function CaffeineBarChart({
   timeStart,
   timeEnd,
   height = 240,
+  heroMode = false,
 }: {
   doses: CaffeineDose[];
   entries: BarEntry[];
@@ -45,16 +47,23 @@ export function CaffeineBarChart({
   timeStart: number;
   timeEnd: number;
   height?: number;
+  heroMode?: boolean;
 }) {
   const { width: screenWidth } = useWindowDimensions();
+
+  // Hero mode: no Y-axis column, fewer/wider bars
+  const padL = heroMode ? 4 : BAR_PAD_L;
+  const barsPerHour = heroMode ? 2 : 4;
+  const slotStep = 1 / barsPerHour;
+  const GAP = heroMode ? 3 : 4;
+
   const svgW = screenWidth - spacing.md * 2;
-  const innerW = svgW - BAR_PAD_L - BAR_PAD_R;
+  const innerW = svgW - padL - BAR_PAD_R;
   const innerH = height - BAR_PAD_T - BAR_PAD_B;
 
   const timeSpan = Math.max(timeEnd - timeStart, 1);
-  const totalBars = Math.ceil((timeEnd - timeStart) * 4);
+  const totalBars = Math.ceil((timeEnd - timeStart) * barsPerHour);
   const slotW = innerW / totalBars;
-  const GAP = 4;
   const isPlaceholder = doses.length === 0;
 
   const displayDoses = useMemo<CaffeineDose[]>(
@@ -69,28 +78,28 @@ export function CaffeineBarChart({
   const yScale = useMemo(() => Math.max(peak, MAX_CAFFEINE_MG), [peak]);
 
   const bars = useMemo(() => Array.from({ length: totalBars }, (_, i) => {
-    const slotMid = timeStart + i * 0.25 + 0.125;
+    const slotMid = timeStart + i * slotStep + slotStep / 2;
     if (slotMid > timeEnd) return null;
     const mg = totalMgAt(slotMid, displayDoses);
     const barH = mg > 0 ? Math.max((mg / yScale) * innerH, 2) : 8;
-    const x = BAR_PAD_L + i * slotW + GAP / 2;
+    const x = padL + i * slotW + GAP / 2;
     const y = BAR_PAD_T + innerH - barH;
     return { x, y, w: Math.max(slotW - GAP, 1), h: barH, dim: mg === 0 };
-  }).filter(Boolean), [displayDoses, yScale, timeStart, timeEnd, slotW, innerH, totalBars]);
+  }).filter(Boolean), [displayDoses, yScale, timeStart, timeEnd, slotW, innerH, totalBars, slotStep, padL, GAP]);
 
   const placeholderBars = useMemo(() => {
     if (isPlaceholder) return bars;
     const phDoses: CaffeineDose[] = [{ intakeHour: win.start, amountMg: MAX_CAFFEINE_MG }];
     return Array.from({ length: totalBars }, (_, i) => {
-      const slotMid = timeStart + i * 0.25 + 0.125;
+      const slotMid = timeStart + i * slotStep + slotStep / 2;
       if (slotMid > timeEnd) return null;
       const mg = totalMgAt(slotMid, phDoses);
       const barH = mg > 0 ? Math.max((mg / yScale) * innerH, 2) : 8;
-      const x = BAR_PAD_L + i * slotW + GAP / 2;
+      const x = padL + i * slotW + GAP / 2;
       const y = BAR_PAD_T + innerH - barH;
       return { x, y, w: Math.max(slotW - GAP, 1), h: barH };
     }).filter(Boolean);
-  }, [isPlaceholder, bars, win.start, timeStart, timeEnd, totalBars, slotW, yScale, innerH]);
+  }, [isPlaceholder, bars, win.start, timeStart, timeEnd, totalBars, slotW, yScale, innerH, slotStep, padL, GAP]);
 
   const line400Y = BAR_PAD_T + innerH - (MAX_CAFFEINE_MG / yScale) * innerH;
   const sleepY = BAR_PAD_T + innerH - (SLEEP_THRESHOLD_MG / yScale) * innerH;
@@ -99,94 +108,116 @@ export function CaffeineBarChart({
   const now = new Date();
   const nowHr = now.getHours() + now.getMinutes() / 60;
   const clamped = Math.max(timeStart, Math.min(timeEnd, nowHr));
-  const nowX = BAR_PAD_L + ((clamped - timeStart) / timeSpan) * innerW;
+  const nowX = padL + ((clamped - timeStart) / timeSpan) * innerW;
+  const currentMg = Math.round(totalMgAt(nowHr, doses));
 
   const drinkMarkers = useMemo(() => entries.map(e => {
     const h = new Date(e.consumed_at).getHours() + new Date(e.consumed_at).getMinutes() / 60;
     if (h < timeStart || h > timeEnd) return null;
-    const x = BAR_PAD_L + ((h - timeStart) / timeSpan) * innerW;
+    const x = padL + ((h - timeStart) / timeSpan) * innerW;
     const mgHere = totalMgAt(h + 0.25, doses);
     const barTop = BAR_PAD_T + innerH - Math.max((mgHere / yScale) * innerH, 2);
     return { id: e.id, x, iconLeft: x - DRINK_ICON_SIZE / 2, iconTop: Math.max(barTop - 18, 2) };
-  }).filter(Boolean), [entries, doses, yScale, timeStart, timeEnd, timeSpan, innerW, innerH]);
+  }).filter(Boolean), [entries, doses, yScale, timeStart, timeEnd, timeSpan, innerW, innerH, padL]);
 
   return (
-    <View style={styles.barWrapper}>
-      <View>
-        <Svg width={svgW} height={height}>
-          {/* Y-axis labels */}
-          {yTicks.map(mg => {
-            const y = BAR_PAD_T + innerH - (mg / yScale) * innerH;
-            return (
-              <SvgText key={mg} x={BAR_PAD_L - 5} y={y + 4}
+    <View>
+      {/* Hero header — consumed/total above bars */}
+      {heroMode && (
+        <View style={styles.heroHeader}>
+          <Text style={styles.heroLabel}>CONSUMED CAFFEINE</Text>
+          <View style={styles.heroNumberRow}>
+            <RollingNumber value={currentMg} style={styles.heroBig} digitHeight={110} gap={-10} />
+            <Text style={styles.heroUnit}>/{MAX_CAFFEINE_MG}mg</Text>
+          </View>
+        </View>
+      )}
+
+      <View style={[styles.barWrapper, heroMode && styles.barWrapperOverlap]}>
+        <View>
+          <Svg width={svgW} height={height}>
+            {/* Y-axis labels — detail mode only */}
+            {!heroMode && yTicks.map(mg => {
+              const y = BAR_PAD_T + innerH - (mg / yScale) * innerH;
+              return (
+                <SvgText key={mg} x={BAR_PAD_L - 5} y={y + 4}
+                  fill="rgba(255,255,255,0.45)" fontSize={12}
+                  fontFamily={fontFamily.regular} textAnchor="end">
+                  {mg}
+                </SvgText>
+              );
+            })}
+            {!heroMode && (
+              <SvgText x={BAR_PAD_L - 5} y={BAR_PAD_T + innerH + 4}
+                fill="rgba(255,255,255,0.28)" fontSize={12}
+                fontFamily={fontFamily.regular} textAnchor="end">
+                mg
+              </SvgText>
+            )}
+            {!heroMode && (
+              <SvgText x={BAR_PAD_L - 5} y={line400Y + 4}
                 fill="rgba(255,255,255,0.45)" fontSize={12}
                 fontFamily={fontFamily.regular} textAnchor="end">
-                {mg}
+                400
               </SvgText>
-            );
-          })}
-          <SvgText x={BAR_PAD_L - 5} y={BAR_PAD_T + innerH + 4}
-            fill="rgba(255,255,255,0.28)" fontSize={12}
-            fontFamily={fontFamily.regular} textAnchor="end">
-            mg
-          </SvgText>
-          <SvgText x={BAR_PAD_L - 5} y={line400Y + 4}
-            fill="rgba(255,255,255,0.45)" fontSize={12}
-            fontFamily={fontFamily.regular} textAnchor="end">
-            400
-          </SvgText>
+            )}
 
-          {/* Ghost bars — ideal curve or background reference when drinks logged */}
-          {placeholderBars.map((bar, i) => bar && (
-            <Rect key={`ph-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
-              fill="#FFFFFF" opacity={isPlaceholder ? 0.22 : 0.10} />
+            {/* Ghost bars */}
+            {placeholderBars.map((bar, i) => bar && (
+              <Rect key={`ph-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
+                fill="#FFFFFF" opacity={isPlaceholder ? 0.22 : 0.10} />
+            ))}
+
+            {/* Real bars */}
+            {!isPlaceholder && bars.map((bar, i) => bar && (
+              <Rect key={`r-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
+                fill="#FFFFFF" opacity={bar.dim ? 0.15 : 0.85} />
+            ))}
+
+            {/* Drink intake marker lines — detail mode only */}
+            {!heroMode && drinkMarkers.map(m => m && (
+              <Line key={m.id}
+                x1={m.x} y1={BAR_PAD_T} x2={m.x} y2={BAR_PAD_T + innerH}
+                stroke="rgba(255,255,255,0.45)" strokeWidth={1.5} strokeDasharray="2,3" />
+            ))}
+
+            {/* Sleep threshold + daily limit — detail mode only */}
+            {!heroMode && (
+              <>
+                <Line x1={BAR_PAD_L} y1={sleepY} x2={svgW - BAR_PAD_R} y2={sleepY}
+                  stroke="rgba(253,141,143,0.55)" strokeWidth={1} strokeDasharray="4,4" />
+                <SvgText x={svgW - BAR_PAD_R} y={sleepY - 4}
+                  fill="rgba(253,141,143,0.7)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
+                  sleep threshold
+                </SvgText>
+                <SvgText x={BAR_PAD_L - 5} y={sleepY + 4}
+                  fill="rgba(253,141,143,0.6)" fontSize={12}
+                  fontFamily={fontFamily.regular} textAnchor="end">
+                  100
+                </SvgText>
+                <Line x1={BAR_PAD_L} y1={line400Y} x2={svgW - BAR_PAD_R} y2={line400Y}
+                  stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4,4" />
+                <SvgText x={svgW - BAR_PAD_R} y={line400Y - 4}
+                  fill="rgba(255,255,255,0.6)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
+                  daily limit
+                </SvgText>
+              </>
+            )}
+
+            {/* Now line — detail mode only */}
+            {!heroMode && (
+              <Line x1={nowX} y1={BAR_PAD_T} x2={nowX} y2={BAR_PAD_T + innerH}
+                stroke="rgba(255,255,255,0.3)" strokeWidth={1} strokeDasharray="2,3" />
+            )}
+          </Svg>
+
+          {/* Drink icon labels — detail mode only */}
+          {!heroMode && drinkMarkers.map(m => m && (
+            <View key={m.id} style={[styles.drinkIcon, { left: m.iconLeft, top: m.iconTop }]}>
+              <Ionicons name="cafe-outline" size={DRINK_ICON_SIZE} color="rgba(255,255,255,0.85)" />
+            </View>
           ))}
-
-          {/* Real bars — only when drinks logged */}
-          {!isPlaceholder && bars.map((bar, i) => bar && (
-            <Rect key={`r-${i}`} x={bar.x} y={bar.y} width={bar.w} height={bar.h} rx={2} ry={2}
-              fill="#FFFFFF" opacity={bar.dim ? 0.15 : 0.85} />
-          ))}
-
-          {/* Drink intake marker lines */}
-          {drinkMarkers.map(m => m && (
-            <Line key={m.id}
-              x1={m.x} y1={BAR_PAD_T} x2={m.x} y2={BAR_PAD_T + innerH}
-              stroke="rgba(255,255,255,0.45)" strokeWidth={1.5} strokeDasharray="2,3" />
-          ))}
-
-          {/* Sleep threshold at 100mg */}
-          <Line x1={BAR_PAD_L} y1={sleepY} x2={svgW - BAR_PAD_R} y2={sleepY}
-            stroke="rgba(253,141,143,0.55)" strokeWidth={1} strokeDasharray="4,4" />
-          <SvgText x={svgW - BAR_PAD_R} y={sleepY - 4}
-            fill="rgba(253,141,143,0.7)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
-            sleep threshold
-          </SvgText>
-          <SvgText x={BAR_PAD_L - 5} y={sleepY + 4}
-            fill="rgba(253,141,143,0.6)" fontSize={12}
-            fontFamily={fontFamily.regular} textAnchor="end">
-            100
-          </SvgText>
-
-          {/* Daily limit at 400mg */}
-          <Line x1={BAR_PAD_L} y1={line400Y} x2={svgW - BAR_PAD_R} y2={line400Y}
-            stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4,4" />
-          <SvgText x={svgW - BAR_PAD_R} y={line400Y - 4}
-            fill="rgba(255,255,255,0.6)" fontSize={11} fontFamily={fontFamily.regular} textAnchor="end">
-            daily limit
-          </SvgText>
-
-          {/* Now line */}
-          <Line x1={nowX} y1={BAR_PAD_T} x2={nowX} y2={BAR_PAD_T + innerH}
-            stroke="rgba(255,255,255,0.3)" strokeWidth={1} strokeDasharray="2,3" />
-        </Svg>
-
-        {/* Drink icon labels — absolute overlay above each spike */}
-        {drinkMarkers.map(m => m && (
-          <View key={m.id} style={[styles.drinkIcon, { left: m.iconLeft, top: m.iconTop }]}>
-            <Ionicons name="cafe-outline" size={DRINK_ICON_SIZE} color="rgba(255,255,255,0.85)" />
-          </View>
-        ))}
+        </View>
       </View>
     </View>
   );
@@ -298,6 +329,7 @@ export function DrinkSuggestions({
 
 const styles = StyleSheet.create({
   barWrapper: { marginHorizontal: spacing.md, marginBottom: 0 },
+  barWrapperOverlap: { marginTop: -100 },
   drinkIcon: { position: 'absolute', width: 16, alignItems: 'center' },
 
   phaseOuter: { marginHorizontal: spacing.md, paddingLeft: BAR_PAD_L, paddingRight: BAR_PAD_R, marginBottom: spacing.lg },
@@ -347,5 +379,36 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 14,
     textAlign: 'center',
+  },
+
+  heroHeader: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+    alignItems: 'center',
+  },
+  heroLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: fontFamily.demiBold,
+    fontSize: 13,
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  heroNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  heroBig: {
+    color: '#FFFFFF',
+    fontFamily: fontFamily.regular,
+    fontSize: 109,
+    letterSpacing: -2,
+    lineHeight: 110,
+  },
+  heroUnit: {
+    color: '#FFFFFF',
+    fontFamily: fontFamily.regular,
+    fontSize: 28,
+    marginBottom: 14,
+    marginLeft: 4,
   },
 });
