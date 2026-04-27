@@ -9,6 +9,12 @@ import {
 } from '@kingstinct/react-native-healthkit';
 import { reportError } from '../../utils/sentry';
 
+// Code=5 = authorization not determined, Code=6 = device locked / data protected.
+// Both are expected OS states; suppress Sentry noise for them.
+function isExpectedHealthKitError(error: unknown): boolean {
+  return /com\.apple\.healthkit.*Code=[56]\b/i.test((error as any)?.message ?? '');
+}
+
 export interface HKStepsResult {
   steps: number;
   samples: any[];
@@ -56,7 +62,7 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchHeartRateData' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchHeartRateData' }, 'warning');
       return null;
     }
   }
@@ -90,14 +96,14 @@ class HealthKitDataFetchers {
 
       return { steps: total, samples: deduped, source: 'appleHealth' };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchStepsData' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchStepsData' }, 'warning');
       try {
         const recent = await getMostRecentQuantitySample('HKQuantityTypeIdentifierStepCount');
         if (recent) {
           return { steps: Number(recent.quantity) || 0, samples: [recent], source: 'fallback' };
         }
       } catch (innerError) {
-        reportError(innerError, { op: 'healthKit.fetchStepsData.fallback' }, 'warning');
+        if (!isExpectedHealthKitError(innerError)) reportError(innerError, { op: 'healthKit.fetchStepsData.fallback' }, 'warning');
       }
       return { steps: 0, samples: [], source: 'error' };
     }
@@ -112,7 +118,7 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchHRVData' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchHRVData' }, 'warning');
       return null;
     }
   }
@@ -126,7 +132,7 @@ class HealthKitDataFetchers {
         timestamp: new Date(sample.startDate).getTime(),
       };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchSpO2Data' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchSpO2Data' }, 'warning');
       return null;
     }
   }
@@ -149,7 +155,7 @@ class HealthKitDataFetchers {
 
       return { calories: Math.round(total), source: 'appleHealth' };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchActiveCaloriesData' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchActiveCaloriesData' }, 'warning');
       return { calories: 0, source: 'error' };
     }
   }
@@ -172,7 +178,7 @@ class HealthKitDataFetchers {
 
       return { distanceM: Math.round(totalM), source: 'appleHealth' };
     } catch (error) {
-      reportError(error, { op: 'healthKit.fetchDistanceData' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.fetchDistanceData' }, 'warning');
       return { distanceM: 0, source: 'error' };
     }
   }

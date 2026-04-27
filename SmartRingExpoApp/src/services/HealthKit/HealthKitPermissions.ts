@@ -11,6 +11,10 @@ import {
 } from '@kingstinct/react-native-healthkit';
 import { reportError } from '../../utils/sentry';
 
+function isExpectedHealthKitError(error: unknown): boolean {
+  return /com\.apple\.healthkit.*Code=[56]\b/i.test((error as any)?.message ?? '');
+}
+
 class HealthKitPermissions {
   private _hasRequestedAuthorization = false;
 
@@ -44,7 +48,7 @@ class HealthKitPermissions {
           if (result) hasAnyPermission = true;
         } catch (e: any) {
           if (e?.message?.includes('NSSortDescriptor')) throw e;
-          reportError(e, { op: 'healthKit.checkPermissions.inner' }, 'warning');
+          if (!isExpectedHealthKitError(e)) reportError(e, { op: 'healthKit.checkPermissions.inner' }, 'warning');
         }
       }
 
@@ -55,7 +59,7 @@ class HealthKitPermissions {
       return hasAnyPermission;
     } catch (error) {
       console.error('[HealthKit] Fatal error checking permissions:', error);
-      reportError(error, { op: 'healthKit.checkPermissions' });
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.checkPermissions' });
       this._hasRequestedAuthorization = false;
       return false;
     }
@@ -82,7 +86,7 @@ class HealthKitPermissions {
       this._hasRequestedAuthorization = true;
       return true;
     } catch (error) {
-      reportError(error, { op: 'healthKit.requestAuth' }, 'warning');
+      if (!isExpectedHealthKitError(error)) reportError(error, { op: 'healthKit.requestAuth' }, 'warning');
       return false;
     }
   }
