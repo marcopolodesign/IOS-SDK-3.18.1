@@ -574,9 +574,13 @@ function SleepStageBar({
     progress.value = withDelay(delay, withTiming(1, { duration: 550 }));
   }, [targetW]);
 
-  const animatedProps = useAnimatedProps(() => ({
-    d: leftRoundedRect(progress.value * targetW, STAGE_BAR_H, STAGE_BAR_RADIUS),
-  }));
+  const animatedProps = useAnimatedProps(() => {
+    const w = progress.value * targetW;
+    const cr = Math.min(STAGE_BAR_RADIUS, w / 2, STAGE_BAR_H / 2);
+    return {
+      d: `M${cr},0 Q0,0 0,${cr} L0,${STAGE_BAR_H - cr} Q0,${STAGE_BAR_H} ${cr},${STAGE_BAR_H} L${w},${STAGE_BAR_H} L${w},0 Z`,
+    };
+  });
 
   return (
     <View style={stageBarStyles.row}>
