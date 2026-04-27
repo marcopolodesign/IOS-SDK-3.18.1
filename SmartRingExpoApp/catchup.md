@@ -4,6 +4,74 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-27: Overview tab — background blur layer
+
+Added a single `BlurView` (intensity 20, tint "dark", `absoluteFillObject`) inside `NewHomeScreen`'s `container` View, scoped to the overview tab only (`activeIndex === 0`). Rendered as the **first** child before `HomeHeader` and `contentWrapper` so it's naturally behind all UI without any explicit z-index. Only shown on overview — unmounts cleanly when switching to Sleep/Activity tabs.
+
+**Why not inside OverviewTab**: The tab content lives inside a clipped horizontal `Animated.ScrollView` (`contentScroll`). On iOS, `UIVisualEffectView` (expo-blur) cannot capture the background image through a clipped scroll view ancestor, so the blur had no effect. Moving it to the `container` level (outside all scroll views) fixes this — it blurs the `ImageBackground` from `AnimatedGradientBackground` correctly across the full screen.
+
+**Files modified:** `src/screens/NewHomeScreen.tsx` (blur added), `src/screens/home/OverviewTab.tsx` (reverted earlier attempt)
+
+**Source:** Claude Code — Macbook Pro
+
+### 2026-04-27: Readiness — Fix HRV baseline outliers + delete future-dated HR data
+
+**Problem 1 (HRV baseline):** `bootstrapBaselinesFromSupabase` took the first HRV reading of the day by timestamp. If that first reading was an artifact (ring occasionally emits 110–145ms SDNN spikes), it baked a false "great HRV" day into the 14-day baseline, inflating the baseline median and making subsequent real readings score lower than they should.
+
+**Fix:** Collect all `sdnn` values per day into `hrvValues[]`, then resolve to per-day median before building the rolling baseline. Median naturally ignores single outlier readings regardless of when in the day they occur. Bumped storage key to `focus_baselines_v3` so the on-device cache is invalidated and rebuilt on next open.
+
+**Problem 2 (future-dated HR data):** Ring clock drift caused ~2,500 `heart_rate_readings` rows to be stored with timestamps from 2026-04-28 through 2026-08-17 (HR values 60–145 bpm). These were outside the 14-day baseline window today, but would have started entering it on May 11 and progressively corrupted the resting HR baseline through August. **Deleted all rows where `recorded_at > NOW()`.** Ring clock sync (wired in last session) prevents new bad rows.
+
+**Files modified:** `src/services/ReadinessService.ts`
+**DB change:** Deleted future-dated `heart_rate_readings` for user `b4cd394d-...`
+
+**Source:** Claude Code — Macbook Pro
+
+### 2026-04-26: Activity Detail — Upgraded to Standard Detail Template
+
+**What changed:** Rewrote `app/detail/activity-detail.tsx` to match the established detail-screen template (same as HR, HRV, Recovery, Sleep).
+
+- **Gradient background:** Added full-screen `RadialGradient` SVG background in activity blue (`#3B82F6`) via `Reanimated.View` with `FadeIn`.
+- **TrendBarChart replaces DayNavigator:** 30-day interactive horizontal bar chart at top. User scrolls to select any of the last 30 days; bars are color-coded green/amber/blue by goal progress. `showValueLabels={false}` (step counts too wide for bar labels).
+- **Animated headline:** Steps count (formatted as `8.2k`) collapses from 88px → 40px font as user scrolls down. Activity level badge fades out; compact chip slides in from the right — identical collapse pattern to HR detail.
+- **Reanimated.ScrollView:** Replaced plain `ScrollView` with Reanimated version wired to `useAnimatedScrollHandler` for scroll-linked collapse.
+- **No background fills:** Removed `backgroundColor` from all containers (insightBlock, chart wrapper, stats). Insight is now plain text matching HR pattern. No border-colored insight box.
+- **Removed redundant StepsBarChart:** The embedded 7-day bar chart inside the scroll was removed — the `TrendBarChart` above already covers historical data.
+- **`{ fullDays: 30 }` option:** Hook now fetches 30 days of activity history to populate the full trend chart.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-04-26: Illness Watch Detail — Signal Card Redesign (Chart Baseline Pattern)
+
+**What changed:** Rewrote all 5 SignalCard components on the Illness Watch detail screen to establish the new chart pattern that will be applied app-wide.
+
+- **No card chrome:** Removed `backgroundColor`, `borderWidth`, `borderColor`, `padding`, `borderRadius` from `signalCard` — cards now sit flat on the dark screen background with only vertical spacing between them.
+- **New header hierarchy:** Title (regular, 70% white) above a big bold white value + dimmed unit (e.g. "63 BPM"), replacing the former title+SeverityPill row.
+- **Chart flush with title:** `CHART_PAD.left` set to 0 so the SVG left edge aligns with the card title.
+- **Removed solid grid lines:** The 3 hardcoded horizontal lines (e.g. 122 / 88 / 55 on Nocturnal HR) and their Y-axis numeric labels are gone. The dashed baseline line is the only horizontal marker inside the chart.
+- **Baseline legend below chart:** Three small dashes + "Baseline: 101 bpm" rendered below each chart, explaining what the dashed line represents.
+- **Conditional warning:** A colored warning sentence appears below the legend only when that signal's severity is `mild | moderate | severe` (i.e. `rawSub > 0`). For `normal` severity it's hidden. Color matches `severityColor(severity)`.
+- **Removed "Your value | Baseline" row:** That section below the chart is gone — the big value above + baseline legend replace it.
+- 5 new i18n warning keys added to `en.json` + `es.json` with directionality-correct wording per signal.
+
+**Source:** Claude Code — Macbook Pro
+
+**Files modified:** `src/screens/IllnessDetailScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+### 2026-04-26: Health / Activity — Fix chip wording when activity is 0
+
+**Problem:** Activity chip on the Health screen showed "NEEDS REST" (red) when activity score was 0, i.e. no data synced yet for today. The score function `getScoreTier(0)` correctly maps 0 to `needs_rest` for a real score, but 0 here means *no data*, not a poor performance day.
+
+**Fix:** In `StyledHealthScreen.tsx`, special-cased `activityScore === 0`: chip label uses the new `health.no_data` key ("NO DATA" / "SIN DATOS") and chip color is a neutral dim white (`rgba(255,255,255,0.35)`) instead of red. Sleep and recovery chips are unaffected (they can legitimately score 0).
+
+**Files modified:** `src/screens/StyledHealthScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+**Source:** Claude Code — Macbook Pro
+
 ## 2026-04-26: Sleep Hypnogram Cover — Show In-Bed Time in Header
 
 **Source:** Claude Code — Macbook Pro

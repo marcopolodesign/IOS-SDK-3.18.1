@@ -21,7 +21,7 @@ import type {
 } from '../types/focus.types';
 import type { SleepBaselineTier, SleepBaselineState } from '../types/sleepBaseline.types';
 
-const BASELINES_KEY = 'focus_baselines_v2';
+const BASELINES_KEY = 'focus_baselines_v3';
 
 // ─── Baseline persistence ──────────────────────────────────────────────────────
 
@@ -81,7 +81,9 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
     for (const row of (hrvRes.value.data ?? []) as { sdnn: number; recorded_at: string }[]) {
       const day = row.recorded_at.slice(0, 10);
       if (!byDay.has(day)) byDay.set(day, {});
-      byDay.get(day)!.hrv ??= row.sdnn;
+      const d = byDay.get(day)!;
+      if (!d.hrvValues) d.hrvValues = [];
+      if (Number.isFinite(row.sdnn) && row.sdnn > 0) d.hrvValues.push(row.sdnn);
     }
   }
   if (sleepRes.status === 'fulfilled') {
@@ -106,6 +108,11 @@ export async function bootstrapBaselinesFromSupabase(userId: string): Promise<Fo
       if (!byDay.has(day)) byDay.set(day, {});
       byDay.get(day)!.restingHR ??= row.heart_rate;
     }
+  }
+
+  // Resolve per-day HRV arrays → median (filters outliers naturally)
+  for (const r of byDay.values()) {
+    if (r.hrvValues && r.hrvValues.length > 0) r.hrv = median(r.hrvValues);
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -149,6 +156,7 @@ function median(values: number[]): number | null {
 
 interface DayReadings {
   hrv?: number | null;
+  hrvValues?: number[];
   sleepScore?: number | null;
   sleepMinutes?: number | null;
   restingHR?: number | null;

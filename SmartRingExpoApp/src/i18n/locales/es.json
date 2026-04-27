@@ -220,6 +220,7 @@
     "score_good": "BIEN",
     "score_fair": "REGULAR",
     "score_needs_rest": "NECESITA DESCANSO",
+    "no_data": "SIN DATOS",
     "hrv": "VFC",
     "spo2": "SpO₂",
     "temperature": "Temperatura",
@@ -318,7 +319,12 @@
     "detail_rec_watch_3": "Monitorea cómo te sientes; si aparecen síntomas, descansa.",
     "detail_rec_sick_1": "Se recomienda descanso hoy.",
     "detail_rec_sick_2": "Evita el ejercicio intenso hasta que las señales se normalicen.",
-    "detail_rec_sick_3": "Si tienes fiebre, consulta a un profesional de la salud."
+    "detail_rec_sick_3": "Si tienes fiebre, consulta a un profesional de la salud.",
+    "detail_warning_nocturnal_hr": "La FC nocturna está {{delta}} {{unit}} por encima del promedio — posible señal temprana de enfermedad.",
+    "detail_warning_hrv": "La VFC está {{delta}} {{unit}} por debajo del promedio — tu cuerpo puede estar bajo estrés.",
+    "detail_warning_spo2": "El SpO₂ bajó a {{value}} (promedio {{baseline}}) — presta atención a síntomas respiratorios.",
+    "detail_warning_temperature": "La temperatura cutánea está {{delta}} °C por encima del promedio — posible respuesta inflamatoria.",
+    "detail_warning_sleep": "El tiempo despierto es {{delta}} {{unit}} por encima del promedio — el sueño fragmentado puede preceder a una enfermedad."
   },
   "last_run": {
     "card_title": "Última Carrera",

@@ -373,8 +373,8 @@ export function StyledHealthScreen() {
   // Activity
   const activityScore = activity?.score ?? 0;
   const activityTier = getScoreTier(activityScore);
-  const activityLabelColor = getScoreTierColor(activityTier);
-  const activityLabel = t(`health.score_${activityTier}`);
+  const activityLabelColor = activityScore === 0 ? 'rgba(255,255,255,0.35)' : getScoreTierColor(activityTier);
+  const activityLabel = activityScore === 0 ? t('health.no_data') : t(`health.score_${activityTier}`);
   const steps = activity?.steps ?? 0;
   const activitySubMetrics: SubMetric[] = [
     {

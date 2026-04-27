@@ -11,12 +11,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
 import Svg, {
   Path,
   Line,
   Circle,
   Defs,
   LinearGradient,
+  RadialGradient,
+  Rect,
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
@@ -27,13 +30,13 @@ import type { IllnessStatus } from '../types/focus.types';
 import {
   getSeverity,
   severityColor,
-  SeverityPill,
   statusColor,
 } from '../components/focus/IllnessWatchCard';
+import { BackArrow } from '../components/detail/BackArrow';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_H = 120;
-const CHART_PAD = { top: 14, right: 14, bottom: 22, left: 38 };
+const CHART_PAD = { top: 8, right: 0, bottom: 18, left: 0 };
 
 // ─── Signal config ─────────────────────────────────────────────────────────────
 
@@ -92,6 +95,12 @@ function scoreBarColor(status: string): string {
   return colors.success;
 }
 
+function gradientColor(status: IllnessStatus): string {
+  if (status === 'SICK') return '#AB0D0D';
+  if (status === 'WATCH') return '#7A3A00';
+  return '#004D2E';
+}
+
 // ─── Signal Line Chart ─────────────────────────────────────────────────────────
 
 function SignalChart({
@@ -109,10 +118,8 @@ function SignalChart({
   unit: string;
   precision: number;
 }) {
-  // Sort oldest → newest
   const sorted = [...history].sort((a, b) => a.score_date.localeCompare(b.score_date));
 
-  // Extract data points (skip nulls)
   const points: Array<{ idx: number; val: number; date: string }> = [];
   sorted.forEach((row, i) => {
     const v = row[valueField] as number | null;
@@ -121,10 +128,8 @@ function SignalChart({
 
   if (points.length < 2) return null;
 
-  // Baseline from latest row
   const baseline = sorted[sorted.length - 1][baselineField] as number | null;
 
-  // Compute Y range
   const allVals = points.map(p => p.val);
   if (baseline != null) allVals.push(baseline);
   const minV = Math.min(...allVals);
@@ -133,15 +138,14 @@ function SignalChart({
   const yMin = minV - rangePad;
   const yMax = maxV + rangePad;
 
-  const chartW = SCREEN_WIDTH - 40 - CHART_PAD.left - CHART_PAD.right; // 40 = screen padding
-  const chartH = CHART_H - CHART_PAD.top - CHART_PAD.bottom;
   const totalW = SCREEN_WIDTH - 40;
+  const chartW = totalW - CHART_PAD.left - CHART_PAD.right;
+  const chartH = CHART_H - CHART_PAD.top - CHART_PAD.bottom;
   const n = sorted.length;
 
   const getX = (idx: number) => CHART_PAD.left + (idx / Math.max(n - 1, 1)) * chartW;
   const getY = (val: number) => CHART_PAD.top + chartH - ((val - yMin) / (yMax - yMin)) * chartH;
 
-  // Build line path
   let linePath = '';
   points.forEach((p, i) => {
     const x = getX(p.idx);
@@ -149,7 +153,6 @@ function SignalChart({
     linePath += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
   });
 
-  // Build area path
   let areaPath = '';
   if (points.length > 0) {
     areaPath = `M ${getX(points[0].idx)} ${CHART_PAD.top + chartH}`;
@@ -157,11 +160,6 @@ function SignalChart({
     areaPath += ` L ${getX(points[points.length - 1].idx)} ${CHART_PAD.top + chartH} Z`;
   }
 
-  // Y-axis labels (3 ticks)
-  const yMid = (yMin + yMax) / 2;
-  const yTicks = [yMax, yMid, yMin];
-
-  // X-axis labels — show ~5 evenly spaced dates
   const xLabelCount = Math.min(5, n);
   const xLabels: Array<{ idx: number; label: string }> = [];
   const today = new Date().toISOString().slice(0, 10);
@@ -182,47 +180,32 @@ function SignalChart({
         </LinearGradient>
       </Defs>
 
-      {/* Grid lines */}
-      {yTicks.map((v, i) => (
-        <Line
-          key={`g${i}`}
-          x1={CHART_PAD.left}
-          y1={getY(v)}
-          x2={CHART_PAD.left + chartW}
-          y2={getY(v)}
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth={1}
-        />
-      ))}
-
-      {/* Baseline dashed line */}
       {baseline != null && (
         <>
           <Line
             x1={CHART_PAD.left}
             y1={getY(baseline)}
-            x2={CHART_PAD.left + chartW}
+            x2={totalW - CHART_PAD.right}
             y2={getY(baseline)}
             stroke="rgba(255,255,255,0.35)"
             strokeWidth={1.2}
             strokeDasharray="5,4"
           />
           <SvgText
-            x={CHART_PAD.left + chartW + 2}
-            y={getY(baseline) + 3}
-            fill="rgba(255,255,255,0.35)"
+            x={totalW - 4}
+            y={getY(baseline) + 11}
+            fill="rgba(255,255,255,0.45)"
             fontSize={9}
+            textAnchor="end"
             fontFamily={fontFamily.regular}
           >
-            base
+            {`Baseline: ${Number(baseline).toFixed(precision)} ${unit}`}
           </SvgText>
         </>
       )}
 
-      {/* Area fill */}
       {areaPath ? <Path d={areaPath} fill={`url(#${gradientId})`} /> : null}
 
-      {/* Value line */}
       {linePath ? (
         <Path
           d={linePath}
@@ -234,7 +217,6 @@ function SignalChart({
         />
       ) : null}
 
-      {/* Data dots */}
       {points.map((p, i) => {
         const isLast = i === points.length - 1;
         return (
@@ -258,22 +240,6 @@ function SignalChart({
         );
       })}
 
-      {/* Y-axis labels */}
-      {yTicks.map((v, i) => (
-        <SvgText
-          key={`yl${i}`}
-          x={CHART_PAD.left - 6}
-          y={getY(v) + 3}
-          fill="rgba(255,255,255,0.35)"
-          fontSize={9}
-          textAnchor="end"
-          fontFamily={fontFamily.regular}
-        >
-          {Number(v).toFixed(precision)}
-        </SvgText>
-      ))}
-
-      {/* X-axis labels */}
       {xLabels.map(({ idx, label }) => (
         <SvgText
           key={`xl${idx}`}
@@ -293,14 +259,6 @@ function SignalChart({
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
-function BackButton() {
-  return (
-    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-      <Text style={styles.backBtnText}>← Back</Text>
-    </TouchableOpacity>
-  );
-}
-
 function SignalCard({
   sig,
   latestRow,
@@ -310,65 +268,59 @@ function SignalCard({
   sig: SignalConfig;
   latestRow: IllnessScore;
   history: IllnessScore[];
-  t: (k: string) => string;
+  t: (k: string, opts?: Record<string, string>) => string;
 }) {
-  const rawVal = latestRow[sig.valueField] as number | null;
+  // Fall back to the most recent non-null value — today's record may be partial
+  const sorted = [...history].sort((a, b) => b.score_date.localeCompare(a.score_date));
+  const mostRecentWithVal = sorted.find(row => row[sig.valueField] != null);
+  const rawVal = mostRecentWithVal?.[sig.valueField] as number | null ?? null;
+
   const rawBase = latestRow[sig.baselineField] as number | null;
   const rawSub = latestRow[sig.subField] as number;
   const severity = getSeverity(rawSub, sig.weight);
-  const severityLabel = t(`illness_watch.severity_${severity}`);
   const hasData = rawVal != null;
   const hasBaseline = rawBase != null;
 
+  const displayVal = hasData ? Number(rawVal).toFixed(sig.precision) : '—';
+  const delta = hasData && hasBaseline
+    ? Math.abs(Number(rawVal) - Number(rawBase)).toFixed(sig.precision)
+    : '0';
+
   return (
     <View style={styles.signalCard}>
-      <View style={styles.signalCardHeader}>
-        <Text style={styles.signalCardTitle}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
-        <SeverityPill severity={severity} label={severityLabel} />
+      <Text style={styles.signalTitle}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
+
+      <View style={styles.valueRow}>
+        <Text style={styles.valueBig}>{displayVal}</Text>
+        {hasData && (
+          <Text style={styles.valueUnit}>{sig.unit.toUpperCase()}</Text>
+        )}
       </View>
 
-      {/* Chart */}
-      <View style={styles.chartWrap}>
-        <SignalChart
-          history={history}
-          valueField={sig.valueField}
-          baselineField={sig.baselineField}
-          lineColor={sig.lineColor}
-          unit={sig.unit}
-          precision={sig.precision}
-        />
-      </View>
+      <SignalChart
+        history={history}
+        valueField={sig.valueField}
+        baselineField={sig.baselineField}
+        lineColor={sig.lineColor}
+        unit={sig.unit}
+        precision={sig.precision}
+      />
 
-      {/* Values summary */}
-      {hasData ? (
-        <View style={styles.valuesRow}>
-          <View style={styles.valueBlock}>
-            <Text style={styles.valueLabel}>{t('illness_watch.detail_your_value')}</Text>
-            <Text style={[styles.valueNumber, { color: severityColor(severity) }]}>
-              {fmtValue(rawVal, sig.precision, sig.unit)}
-            </Text>
-          </View>
-          <View style={styles.valueDivider} />
-          <View style={styles.valueBlock}>
-            <Text style={styles.valueLabel}>{t('illness_watch.detail_baseline')}</Text>
-            <Text style={styles.valueNumber}>
-              {hasBaseline
-                ? fmtValue(rawBase, sig.precision, sig.unit)
-                : t('illness_watch.detail_building_baseline')}
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <Text style={styles.noDataText}>{t('illness_watch.detail_building_baseline')}</Text>
+      {severity !== 'normal' && hasData && hasBaseline && (
+        <Text style={[styles.warningText, { color: severityColor(severity) }]}>
+          {t(`illness_watch.detail_warning_${sig.i18nKey}`, {
+            value: fmtValue(rawVal, sig.precision, sig.unit) ?? '',
+            baseline: fmtValue(rawBase, sig.precision, sig.unit) ?? '',
+            delta,
+            unit: sig.unit,
+          })}
+        </Text>
       )}
-
-      {/* Medical explanation */}
-      <Text style={styles.explanationText}>
-        {t(`illness_watch.detail_explain_${sig.i18nKey}`)}
-      </Text>
     </View>
   );
 }
+
+const BAR_MAX_H = 130;
 
 function TrendBars({
   trend,
@@ -377,55 +329,66 @@ function TrendBars({
   trend: IllnessScore[];
   t: (k: string) => string;
 }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   if (trend.length === 0) return null;
   const bars = [...trend].sort((a, b) => a.score_date.localeCompare(b.score_date));
   const today = new Date().toISOString().slice(0, 10);
+  const maxScore = Math.max(...bars.map(b => b.score), 1);
+  const selectedRow = selectedDate ? bars.find(b => b.score_date === selectedDate) ?? null : null;
 
   return (
-    <View style={styles.trendContainer}>
-      {bars.map((bar) => {
-        const isToday = bar.score_date === today;
-        const barH = Math.max(4, Math.round((bar.score / 100) * 80));
-        const barColor = scoreBarColor(bar.status);
-        return (
-          <View key={bar.score_date} style={styles.trendBarWrap}>
-            <Text style={[styles.trendScore, { color: barColor, opacity: isToday ? 1 : 0.6 }]}>
-              {bar.score}
-            </Text>
-            <View
-              style={[
-                styles.trendBar,
-                {
-                  height: barH,
-                  backgroundColor: barColor,
-                  opacity: isToday ? 1 : 0.45,
-                  borderWidth: isToday ? 1.5 : 0,
-                  borderColor: isToday ? barColor : 'transparent',
-                },
-              ]}
-            />
-            <Text style={[styles.trendDayLabel, { color: isToday ? barColor : 'rgba(255,255,255,0.4)' }]}>
-              {isToday ? t('illness_watch.detail_trend_today') : shortDay(bar.score_date)}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
+    <View>
+      <View style={styles.trendContainer}>
+        {bars.map((bar) => {
+          const isToday = bar.score_date === today;
+          const isSelected = bar.score_date === selectedDate;
+          const barH = Math.max(8, Math.round((bar.score / maxScore) * BAR_MAX_H));
+          return (
+            <TouchableOpacity
+              key={bar.score_date}
+              style={styles.trendBarWrap}
+              onPress={() => setSelectedDate(isSelected ? null : bar.score_date)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.trendScore, { opacity: isSelected || isToday ? 1 : 0.5 }]}>
+                {bar.score}
+              </Text>
+              <View
+                style={[
+                  styles.trendBar,
+                  {
+                    height: barH,
+                    backgroundColor: isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
+                    opacity: isSelected || isToday ? 1 : 0.65,
+                  },
+                ]}
+              />
+              <Text style={[styles.trendDayLabel, { opacity: isSelected || isToday ? 1 : 0.45 }]}>
+                {isToday ? t('illness_watch.detail_trend_today') : shortDay(bar.score_date)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-function Recommendations({ status, t }: { status: IllnessStatus; t: (k: string) => string }) {
-  const s = status.toLowerCase() as 'clear' | 'watch' | 'sick';
-  const recs = [1, 2, 3].map(n => t(`illness_watch.detail_rec_${s}_${n}`));
-  const accent = statusColor(status);
-  return (
-    <View style={styles.recList}>
-      {recs.map((rec, i) => (
-        <View key={i} style={styles.recRow}>
-          <View style={[styles.recDot, { backgroundColor: accent }]} />
-          <Text style={styles.recText}>{rec}</Text>
+      {selectedRow && (
+        <View style={styles.trendDetail}>
+          <Text style={styles.trendDetailDate}>{formatDate(selectedRow.score_date)}</Text>
+          {SIGNALS.map(sig => {
+            const val = selectedRow[sig.valueField] as number | null;
+            if (val == null) return null;
+            return (
+              <View key={sig.i18nKey} style={styles.trendDetailRow}>
+                <Text style={styles.trendDetailLabel}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
+                <Text style={[styles.trendDetailVal, { color: sig.lineColor }]}>
+                  {Number(val).toFixed(sig.precision)} {sig.unit}
+                </Text>
+              </View>
+            );
+          })}
         </View>
-      ))}
+      )}
     </View>
   );
 }
@@ -445,13 +408,12 @@ export default function IllnessDetailScreen() {
         const userId = session?.user?.id;
         if (!userId) return;
 
-        // Fetch last 14 days of full rows for the signal charts
         const { data } = await supabase
           .from('illness_scores')
           .select('*')
           .eq('user_id', userId)
           .order('score_date', { ascending: false })
-          .limit(14);
+          .limit(7);
 
         if (data && data.length > 0) {
           setLatestRow(data[0]);
@@ -467,7 +429,11 @@ export default function IllnessDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
-        <BackButton />
+        <View style={styles.navRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <BackArrow />
+          </TouchableOpacity>
+        </View>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.tertiary} />
         </View>
@@ -478,7 +444,11 @@ export default function IllnessDetailScreen() {
   if (!latestRow) {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
-        <BackButton />
+        <View style={styles.navRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <BackArrow />
+          </TouchableOpacity>
+        </View>
         <View style={styles.loadingWrap}>
           <Text style={styles.emptyText}>{t('illness_watch.empty_sync')}</Text>
         </View>
@@ -487,31 +457,73 @@ export default function IllnessDetailScreen() {
   }
 
   const status = latestRow.status as IllnessStatus;
-  const dot = statusColor(status);
+  const s = status.toLowerCase() as 'clear' | 'watch' | 'sick';
+  const recs = [1, 2, 3].map(n => t(`illness_watch.detail_rec_${s}_${n}`));
+  const gradColor = gradientColor(status);
+  const gradId = 'illnessHeroGrad';
+  const gradId2 = 'illnessHeroGrad2';
+  const fadeId = 'illnessHeroFade';
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
+      {/* Full-screen gradient background */}
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <Defs>
+            <RadialGradient id={gradId} cx="51%" cy="-20%" rx="90%" ry="220%">
+              <Stop offset="0%" stopColor={gradColor} stopOpacity={1} />
+              <Stop offset="70%" stopColor={gradColor} stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id={gradId2} cx="85%" cy="10%" rx="60%" ry="80%">
+              <Stop offset="0%" stopColor={gradColor} stopOpacity={0.6} />
+              <Stop offset="100%" stopColor={gradColor} stopOpacity={0} />
+            </RadialGradient>
+            <LinearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="40%" stopColor={colors.background} stopOpacity={0} />
+              <Stop offset="100%" stopColor={colors.background} stopOpacity={1} />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill={`url(#${gradId})`} />
+          <Rect x="0" y="0" width="100" height="100" fill={`url(#${gradId2})`} />
+          <Rect x="0" y="0" width="100" height="100" fill={`url(#${fadeId})`} />
+        </Svg>
+      </Reanimated.View>
+
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <BackButton />
+        {/* ── Nav row: back arrow + status chip ─────────────────────────── */}
+        <View style={styles.navRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <BackArrow />
+          </TouchableOpacity>
+          <View style={styles.statusChip}>
+            <Text style={styles.statusChipText}>{status}</Text>
+          </View>
+        </View>
 
         {/* ── Hero ──────────────────────────────────────────────────────── */}
         <View style={styles.hero}>
-          <Text style={[styles.heroScore, { color: dot }]}>{latestRow.score}</Text>
-          <View style={[styles.statusBadge, { borderColor: dot + '66', backgroundColor: dot + '20' }]}>
-            <View style={[styles.statusDot, { backgroundColor: dot }]} />
-            <Text style={[styles.statusBadgeText, { color: dot }]}>{status}</Text>
+          <View style={styles.heroTopRow}>
+            <Text style={styles.heroScore}>{latestRow.score}</Text>
+            <View style={styles.heroDateBlock}>
+              <Text style={styles.heroDate}>{formatDate(latestRow.score_date)}</Text>
+              {latestRow.stale && (
+                <Text style={styles.staleText}>{t('illness_watch.stale_warning')}</Text>
+              )}
+            </View>
           </View>
-          <Text style={styles.heroDate}>{formatDate(latestRow.score_date)}</Text>
-          {latestRow.stale && (
-            <Text style={styles.staleText}>{t('illness_watch.stale_warning')}</Text>
-          )}
+
+          {/* Recommendations inline below */}
+          <View style={styles.recsInline}>
+            {recs.map((rec, i) => (
+              <Text key={i} style={styles.recInlineText}>{rec}</Text>
+            ))}
+          </View>
         </View>
 
-        {/* ── Signal breakdown with charts ──────────────────────────────── */}
-        <Text style={styles.sectionTitle}>{t('illness_watch.detail_signals_title')}</Text>
+        {/* ── Signal cards ──────────────────────────────────────────────── */}
         {SIGNALS.map(sig => (
           <SignalCard
             key={sig.i18nKey}
@@ -526,17 +538,11 @@ export default function IllnessDetailScreen() {
         {history.length > 1 && (
           <>
             <Text style={styles.sectionTitle}>{t('illness_watch.detail_trend_title')}</Text>
-            <View style={styles.glassCard}>
+            <View style={styles.trendSection}>
               <TrendBars trend={history} t={t} />
             </View>
           </>
         )}
-
-        {/* ── Recommendations ───────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>{t('illness_watch.detail_recommendations_title')}</Text>
-        <View style={styles.glassCard}>
-          <Recommendations status={status} t={t} />
-        </View>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -551,64 +557,84 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  gradientBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 480,
+  },
   scroll: {
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  backBtn: {
-    paddingVertical: 12,
-    alignSelf: 'flex-start',
+
+  // Nav row (back arrow + chip)
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    paddingBottom: 4,
   },
-  backBtnText: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: colors.tertiary,
+  backBtn: {
+    padding: 8,
+  },
+  statusChip: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  statusChipText: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.sm,
+    color: '#FFFFFF',
+    letterSpacing: 1,
   },
 
   // Hero
   hero: {
-    alignItems: 'center',
-    paddingVertical: 28,
-    marginBottom: 8,
+    paddingTop: 20,
+    paddingBottom: 32,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 16,
+    marginBottom: 20,
   },
   heroScore: {
     fontFamily: fontFamily.demiBold,
-    fontSize: 72,
-    lineHeight: 80,
-    letterSpacing: -2,
+    fontSize: 80,
+    lineHeight: 84,
+    letterSpacing: -3,
+    color: '#FFFFFF',
   },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginTop: 8,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  statusBadgeText: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.sm,
-    letterSpacing: 1,
+  heroDateBlock: {
+    flex: 1,
+    paddingBottom: 8,
   },
   heroDate: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.4)',
-    marginTop: 10,
+    fontSize: 20,
+    color: 'rgba(255,255,255,0.7)',
+    lineHeight: 26,
   },
   staleText: {
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.3)',
-    marginTop: 6,
-    textAlign: 'center',
+    marginTop: 3,
+  },
+  recsInline: {
+    gap: 8,
+  },
+  recInlineText: {
+    fontFamily: fontFamily.regular,
+    fontSize: 17,
+    color: 'rgba(255,255,255,0.65)',
+    lineHeight: 24,
   },
 
   // Sections
@@ -619,84 +645,42 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 10,
   },
-  glassCard: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    padding: 16,
+  trendSection: {
+    paddingBottom: 48,
   },
 
-  // Signal cards
+  // Signal cards — no chrome
   signalCard: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    padding: 14,
+    marginBottom: 28,
+  },
+  signalTitle: {
+    fontFamily: fontFamily.regular,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 4,
+  },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
     marginBottom: 12,
   },
-  signalCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  signalCardTitle: {
+  valueBig: {
     fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.85)',
-    flex: 1,
-    marginRight: 8,
+    fontSize: 36,
+    color: '#FFFFFF',
+    letterSpacing: -1,
   },
-  chartWrap: {
-    marginHorizontal: -6,
-    marginBottom: 8,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  valuesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 10,
-    padding: 10,
-  },
-  valueBlock: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  valueDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    marginHorizontal: 4,
-  },
-  valueLabel: {
+  valueUnit: {
     fontFamily: fontFamily.regular,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
-    marginBottom: 3,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.5)',
   },
-  valueNumber: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  noDataText: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.3)',
-    marginBottom: 8,
-  },
-  explanationText: {
+  warningText: {
     fontFamily: fontFamily.regular,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.45)',
-    lineHeight: 19,
+    lineHeight: 18,
+    marginTop: 10,
   },
 
   // Trend
@@ -704,7 +688,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 120,
+    height: 180,
     paddingTop: 8,
   },
   trendBarWrap: {
@@ -715,41 +699,46 @@ const styles = StyleSheet.create({
   },
   trendScore: {
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: 11,
+    color: '#FFFFFF',
     marginBottom: 3,
   },
   trendBar: {
     width: '55%',
     borderRadius: 4,
-    minHeight: 4,
+    minHeight: 8,
   },
   trendDayLabel: {
     fontFamily: fontFamily.regular,
     fontSize: 10,
+    color: '#FFFFFF',
     marginTop: 4,
   },
-
-  // Recommendations
-  recList: {
+  trendDetail: {
+    marginTop: 16,
     gap: 10,
   },
-  recRow: {
+  trendDetailDate: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  trendDetailRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  recDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: 5,
-  },
-  recText: {
+  trendDetailLabel: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.7)',
-    lineHeight: 20,
-    flex: 1,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.55)',
+  },
+  trendDetailVal: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: 14,
   },
 
   // Loading / empty

@@ -10,6 +10,7 @@ import {
   Animated,
   Alert,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useURL } from 'expo-linking';
@@ -275,6 +276,10 @@ function NewHomeScreenContent() {
         style={[StyleSheet.absoluteFillObject, { backgroundColor: 'black', opacity: backgroundFade }]}
       />
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Background blur — overview only; sits outside the clipped horizontal ScrollView */}
+        {activeIndex === 0 && (
+          <BlurView intensity={55} tint="dark" style={StyleSheet.absoluteFillObject} />
+        )}
         {/* Header (pinned) */}
         <HomeHeader
           userName={homeData.userName || 'there'}

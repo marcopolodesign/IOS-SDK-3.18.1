@@ -1,26 +1,87 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import Svg, { Circle, Path, G, Text as SvgText, Rect, Line } from 'react-native-svg';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DayNavigator } from '../../src/components/detail/DayNavigator';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+  FadeIn,
+} from 'react-native-reanimated';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+  Path,
+  Text as SvgText,
+} from 'react-native-svg';
+import { TrendBarChart } from '../../src/components/detail/TrendBarChart';
 import { DetailPageHeader } from '../../src/components/detail/DetailPageHeader';
-import { DetailStatRow } from '../../src/components/detail/DetailStatRow';
 import { MetricsGrid } from '../../src/components/detail/MetricsGrid';
 import { useMetricHistory, buildDayNavigatorLabels } from '../../src/hooks/useMetricHistory';
 import type { DayActivityData } from '../../src/hooks/useMetricHistory';
 import { useHomeDataContext } from '../../src/context/HomeDataContext';
 import { spacing, fontSize, fontFamily } from '../../src/theme/colors';
 
-const DAY_ENTRIES = buildDayNavigatorLabels(7);
+const COLLAPSE_END = 80;
+const DAY_ENTRIES = buildDayNavigatorLabels(30);
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const STEP_GOAL = 10000;
+const ACTIVITY_BLUE = '#3B82F6';
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function activityColor(steps: number): string {
+  const pct = steps / STEP_GOAL;
+  if (pct >= 1) return '#4ADE80';
+  if (pct >= 0.7) return '#FBBF24';
+  if (pct >= 0.4) return ACTIVITY_BLUE;
+  return 'rgba(255,255,255,0.3)';
+}
+
+function activityLevelLabel(steps: number): string {
+  const pct = (steps / STEP_GOAL) * 100;
+  if (pct >= 100) return 'Active';
+  if (pct >= 70) return 'Moderate';
+  if (pct >= 40) return 'Light';
+  return 'Sedentary';
+}
+
+function activityInsight(d: DayActivityData | undefined): string {
+  if (!d) return 'Sync your ring to see activity insights.';
+  const pct = Math.round((d.steps / STEP_GOAL) * 100);
+  const distKm = (d.distanceM / 1000).toFixed(2);
+  if (d.steps >= STEP_GOAL) {
+    return `Goal reached! ${d.steps.toLocaleString()} steps — ${distKm} km covered and ${d.calories} kcal burned. Keep up the momentum.`;
+  }
+  if (d.steps >= STEP_GOAL * 0.7) {
+    return `Almost there — ${pct}% of your ${STEP_GOAL.toLocaleString()} step goal. ${(STEP_GOAL - d.steps).toLocaleString()} steps remain.`;
+  }
+  return `${d.steps.toLocaleString()} steps logged — ${pct}% of daily goal. Even a short 10-minute walk can make a significant difference.`;
+}
+
+function buildTodayActivityFromContext(activity: { steps: number; calories: number; distance: number }): DayActivityData | null {
+  if (!activity || (activity.steps === 0 && activity.calories === 0)) return null;
+  const today = new Date().toISOString().split('T')[0];
+  return {
+    date: today,
+    steps: activity.steps,
+    distanceM: activity.distance,
+    calories: activity.calories,
+    sleepTotalMin: null,
+    hrAvg: null,
+    hrMin: null,
+  };
+}
 
 // ─── Steps arc gauge ───────────────────────────────────────────────────────────
 
@@ -46,12 +107,10 @@ function StepsArcGauge({ steps, goal }: { steps: number; goal: number }) {
   const arcStart = -140;
   const arcTotal = 280;
   const fillEnd = arcStart + pct * arcTotal;
-
-  const color = pct >= 1 ? '#4ADE80' : pct >= 0.7 ? '#FBBF24' : '#3B82F6';
+  const color = activityColor(steps);
 
   return (
     <Svg width={GAUGE_SIZE} height={GAUGE_SIZE}>
-      {/* Track */}
       <Path
         d={arcPath(GAUGE_CENTER, GAUGE_CENTER, GAUGE_RADIUS, arcStart, arcStart + arcTotal)}
         stroke="rgba(255,255,255,0.08)"
@@ -59,7 +118,6 @@ function StepsArcGauge({ steps, goal }: { steps: number; goal: number }) {
         fill="none"
         strokeLinecap="round"
       />
-      {/* Fill */}
       {pct > 0 && (
         <Path
           d={arcPath(GAUGE_CENTER, GAUGE_CENTER, GAUGE_RADIUS, arcStart, fillEnd)}
@@ -69,7 +127,6 @@ function StepsArcGauge({ steps, goal }: { steps: number; goal: number }) {
           strokeLinecap="round"
         />
       )}
-      {/* Center text */}
       <SvgText x={GAUGE_CENTER} y={GAUGE_CENTER - 8} textAnchor="middle" fill="#FFFFFF" fontSize={28} fontWeight="300">
         {steps >= 1000 ? `${(steps / 1000).toFixed(1)}k` : `${steps}`}
       </SvgText>
@@ -83,213 +140,213 @@ function StepsArcGauge({ steps, goal }: { steps: number; goal: number }) {
   );
 }
 
-// ─── 7-day bar chart ───────────────────────────────────────────────────────────
-
-const BAR_CHART_WIDTH = SCREEN_WIDTH - spacing.md * 2 - 32;
-const BAR_CHART_HEIGHT = 100;
-const B_PAD_H = 12;
-const B_PAD_V = 8;
-
-function StepsBarChart({
-  data,
-  dayEntries,
-  selectedIndex,
-}: {
-  data: Map<string, DayActivityData>;
-  dayEntries: Array<{ label: string; dateKey: string }>;
-  selectedIndex: number;
-}) {
-  const reversed = [...dayEntries].reverse();
-  const vals = reversed.map(d => data.get(d.dateKey)?.steps ?? 0);
-  const maxVal = Math.max(...vals, STEP_GOAL);
-  const barW = (BAR_CHART_WIDTH - B_PAD_H * 2) / reversed.length - 3;
-  const selI = reversed.length - 1 - selectedIndex;
-
-  return (
-    <Svg width={BAR_CHART_WIDTH} height={BAR_CHART_HEIGHT}>
-      {/* Goal line */}
-      {(() => {
-        const goalY = B_PAD_V + ((maxVal - STEP_GOAL) / maxVal) * (BAR_CHART_HEIGHT - B_PAD_V * 2);
-        return (
-          <>
-            <Line x1={B_PAD_H} x2={BAR_CHART_WIDTH - B_PAD_H} y1={goalY} y2={goalY} stroke="rgba(74,222,128,0.3)" strokeWidth={1} strokeDasharray="4,3" />
-            <SvgText x={BAR_CHART_WIDTH - B_PAD_H - 2} y={goalY - 3} fill="rgba(74,222,128,0.4)" fontSize={8} textAnchor="end">Goal</SvgText>
-          </>
-        );
-      })()}
-
-      {reversed.map((d, i) => {
-        const v = data.get(d.dateKey)?.steps ?? 0;
-        const barH = Math.max(4, (v / maxVal) * (BAR_CHART_HEIGHT - B_PAD_V * 2));
-        const x = B_PAD_H + i * ((BAR_CHART_WIDTH - B_PAD_H * 2) / reversed.length);
-        const y = BAR_CHART_HEIGHT - B_PAD_V - barH;
-        const isSel = i === selI;
-        const color = v >= STEP_GOAL ? '#4ADE80' : v >= STEP_GOAL * 0.7 ? '#FBBF24' : '#3B82F6';
-        return (
-          <Rect
-            key={d.dateKey}
-            x={x + 1.5}
-            y={y}
-            width={barW}
-            height={barH}
-            fill={isSel ? color : `${color}55`}
-            rx={3}
-          />
-        );
-      })}
-    </Svg>
-  );
-}
-
-// ─── Insight ───────────────────────────────────────────────────────────────────
-
-function activityInsight(d: DayActivityData | undefined): string {
-  if (!d) return 'Sync your ring to see activity insights.';
-  const pct = Math.round((d.steps / STEP_GOAL) * 100);
-  const distKm = (d.distanceM / 1000).toFixed(2);
-  if (d.steps >= STEP_GOAL) {
-    return `Goal reached! ${d.steps.toLocaleString()} steps — ${distKm}km covered and ${d.calories} kcal burned. Keep up the momentum.`;
-  }
-  if (d.steps >= STEP_GOAL * 0.7) {
-    return `Almost there — ${pct}% of your ${STEP_GOAL.toLocaleString()} step goal. ${(STEP_GOAL - d.steps).toLocaleString()} steps remain.`;
-  }
-  return `${d.steps.toLocaleString()} steps logged — ${pct}% of daily goal. Even a short 10-minute walk can make a significant difference.`;
-}
-
-// ─── Context fallback for today ────────────────────────────────────────────────
-
-function buildTodayActivityFromContext(activity: { steps: number; calories: number; distance: number }): DayActivityData | null {
-  if (!activity || (activity.steps === 0 && activity.calories === 0)) return null;
-  const today = new Date().toISOString().split('T')[0];
-  return {
-    date: today,
-    steps: activity.steps,
-    distanceM: activity.distance,
-    calories: activity.calories,
-    sleepTotalMin: null,
-    hrAvg: null,
-    hrMin: null,
-  };
-}
-
 // ─── Screen ────────────────────────────────────────────────────────────────────
 
 export default function ActivityDetailScreen() {
-  const insets = useSafeAreaInsets();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const { data, isLoading } = useMetricHistory<DayActivityData>('activity');
+  const { data, isLoading } = useMetricHistory<DayActivityData>('activity', { fullDays: 30 });
   const homeData = useHomeDataContext();
 
   const selectedDateKey = DAY_ENTRIES[selectedIndex]?.dateKey;
   const todayKey = DAY_ENTRIES[0]?.dateKey;
 
-  // For today: always prefer live context data (ring/HealthKit) over daily_summaries,
-  // which may have a row with all-zero activity values if steps haven't synced yet.
-  const dbToday = selectedIndex === 0 ? data.get(todayKey) : undefined;
-  const contextToday = selectedIndex === 0
-    ? buildTodayActivityFromContext(homeData.activity)
-    : null;
-  const todayFallback = contextToday ?? dbToday;
+  const contextToday = useMemo(
+    () => buildTodayActivityFromContext(homeData.activity),
+    [homeData.activity],
+  );
 
-  const dayData = selectedIndex === 0
-    ? todayFallback
-    : (selectedDateKey ? data.get(selectedDateKey) : undefined);
+  const dayData = useMemo(() => {
+    if (selectedIndex === 0) {
+      return contextToday ?? data.get(todayKey);
+    }
+    return selectedDateKey ? data.get(selectedDateKey) : undefined;
+  }, [selectedIndex, contextToday, data, todayKey, selectedDateKey]);
 
-  // Inject live today data into chart map so today's bar reflects current values
-  const chartData = contextToday ? new Map(data).set(todayKey, contextToday) : data;
+  const stepValues = useMemo(() =>
+    DAY_ENTRIES.map(d => ({
+      dateKey: d.dateKey,
+      value: d.dateKey === todayKey && contextToday
+        ? contextToday.steps
+        : (data.get(d.dateKey)?.steps ?? 0),
+    })),
+    [data, contextToday, todayKey],
+  );
 
-  const pct = dayData ? Math.round((dayData.steps / STEP_GOAL) * 100) : 0;
-  const activityLevel = pct >= 100 ? 'Active' : pct >= 70 ? 'Moderate' : pct >= 40 ? 'Light' : 'Sedentary';
-  const levelColor = pct >= 100 ? '#4ADE80' : pct >= 70 ? '#FBBF24' : pct >= 40 ? '#3B82F6' : 'rgba(255,255,255,0.4)';
+  const steps = dayData?.steps ?? 0;
+  const color = activityColor(steps);
+  const level = activityLevelLabel(steps);
+  const hasData = !!dayData;
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
+
+  const numberAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [88, 40], Extrapolation.CLAMP),
+    color: interpolateColor(scrollY.value, [0, COLLAPSE_END], [color, '#FFFFFF']),
+  }));
+
+  const labelAnimStyle = useAnimatedStyle(() => ({
+    fontSize: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+    lineHeight: interpolate(scrollY.value, [0, COLLAPSE_END], [24, 14], Extrapolation.CLAMP),
+  }));
+
+  const badgeExpandedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END * 0.4], [1, 0], Extrapolation.CLAMP),
+    height: interpolate(scrollY.value, [0, COLLAPSE_END * 0.5], [22, 0], Extrapolation.CLAMP),
+    overflow: 'hidden',
+  }));
+
+  const chipSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_END], [30, 0], Extrapolation.CLAMP) }],
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_END], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  const headlineHeightStyle = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, COLLAPSE_END], [100, 44], Extrapolation.CLAMP),
+  }));
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <DetailPageHeader title="Activity" useSafeArea={false} />
+    <View style={styles.container}>
+      <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <Defs>
+            <RadialGradient id="actGrad" cx="51%" cy="-20%" rx="90%" ry="220%">
+              <Stop offset="0%" stopColor={ACTIVITY_BLUE} stopOpacity={1} />
+              <Stop offset="70%" stopColor={ACTIVITY_BLUE} stopOpacity={0} />
+            </RadialGradient>
+            <RadialGradient id="actGrad2" cx="85%" cy="10%" rx="60%" ry="80%">
+              <Stop offset="0%" stopColor="#1D4ED8" stopOpacity={0.75} />
+              <Stop offset="100%" stopColor="#1D4ED8" stopOpacity={0} />
+            </RadialGradient>
+            <LinearGradient id="actFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="40%" stopColor="#0A0A0F" stopOpacity={0} />
+              <Stop offset="100%" stopColor="#0A0A0F" stopOpacity={1} />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#actGrad)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#actGrad2)" />
+          <Rect x="0" y="0" width="100" height="100" fill="url(#actFade)" />
+        </Svg>
+      </Reanimated.View>
 
-      <DayNavigator
-        days={DAY_ENTRIES.map(d => d.label)}
-        selectedIndex={selectedIndex}
-        onSelectDay={setSelectedIndex}
-      />
+      <View style={styles.gradientZone}>
+        <DetailPageHeader title="Activity" />
+        <TrendBarChart
+          dayEntries={DAY_ENTRIES}
+          values={stepValues}
+          selectedIndex={selectedIndex}
+          onSelectDay={setSelectedIndex}
+          colorFn={activityColor}
+          maxValue={STEP_GOAL}
+          showValueLabels={false}
+          guideLines={[Math.round(STEP_GOAL * 0.7), STEP_GOAL]}
+        />
+      </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {hasData && (
+        <Reanimated.View style={[styles.headlineSection, headlineHeightStyle]}>
+          <View style={styles.headlineLeft}>
+            <View style={styles.headlineRow}>
+              <Reanimated.Text style={[styles.headlineScore, numberAnimStyle]}>
+                {steps >= 1000 ? `${(steps / 1000).toFixed(1)}k` : `${steps}`}
+              </Reanimated.Text>
+              <View style={styles.labelColumn}>
+                <Reanimated.Text style={[styles.headlineLabel, labelAnimStyle]}>
+                  Steps
+                </Reanimated.Text>
+                <Reanimated.View style={[styles.badgeRow, badgeExpandedStyle]}>
+                  <View style={[styles.badge, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+                    <Text style={[styles.badgeText, { color }]}>{level}</Text>
+                  </View>
+                </Reanimated.View>
+              </View>
+            </View>
+          </View>
+          <View style={styles.chipRight}>
+            <Reanimated.View style={[styles.chip, chipSlideStyle, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+              <Text style={[styles.chipText, { color }]}>{level}</Text>
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+      )}
+
+      <Reanimated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+      >
         {isLoading ? (
-          <View style={styles.centered}><ActivityIndicator color="rgba(255,255,255,0.6)" /></View>
-        ) : !dayData ? (
-          <View style={styles.centered}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color="rgba(255,255,255,0.6)" />
+            <Text style={styles.loadingText}>Loading history…</Text>
+          </View>
+        ) : !hasData ? (
+          <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No activity data for this day</Text>
+            <Text style={styles.emptySubtext}>Sync your ring to record steps automatically</Text>
           </View>
         ) : (
           <>
-            {/* Gauge + level */}
-            <View style={styles.gaugeRow}>
-              <StepsArcGauge steps={dayData.steps} goal={STEP_GOAL} />
-              <View style={styles.gaugeRight}>
-                <View style={[styles.levelBadge, { backgroundColor: `${levelColor}22`, borderColor: `${levelColor}55` }]}>
-                  <Text style={[styles.levelText, { color: levelColor }]}>{activityLevel}</Text>
-                </View>
-                <Text style={styles.gaugeRightLabel}>Goal: {STEP_GOAL.toLocaleString()} steps</Text>
-                {dayData.hrAvg !== null && (
-                  <Text style={styles.gaugeRightSub}>{dayData.hrAvg} bpm avg HR</Text>
-                )}
-              </View>
-            </View>
-
-            {/* 7-day bar chart */}
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>7-Day Steps History</Text>
-              <StepsBarChart data={chartData} dayEntries={DAY_ENTRIES} selectedIndex={selectedIndex} />
-            </View>
-
-            {/* Metrics grid */}
-            <MetricsGrid metrics={[
-              { label: 'Steps', value: dayData.steps.toLocaleString(), accent: '#3B82F6' },
-              { label: 'Distance', value: `${(dayData.distanceM / 1000).toFixed(2)}`, unit: 'km' },
-              { label: 'Calories', value: `${dayData.calories}`, unit: 'kcal' },
-              { label: 'Avg HR', value: dayData.hrAvg !== null ? `${dayData.hrAvg}` : '--', unit: dayData.hrAvg !== null ? 'bpm' : undefined },
-            ]} />
-
-            {/* Additional stats */}
-            <View style={styles.statsContainer}>
-              <DetailStatRow title="Goal" value={`${pct}%`} unit={`of ${STEP_GOAL.toLocaleString()}`} accent={pct >= 100 ? '#4ADE80' : undefined} />
-              {dayData.sleepTotalMin !== null && (
-                <DetailStatRow
-                  title="Sleep"
-                  value={`${Math.floor(dayData.sleepTotalMin / 60)}h ${dayData.sleepTotalMin % 60}m`}
-                />
-              )}
-              <DetailStatRow
-                title="Activity Level"
-                value={activityLevel}
-                badge={{ label: activityLevel, color: levelColor }}
-              />
-            </View>
-
             <View style={styles.insightBlock}>
               <Text style={styles.insightText}>{activityInsight(dayData)}</Text>
             </View>
+
+            <View style={styles.gaugeContainer}>
+              <StepsArcGauge steps={dayData!.steps} goal={STEP_GOAL} />
+              {dayData!.hrAvg !== null && (
+                <Text style={styles.gaugeSubLabel}>{dayData!.hrAvg} bpm avg HR</Text>
+              )}
+            </View>
+
+            <MetricsGrid metrics={[
+              { label: 'Steps', value: dayData!.steps.toLocaleString(), accent: color },
+              { label: 'Distance', value: `${(dayData!.distanceM / 1000).toFixed(2)}`, unit: 'km' },
+              { label: 'Calories', value: `${dayData!.calories}`, unit: 'kcal' },
+              { label: 'Avg HR', value: dayData!.hrAvg !== null ? `${dayData!.hrAvg}` : '--', unit: dayData!.hrAvg !== null ? 'bpm' : undefined },
+            ]} />
           </>
         )}
-      </ScrollView>
+      </Reanimated.ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0F' },
+  gradientBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 480 },
+  gradientZone: {},
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60 },
-  centered: { flex: 1, alignItems: 'center', paddingTop: 80 },
-  emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.sm, fontFamily: fontFamily.regular },
-  gaugeRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  gaugeRight: { flex: 1, gap: 10, paddingLeft: spacing.md },
-  levelBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, alignSelf: 'flex-start' },
-  levelText: { fontSize: 14, fontFamily: fontFamily.demiBold },
-  gaugeRightLabel: { color: 'rgba(255,255,255,0.45)', fontSize: fontSize.sm, fontFamily: fontFamily.regular },
-  gaugeRightSub: { color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: fontFamily.regular },
-  chartContainer: { marginHorizontal: spacing.md, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: 16, marginBottom: spacing.sm },
-  chartTitle: { color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: fontFamily.regular, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 },
-  statsContainer: { marginHorizontal: spacing.md, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, overflow: 'hidden', marginVertical: spacing.sm },
-  insightBlock: { marginHorizontal: spacing.lg, marginBottom: spacing.lg, padding: spacing.md, backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(59,130,246,0.25)' },
-  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, lineHeight: 22 },
+  loadingContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.md },
+  loadingText: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.sm, fontFamily: fontFamily.regular },
+  emptyContainer: { flex: 1, alignItems: 'center', paddingTop: 80, gap: spacing.sm },
+  emptyText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.md, fontFamily: fontFamily.demiBold },
+  emptySubtext: { color: 'rgba(255,255,255,0.4)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, textAlign: 'center', paddingHorizontal: spacing.xl },
+  headlineSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    overflow: 'hidden',
+  },
+  headlineLeft: { flexDirection: 'column', alignItems: 'flex-start' },
+  headlineRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  labelColumn: { flexDirection: 'column', alignItems: 'flex-start' },
+  headlineScore: { fontSize: 88, fontFamily: fontFamily.regular },
+  headlineLabel: { color: '#FFFFFF', fontSize: 24, fontFamily: fontFamily.demiBold },
+  badgeRow: { flexDirection: 'row', alignSelf: 'flex-start', marginTop: 4 },
+  chipRight: { overflow: 'hidden' },
+  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, alignSelf: 'flex-start' },
+  badgeText: { fontSize: 12, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
+  chip: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
+  chipText: { fontSize: 10, fontFamily: fontFamily.demiBold, textTransform: 'uppercase' },
+  insightBlock: { marginHorizontal: spacing.md, marginBottom: spacing.lg, paddingHorizontal: spacing.xs },
+  insightText: { color: 'rgba(255,255,255,0.75)', fontSize: 16, fontFamily: fontFamily.regular, lineHeight: 24 },
+  gaugeContainer: { alignItems: 'center', paddingVertical: spacing.sm, marginBottom: spacing.sm },
+  gaugeSubLabel: { color: 'rgba(255,255,255,0.35)', fontSize: fontSize.sm, fontFamily: fontFamily.regular, marginTop: spacing.xs },
 });

@@ -206,6 +206,7 @@
     "score_good": "GOOD",
     "score_fair": "FAIR",
     "score_needs_rest": "NEEDS REST",
+    "no_data": "NO DATA",
     "hrv": "HRV",
     "spo2": "SpO₂",
     "temperature": "Temperature",
@@ -304,7 +305,12 @@
     "detail_rec_watch_3": "Monitor how you feel; if symptoms appear, rest.",
     "detail_rec_sick_1": "Rest is strongly recommended today.",
     "detail_rec_sick_2": "Avoid intense exercise until signals normalize.",
-    "detail_rec_sick_3": "If you have a fever, consult a healthcare professional."
+    "detail_rec_sick_3": "If you have a fever, consult a healthcare professional.",
+    "detail_warning_nocturnal_hr": "Nocturnal HR is {{delta}} {{unit}} above baseline — possible early illness signal.",
+    "detail_warning_hrv": "HRV is {{delta}} {{unit}} below baseline — your body may be under stress.",
+    "detail_warning_spo2": "SpO₂ dipped to {{value}} (baseline {{baseline}}) — watch for respiratory symptoms.",
+    "detail_warning_temperature": "Skin temperature is {{delta}} °C above baseline — possible inflammatory response.",
+    "detail_warning_sleep": "Awake time is {{delta}} {{unit}} above baseline — fragmented sleep can precede illness."
   },
   "last_run": {
     "card_title": "Last Run",
