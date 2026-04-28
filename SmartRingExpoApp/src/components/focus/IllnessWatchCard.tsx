@@ -111,11 +111,11 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
       {/* Glassmorphic blur base */}
       <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
 
-      {/* Edge glow — 4 linear fades that blend seamlessly at corners */}
-      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
-      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+      {/* Edge glow — 4 linear fades tinted by illness status */}
+      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
       <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
-      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}
       <View style={styles.header}>

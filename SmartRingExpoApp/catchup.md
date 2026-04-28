@@ -4,6 +4,18 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-28: IllnessWatchCard — moved below timeline + all-edge status color
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:**
+- Card moved to the bottom of the overview scroll, below the Daily Chronology Timeline.
+- All four edge gradients (`edgeLeft`, `edgeRight`, `edgeTop`, `edgeBottom`) now use `collarColor + 'CC'` → `collarColor + '00'`, so the full perimeter glows in the illness state color (green/amber/red).
+
+**Files modified:** `src/components/focus/IllnessWatchCard.tsx`, `src/screens/home/OverviewTab.tsx`
+
+---
+
 ### 2026-04-28: IllnessWatchCard — added to Today overview + status-colored collar
 
 **Source:** Claude Code — Web
