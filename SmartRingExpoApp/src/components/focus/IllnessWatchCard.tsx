@@ -19,11 +19,6 @@ export function statusColor(status: IllnessStatus): string {
   return colors.error;
 }
 
-function borderGradient(status: IllnessStatus): readonly [string, string, string, string] {
-  if (status === 'CLEAR') return ['#00D4AA', '#00B8D4', '#4488FF', '#00D4AA'];
-  if (status === 'WATCH') return ['#FFB84D', '#FF8C42', '#FFD166', '#FFB84D'];
-  return ['#FF6B6B', '#C9184A', '#FF8FA3', '#FF6B6B'];
-}
 
 export type Severity = 'normal' | 'mild' | 'moderate' | 'severe';
 
@@ -108,13 +103,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
   const canNavigate = !isLoading && illness != null;
 
   return (
-    <View style={[styles.glowWrap, { shadowColor: collarColor }]}>
-      <LinearGradient
-        colors={borderGradient(status)}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientBorder}
-      >
+    <View style={styles.glowWrap}>
       <Pressable
         onPress={() => router.push('/(tabs)/coach/illness-detail')}
         disabled={!canNavigate}
@@ -191,7 +180,6 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
         )}
       </View>
     </Pressable>
-    </LinearGradient>
     </View>
   );
 }
@@ -227,14 +215,11 @@ const styles = StyleSheet.create({
   glowWrap: {
     borderRadius: 20,
   },
-  gradientBorder: {
-    borderRadius: 20,
-    padding: 2,
-  },
   card: {
-    borderRadius: 18.5,
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   cardPressed: {
     opacity: 0.82,
