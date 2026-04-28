@@ -121,13 +121,13 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
         style={({ pressed }) => [styles.card, pressed && canNavigate && styles.cardPressed]}
       >
       {/* Glassmorphic blur base */}
-      <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={20} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
 
       {/* Subtle inward color bleed from each edge */}
-      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -226,13 +226,10 @@ function getSeverityFromDelta(delta: string | null | undefined): Severity {
 const styles = StyleSheet.create({
   glowWrap: {
     borderRadius: 20,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
   },
   gradientBorder: {
     borderRadius: 20,
-    padding: 1.5,
+    padding: 2,
   },
   card: {
     borderRadius: 18.5,
