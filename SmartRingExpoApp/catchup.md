@@ -4,6 +4,40 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-28: IllnessWatchCard — Siri-style multi-hue gradient border
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:**
+- Card border is now a 1.5px `LinearGradient` wrapper (diagonal, top-left → bottom-right) with a 4-stop per-state palette: CLEAR → green/teal/blue, WATCH → amber/orange/gold, SICK → red/crimson/rose. This replaces the flat `rgba(255,255,255,0.15)` border.
+- Outer shadow (`glowWrap`) now uses the live status color instead of white, so the ambient glow is also state-colored.
+- Inner edge fades dialed back from 80% to 20% opacity — subtle inward bleed rather than a strong tint.
+- Status dot in the card header uses the live status color.
+
+**Files modified:** `src/components/focus/IllnessWatchCard.tsx`
+
+---
+
+### 2026-04-27: Coach mode selector — Coach vs Analyst pill
+
+**Source:** Claude Code — Macbook Pro
+
+Added a dark two-segment pill toggle to the coach chat input bar (between text input and send arrow). Tapping switches between **Coach** mode (warm, concise, Haiku) and **Analyst** mode (data-first, detailed, Sonnet with extended thinking). The pill has a dark background (`rgba(0,0,0,0.80)`) that stands out against the coach screen gradient. Active segment: white bg + black text. Inactive: muted white text.
+
+**Frontend (`AIChatScreen.tsx`):**
+- `CoachMode = 'coach' | 'analyst'` type + `coachMode` state
+- `ModePill` component with haptic feedback on switch
+- `TypingIndicator` now shows "Thinking deeply..." in analyst mode vs "Analyzing your data..." in coach mode
+- `callCoach()` passes `mode` to the edge function
+
+**Backend (`supabase/functions/coach-chat/index.ts`):**
+- Reads `mode` from request body
+- Analyst mode: `claude-sonnet-4-6` + extended thinking (`budget_tokens: 10000`, `anthropic-beta: interleaved-thinking-2025-05-14`) + data-first system prompt directive + 16k max_tokens
+- Coach mode: unchanged (`claude-haiku-4-5-20251001`, 1k tokens, warm/concise directive)
+- Response parsing finds the `text` block (skips `thinking` blocks) for analyst mode
+
+---
+
 ### 2026-04-28: IllnessWatchCard — moved below timeline + all-edge status color
 
 **Source:** Claude Code — Macbook Pro
