@@ -257,14 +257,6 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
         </>
       )}
 
-      {/* Illness Watch */}
-      <View style={styles.gradientCardSection}>
-        <IllnessWatchCard
-          illness={focusData.illness}
-          isLoading={focusData.isLoading}
-        />
-      </View>
-
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>
         <DailyHeartRateCard preloadedData={homeData.hrChartData} headerRight={<InfoButton metricKey="daily_hr_chart" />} onTouchStart={onChartTouchStart} onTouchEnd={onChartTouchEnd} />
@@ -285,6 +277,14 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           todayNaps={homeData.todayNaps}
           caffeineEntries={caffeineEntries}
           onAddPress={() => showOverlay()}
+        />
+      </View>
+
+      {/* Illness Watch */}
+      <View style={styles.gradientCardSection}>
+        <IllnessWatchCard
+          illness={focusData.illness}
+          isLoading={focusData.isLoading}
         />
       </View>
 
