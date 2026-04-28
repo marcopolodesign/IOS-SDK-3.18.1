@@ -237,6 +237,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 18.5,
     overflow: 'hidden',
+    backgroundColor: colors.background,
   },
   cardPressed: {
     opacity: 0.82,
