@@ -19,6 +19,12 @@ export function statusColor(status: IllnessStatus): string {
   return colors.error;
 }
 
+function borderGradient(status: IllnessStatus): readonly [string, string, string, string] {
+  if (status === 'CLEAR') return ['#00D4AA', '#00B8D4', '#4488FF', '#00D4AA'];
+  if (status === 'WATCH') return ['#FFB84D', '#FF8C42', '#FFD166', '#FFB84D'];
+  return ['#FF6B6B', '#C9184A', '#FF8FA3', '#FF6B6B'];
+}
+
 export type Severity = 'normal' | 'mild' | 'moderate' | 'severe';
 
 export function getSeverity(subScore: number, weight: number): Severity {
@@ -102,7 +108,13 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
   const canNavigate = !isLoading && illness != null;
 
   return (
-    <View style={styles.glowWrap}>
+    <View style={[styles.glowWrap, { shadowColor: collarColor }]}>
+      <LinearGradient
+        colors={borderGradient(status)}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBorder}
+      >
       <Pressable
         onPress={() => router.push('/(tabs)/coach/illness-detail')}
         disabled={!canNavigate}
@@ -111,11 +123,11 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
       {/* Glassmorphic blur base */}
       <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
 
-      {/* Edge glow — 4 linear fades tinted by illness status */}
-      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+      {/* Subtle inward color bleed from each edge */}
+      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + '33', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -131,7 +143,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
               {score > 0 && (
                 <Text style={styles.scoreText}>{score}</Text>
               )}
-              <View style={styles.statusDot} />
+              <View style={[styles.statusDot, { backgroundColor: collarColor }]} />
               <Text style={styles.statusText}>{status}</Text>
             </>
           )}
@@ -179,6 +191,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
         )}
       </View>
     </Pressable>
+    </LinearGradient>
     </View>
   );
 }
@@ -213,16 +226,17 @@ function getSeverityFromDelta(delta: string | null | undefined): Severity {
 const styles = StyleSheet.create({
   glowWrap: {
     borderRadius: 20,
-    shadowColor: 'rgba(255,255,255,0.6)',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 18,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+  },
+  gradientBorder: {
+    borderRadius: 20,
+    padding: 1.5,
   },
   card: {
-    borderRadius: 20,
+    borderRadius: 18.5,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
   },
   cardPressed: {
     opacity: 0.82,
