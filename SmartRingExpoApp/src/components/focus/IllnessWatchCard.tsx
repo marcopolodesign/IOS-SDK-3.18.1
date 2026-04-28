@@ -81,6 +81,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
 
   const status = illness?.status ?? 'CLEAR';
   const score = illness?.score ?? 0;
+  const collarColor = statusColor(status);
 
   const nhrSeverity: Severity = illness
     ? (illness.signals.restingHRElevated ? getSeverityFromDelta(illness.details.hrDelta) : 'normal')
@@ -113,7 +114,7 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
       {/* Edge glow — 4 linear fades that blend seamlessly at corners */}
       <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
       <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
-      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={[collarColor + 'CC', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
       <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}

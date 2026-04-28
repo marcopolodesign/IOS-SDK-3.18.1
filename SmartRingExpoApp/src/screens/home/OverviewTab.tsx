@@ -9,6 +9,7 @@ import { MetricInsightCard } from '../../components/home/MetricInsightCard';
 import { GradientInfoCard } from '../../components/common/GradientInfoCard';
 import { SleepScoreIcon } from '../../assets/icons';
 import DailyHeartRateCard from '../../components/home/DailyHeartRateCard';
+import { IllnessWatchCard } from '../../components/focus/IllnessWatchCard';
 
 import DailyTimelineCard from '../../components/home/DailyTimelineCard';
 import { CaffeineWindowCard } from '../../components/home/CaffeineWindowCard';
@@ -255,6 +256,14 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
           </Reanimated.View>
         </>
       )}
+
+      {/* Illness Watch */}
+      <View style={styles.gradientCardSection}>
+        <IllnessWatchCard
+          illness={focusData.illness}
+          isLoading={focusData.isLoading}
+        />
+      </View>
 
       {/* Heart rate through the day */}
       <View style={styles.gradientCardSection}>

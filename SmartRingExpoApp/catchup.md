@@ -4,6 +4,19 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-28: IllnessWatchCard — added to Today overview + status-colored collar
+
+**Source:** Claude Code — Web
+
+**What changed:**
+- **Today overview now includes the illness card.** `IllnessWatchCard` is mounted in `OverviewTab` between the Sleep Score and the Daily Heart Rate sections, fed from the existing `useFocusDataContext()` (no extra fetch). Tapping it still navigates to `/(tabs)/coach/illness-detail`.
+- **Card "collar" follows the illness state.** The top-edge `LinearGradient` in `IllnessWatchCard` no longer uses a hard-coded white tint; it now reads `statusColor(status)` and renders a tinted-to-transparent gradient — green for `CLEAR`, amber for `WATCH`, red for `SICK`. The other three edges remain white for chrome consistency, but the top "collar" makes the illness state legible at a glance from the overview.
+- **components.md updated** to document the new mount location and the status-colored collar.
+
+**Files modified:** `src/components/focus/IllnessWatchCard.tsx`, `src/screens/home/OverviewTab.tsx`, `components.md`
+
+---
+
 ### 2026-04-27: Coach tab — scroll-opacity cards + border beam animation + border radius polish
 
 **Source:** Claude Code — Macbook Pro
