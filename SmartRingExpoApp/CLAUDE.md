@@ -120,6 +120,10 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 
 ## Recent Changes
 
+### 2026-04-28: IllnessWatchCard — added to Today overview + status-colored collar
+
+`IllnessWatchCard` is now mounted inside `OverviewTab` (between Sleep Score and Daily Heart Rate), reusing `useFocusDataContext()`. The top-edge "collar" `LinearGradient` now uses `statusColor(status)` instead of hard-coded white — green for `CLEAR`, amber for `WATCH`, red for `SICK` — so illness state is visible at a glance. Files: `src/components/focus/IllnessWatchCard.tsx`, `src/screens/home/OverviewTab.tsx`, `components.md`.
+
 ### 2026-04-21: Sentry Monitor — Optimized Routine + Auto-Merge + EAS Skill
 
 **Merged:** PR #2 — `Array.isArray` guard on `event.breadcrumbs?.values` in `beforeSend` (`app/_layout.tsx:21`). Fixes Sentry 7406743701 / 7408046962.

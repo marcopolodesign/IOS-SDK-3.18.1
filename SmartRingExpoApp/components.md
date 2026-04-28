@@ -213,7 +213,7 @@ Use these terms consistently in code, comments, and conversation. The cover is a
 ### `IllnessWatchCard`
 **File:** `src/components/focus/IllnessWatchCard.tsx`
 **Props:** `illness: IllnessWatch | null`, `isLoading: boolean`
-**Renders:** `GradientInfoCard` with shield icon, status dot/text, expandable signal rows (HR/HRV/SpO2/Temp/Sleep) with severity pills, summary + detail link.
+**Renders:** `GradientInfoCard` with shield icon, status dot/text, expandable signal rows (HR/HRV/SpO2/Temp/Sleep) with severity pills, summary + detail link. Top edge "collar" gradient is tinted with the status color (`statusColor(status)` — green/amber/red for CLEAR/WATCH/SICK) instead of white, so the card's chrome reflects illness state at a glance. Mounted both on the Coach tab (`FocusScreen`) and inside the Today overview (`OverviewTab`, between Sleep Score and Daily Heart Rate).
 **Logic:** Severity calculated from delta strings (e.g. "±3 bpm"), per-signal severity mapping, collapsible sections.
 
 ---
