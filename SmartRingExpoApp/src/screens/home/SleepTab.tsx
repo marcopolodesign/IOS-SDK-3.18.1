@@ -388,9 +388,10 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       initialBedTime={sleep.inBedTime ?? sleep.bedTime}
       initialWakeTime={sleep.wakeTime}
       onClose={() => setEditModalVisible(false)}
-      onSaved={() => {
-        homeData.applyOverrideNow();   // instant — updates hypnogram from current state
-        homeData.refresh();            // background — full ring sync to confirm
+      onSaved={async () => {
+        await homeData.applyOverrideNow();
+        homeData.refresh();
+        setRefreshCount(c => c + 1);
       }}
     />
     </>

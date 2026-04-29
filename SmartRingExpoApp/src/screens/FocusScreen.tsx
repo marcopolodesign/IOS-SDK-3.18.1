@@ -6,6 +6,7 @@
 import React, { useCallback } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   RefreshControl,
   Dimensions,
@@ -22,7 +23,7 @@ import Reanimated, {
   Easing,
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
-import { spacing } from '../theme/colors';
+import { spacing, fontFamily } from '../theme/colors';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
 import { LastRunContextCard } from '../components/focus/LastRunContextCard';
@@ -125,6 +126,7 @@ export default function FocusScreen() {
           />
 
           <View style={styles.cardWrap}>
+            <Text style={styles.sectionLabel}>Review your last run</Text>
             <LastRunContextCard
               lastRun={focusData.lastRun}
               isLoading={focusData.isLoading}
@@ -159,6 +161,14 @@ const styles = StyleSheet.create({
   cardWrap: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
+  },
+  sectionLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
   },
   fixedBottom: {
     position: 'absolute',

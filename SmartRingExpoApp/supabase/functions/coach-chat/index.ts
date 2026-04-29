@@ -16,12 +16,23 @@ interface RingWorkout {
   max_heart_rate: number | null;
 }
 
+interface HRZone {
+  min: number;
+  max: number;
+  time: number;
+}
+
 function fmt(date: string) {
   return new Date(date).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function hm(minutes: number) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function formatSplitPace(speedMs: number): string {
+  const minsPerKm = 1000 / speedMs / 60;
+  return `${Math.floor(minsPerKm)}:${String(Math.round((minsPerKm % 1) * 60)).padStart(2, '0')}/km`;
 }
 
 serve(async (req: Request) => {
@@ -49,10 +60,11 @@ serve(async (req: Request) => {
       });
     }
 
-    const { message, history, readiness, illness, mode } = await req.json() as {
+    const { message, history, readiness, illness, mode, activityId } = await req.json() as {
       message: string;
       history: { role: string; content: string }[];
       mode?: 'coach' | 'analyst';
+      activityId?: number;
       readiness: {
         score: number;
         recommendation: 'GO' | 'EASY' | 'REST';
@@ -92,6 +104,7 @@ serve(async (req: Request) => {
       profileResult,
       todayStepsResult,
       memoriesResult,
+      activityDetailResult,
     ] = await Promise.all([
       // Last 7 sleep sessions (full nightly breakdown)
       supabase
@@ -186,6 +199,16 @@ serve(async (req: Request) => {
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false })
         .limit(20),
+
+      // Specific activity detail (raw_data has avg_temp, perceived_exertion, start_latlng)
+      activityId != null
+        ? supabase
+            .from('strava_activities')
+            .select('raw_data, splits_metric_json, zones_json, average_cadence, start_date')
+            .eq('user_id', user.id)
+            .eq('id', activityId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     const sleepSessions = sleepResult.data ?? [];
@@ -443,6 +466,77 @@ serve(async (req: Request) => {
       sections.push(`Ring-tracked workouts (last 14 days):\n${workoutLines.join('\n')}`);
     }
 
+    // ── 6. ACTIVITY DETAIL: weather, splits, zones ───────────────────────────
+    const activityDetail = (activityDetailResult as { data: Record<string, unknown> | null }).data;
+    if (activityDetail) {
+      const raw = (activityDetail.raw_data as Record<string, unknown>) ?? {};
+      const avgTemp = typeof raw.average_temp === 'number' ? raw.average_temp : null;
+      const rpe = typeof raw.perceived_exertion === 'number' ? raw.perceived_exertion : null;
+      const startLatlng = Array.isArray(raw.start_latlng) ? (raw.start_latlng as [number, number]) : null;
+      const cadence = typeof activityDetail.average_cadence === 'number' ? activityDetail.average_cadence : null;
+      const runDate = typeof activityDetail.start_date === 'string' ? activityDetail.start_date.split('T')[0] : null;
+
+      const conditionLines: string[] = [];
+      if (avgTemp != null) conditionLines.push(`Strava recorded avg temp: ${avgTemp}°C`);
+      if (rpe != null) conditionLines.push(`Perceived exertion (RPE): ${rpe.toFixed(1)}/10`);
+      if (cadence != null) conditionLines.push(`Average cadence: ${Math.round(cadence)} spm`);
+
+      // Fetch Open-Meteo historical weather if coordinates are available
+      if (startLatlng && runDate) {
+        try {
+          const [lat, lon] = startLatlng;
+          const weatherUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&start_date=${runDate}&end_date=${runDate}&daily=temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_sum&timezone=auto&wind_speed_unit=kmh`;
+          const weatherRes = await fetch(weatherUrl, { signal: AbortSignal.timeout(4000) });
+          if (weatherRes.ok) {
+            const wd = await weatherRes.json() as { daily?: Record<string, number[]> };
+            const d = wd.daily;
+            if (d) {
+              const tMax = d.temperature_2m_max?.[0];
+              const tMin = d.temperature_2m_min?.[0];
+              const wind = d.wind_speed_10m_max?.[0];
+              const rain = d.precipitation_sum?.[0];
+              const parts: string[] = [];
+              if (tMax != null && tMin != null) parts.push(`${tMin}–${tMax}°C`);
+              if (wind != null) parts.push(`wind up to ${Math.round(wind)} km/h`);
+              if (rain != null) parts.push(rain > 0 ? `${rain.toFixed(1)}mm rain` : 'no rain');
+              if (parts.length > 0) conditionLines.push(`Outdoor weather: ${parts.join(', ')}`);
+            }
+          }
+        } catch { /* weather fetch is best-effort */ }
+      }
+
+      if (conditionLines.length > 0) {
+        sections.push(`Run conditions:\n${conditionLines.map(l => `  • ${l}`).join('\n')}`);
+      }
+
+      // Pace splits (per km)
+      const splits = activityDetail.splits_metric_json as Array<Record<string, unknown>> | null;
+      if (splits && splits.length > 0) {
+        const splitLines = splits.slice(0, 20).map((s, i) => {
+          const spd = typeof s.average_speed === 'number' ? s.average_speed : 0;
+          const hr = typeof s.average_heartrate === 'number' ? s.average_heartrate : null;
+          const pace = spd > 0 ? formatSplitPace(spd) : '';
+          const hrStr = hr ? `${Math.round(hr)}bpm` : '';
+          return `  • km ${i + 1}: ${[pace, hrStr].filter(Boolean).join(', ')}`;
+        });
+        sections.push(`Pace splits:\n${splitLines.join('\n')}`);
+      }
+
+      // HR zones
+      const zones = activityDetail.zones_json as Record<string, unknown> | null;
+      const hrZones = (zones as { heart_rate?: { zones?: HRZone[] } } | null)?.heart_rate?.zones;
+      if (hrZones && hrZones.length > 0) {
+        const totalTime = hrZones.reduce((s, z) => s + z.time, 0);
+        const zoneLines = hrZones.map((z, i) => {
+          const mins = Math.floor(z.time / 60);
+          const secs = z.time % 60;
+          const pct = totalTime > 0 ? Math.round((z.time / totalTime) * 100) : 0;
+          return `  • Zone ${i + 1}: ${mins}m ${secs}s (${pct}%)`;
+        });
+        sections.push(`HR zone distribution:\n${zoneLines.join('\n')}`);
+      }
+    }
+
     const healthContext = sections.length > 0
       ? sections.join('\n\n')
       : 'No health data synced yet.';
@@ -521,7 +615,13 @@ Generative rules:
 - accent hex suggestions: blue #6B8EFF, orange #FF753F, red #AC0D0D, amber #FFB84D
 - For trend charts (HRV, temperature, sleep score over days), use bar_chart or line_chart
 - For a quick multi-metric snapshot (SpO2 + temp + stress), use stat_grid
-- Omit "artifact" entirely if the answer is a simple yes/no, short fact, or advice-only`;
+- Omit "artifact" entirely if the answer is a simple yes/no, short fact, or advice-only
+
+Run analysis artifacts (use when activityId was provided and splits/zones data is present):
+- Pace splits → bar_chart with one bar per km (label="km 1", value=pace in decimal min/km, unit="min/km")
+- HR zone distribution → bar_chart with zone names as labels and time in minutes as values
+- Run summary → stat_grid with cells for pace, avg HR, distance, elevation, cadence, RPE
+- Always include "last_run" artifact on run analysis responses to show the effort verdict card`;
 
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY secret not set');
@@ -542,8 +642,8 @@ Generative rules:
 
     const anthropicBody = isAnalyst ? {
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      thinking: { type: 'enabled', budget_tokens: 10000 },
+      max_tokens: 5000,
+      thinking: { type: 'enabled', budget_tokens: 3000 },
       system: systemPrompt,
       messages: [...chatHistory, { role: 'user', content: message }],
     } : {

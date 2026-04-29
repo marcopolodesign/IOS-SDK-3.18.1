@@ -173,7 +173,8 @@ async function callCoach(
   message: string,
   history: Message[],
   mode: CoachMode,
-  focusContext?: { readiness: ReadinessScore | null; illness: IllnessWatch | null }
+  focusContext?: { readiness: ReadinessScore | null; illness: IllnessWatch | null },
+  activityId?: number,
 ): Promise<{ text: string; artifact?: Artifact; followUps?: string[] }> {
   const { data, error } = await supabase.functions.invoke('coach-chat', {
     body: {
@@ -182,6 +183,7 @@ async function callCoach(
       readiness: focusContext?.readiness ?? null,
       illness: focusContext?.illness ?? null,
       mode,
+      activityId: activityId ?? null,
     },
   });
 
@@ -707,8 +709,9 @@ const BLOB_SVG = `<svg width="440" height="754" viewBox="0 0 440 754" fill="none
 export function AIChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { q, mode: modeParam } = useLocalSearchParams<{ q?: string; mode?: string }>();
+  const { q, mode: modeParam, activityId: activityIdParam } = useLocalSearchParams<{ q?: string; mode?: string; activityId?: string }>();
   const coachMode: CoachMode = modeParam === 'analyst' ? 'analyst' : 'coach';
+  const activityId = activityIdParam ? parseInt(activityIdParam, 10) : undefined;
   const homeData = useHomeDataContext();
   const focusState = useFocusDataContext();
   const { sleepDebt } = useSleepDebt();
@@ -785,7 +788,7 @@ export function AIChatScreen() {
         const { text: aiText, artifact, followUps } = await callCoach(text, messages, coachMode, {
           readiness: focusState.readiness,
           illness: focusState.illness,
-        });
+        }, activityId);
         const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', text: aiText, artifact, followUps };
         setMessages(prev => [...prev, aiMsg]);
       } catch (err: unknown) {
@@ -798,7 +801,6 @@ export function AIChatScreen() {
         setMessages(prev => [...prev, errMsg]);
       } finally {
         setIsTyping(false);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
       }
     },
     [input, isTyping, messages, focusState.readiness, focusState.illness]

@@ -4,6 +4,105 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-28: Run analysis — weather, splits, HR zones, activityId wiring, scroll fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Weather data:** Edge function now fetches Open-Meteo historical weather (temp range, max wind, rain) using `start_latlng` from Strava `raw_data`. Also extracts `average_temp`, `perceived_exertion`, and `average_cadence` from the stored activity detail. Requires `activityId` in the request to query the specific activity.
+
+**Splits & HR zones:** If `splits_metric_json` is present, pace-per-km and avg HR per split are added to context. If `zones_json` is present, HR zone distribution (time + %) is added.
+
+**activityId wiring:** `LastRunContextCard` passes `activityId` as a route param → `AIChatScreen` reads it from params → `callCoach` forwards it in the request body → edge function fetches the specific activity detail.
+
+**Mode change:** Run analysis now uses `coach` mode (Haiku, ~3s) instead of `analyst` — fast initial response, user can follow up for deeper analysis.
+
+**Scroll fix:** Removed `scrollToEnd` from `finally` block in `sendMessage`. Scroll-to-end now only fires when the user sends (to show typing indicator), not after AI responds — preserves reading position.
+
+**Files modified:**
+- `supabase/functions/coach-chat/index.ts` — activityId param, 12th Promise.all query, Open-Meteo fetch, splits/zones sections, run artifact guidance
+- `src/screens/AIChatScreen.tsx` — activityId param, callCoach signature, removed post-reply scrollToEnd
+- `src/components/focus/LastRunContextCard.tsx` — mode coach, activityId in params
+
+**Deployed:** `coach-chat` to project `pxuemdkxdjuwxtupeqoa`
+
+---
+
+### 2026-04-28: Fix analyst mode timeout — reduce thinking budget
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Analyst mode was silently timing out on every request. Root cause: `budget_tokens: 10000` at ~50 tokens/sec = 200s of thinking, exceeding Supabase Edge Function's 150s hard limit. Reduced `budget_tokens` 10000→3000 and `max_tokens` 16000→5000. Still uses extended thinking on Sonnet, now completes in ~50s well within the limit.
+
+**Files modified:**
+- `supabase/functions/coach-chat/index.ts` — analyst model params reduced
+
+**Deployed:** `coach-chat` to project `pxuemdkxdjuwxtupeqoa`
+
+---
+
+### 2026-04-28: WindDownHero — show ideal sleep window (±30 min range) instead of exact time
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** The big time display in `WindDownHero` now shows the ideal sleep window (target ±30 min) instead of the exact derived bedtime. E.g. if target is 10:30 PM → now displays "10:00 – 11:00 PM". Handles cross-AM/PM boundary (shows AM/PM on both sides when they differ). Font size reduced from 72 → 36px to fit the range text. Countdown subtitle ("in 2h 30m") still references the center of the window (the original target).
+
+**Files modified:**
+- `src/components/home/WindDownHero.tsx` — replaced `formatBedtime` with `formatBedtimeRange` (target ±30 min); `bedtime` style `fontSize` 72 → 36, `lineHeight` 80 → 44
+
+---
+
+### 2026-04-28: LastRunContextCard — section title outside card, merged body text, AI analysis tap
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** "Review your last run" moved outside the card as a dim uppercase section label in FocusScreen. Card header row (title + km/date/verdict meta + chevron) removed entirely. Body text now embeds distance, date, and effort verdict inline via updated i18n keys. Tapping the whole card opens `/chat` in `analyst` mode with a structured prompt containing run stats + body state + weather request. Removed `Ionicons` import, dead chip styles, and unused `talk_through` i18n key.
+
+**Files modified:**
+- `src/screens/FocusScreen.tsx` — added `Text` import + `fontFamily` import; `sectionLabel` style; section title above `LastRunContextCard`
+- `src/components/focus/LastRunContextCard.tsx` — removed header JSX + header styles; `useBodyText` now calls `useFormatRunDate` internally to embed date; `EFFORT_LABEL` map replaces `.replace(/_/g,' ')`; `onPress` → `/chat` with `buildRunAnalysisQuery`; removed `Ionicons`, `TouchableOpacity`, `useVerdictLabel`/`formatRunDate` from component level
+- `src/i18n/locales/en.json` — body strings now include `{{distance}}` and `{{date}}`; removed `talk_through` key
+- `src/i18n/locales/es.json` — same
+
+**Key notes:**
+- `buildRunAnalysisQuery` passes raw ISO date (`.slice(0,10)`) to the LLM — NOT the relative "Yesterday" string
+- `EFFORT_LABEL` is a typed `Record<EffortVerdict, string>` — type-safe, no string manipulation
+- Section label is `uppercase`, 12px, 45% opacity — matches Oura-style section headers
+
+---
+
+### 2026-04-28: Sleep debt recalculates on manual sleep edit
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Editing sleep times in `SleepTimeEditModal` now immediately triggers a sleep debt recalculation. Previously, `applyOverrideNow` pushed corrected data to `sleep_sessions` fire-and-forget, and `SleepDebtCard` had no signal to re-read. Fix: `pushSleepOverrideToSupabase` now also updates `daily_summaries.sleep_total_min` (the table `SleepDebtService` reads), `applyOverrideNow` awaits the push instead of voiding it, and `SleepTab` increments `refreshCount` after `applyOverrideNow` resolves so `SleepDebtCard` calls `refresh()` with fresh data.
+
+**Files modified:**
+- `src/hooks/useHomeData.ts` — `pushSleepOverrideToSupabase`: single-pass stage accumulator (was 4 filter+reduce passes), parallel `Promise.all` for `sleep_sessions` + `daily_summaries` writes, shared `const now` for timestamp; `applyOverrideNow`: `void` → `await` on push
+- `src/screens/home/SleepTab.tsx` — `onSaved` made async, awaits `applyOverrideNow()`, then increments `refreshCount`
+
+**Key notes:**
+- `SleepDebtService.computeSleepDebt` reads `daily_summaries.sleep_total_min`, not `sleep_sessions` — the new `daily_summaries` update is what makes the instant recalc possible
+- `sleep_total_min` = deep + light + rem (excludes awake), matching `DataSyncService.updateDailySummary` formula
+- If today's `daily_summaries` row doesn't exist yet, the `.update()` is a no-op and debt refreshes on the next full sync — acceptable edge case
+
+---
+
+### 2026-04-28: AskCoachButton — Google-style spinning gradient border + white→black bg
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced comet sweep with Google's actual animation technique: an oversized `LinearGradient` layer (violet→blue→pink→transparent) that rotates 135°→565° over 8s (`cubic-bezier(0.2,0,0,1)`) clipped by `wrapper`'s `overflow:hidden`. The inner fill (`innerFill`, inset 2px) uses `interpolateColor` to transition from `rgba(255,255,255,0.5)` (white 50% during animation) to `rgba(0,0,0,0.95)` (full black) as the gradient fades out at t=4s. Mirrors Google's `aSjwGd` + `Xkjimd::before` structure.
+
+**Files modified:**
+- `src/components/focus/AskCoachButton.tsx` — removed comet/SVG `Rect` architecture; added `LinearGradient`; `borderRotation` / `borderOpacity` / `cardProgress` shared values; `interpolateColor` for bg transition; `gradientSize` from card diagonal; `innerFill` style (inset 2px)
+
+**Key notes:**
+- Gradient layer is `sqrt(W²+H²)+4` square — covers card at all rotation angles without bare corners
+- `GRADIENT_COLORS` ends with `rgba(236,72,153,0)` (pink→transparent) to avoid black fringe on fade-out edge
+- `runAnimation()` takes no args — perimeter no longer needed; `useFocusEffect` replays on every tab focus
+
+---
+
 ## 2026-04-28: Performance fix — Today-tab lag (FocusScreen offscreen animations)
 
 **Source:** Claude Code — Macbook Pro

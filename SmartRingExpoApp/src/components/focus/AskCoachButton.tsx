@@ -2,36 +2,33 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, LayoutChangeEvent, ActionSheetIOS } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import Svg, { Path, Rect } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import Reanimated, {
   useSharedValue,
-  useAnimatedProps,
   useAnimatedStyle,
   withTiming,
   withDelay,
   Easing,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { fontFamily, fontSize } from '../../theme/colors';
 import type { CoachMode } from '../../types/focus.types';
-
-const AnimatedRect = Reanimated.createAnimatedComponent(Rect);
+import { useTypewriter } from '../../hooks/useTypewriter';
 
 const R = 20;
-const SWEEP_DURATION = 5000;
-const FADE_START = 4200;
-const FADE_DURATION = 900;
+const BORDER_WIDTH = 2;
+const SPIN_DURATION = 8000;
+const FADE_START = 4000;
+const FADE_DURATION = 1000;
 
-function calcPerimeter(w: number, h: number) {
-  return 2 * (w - 2 * R) + 2 * (h - 2 * R) + 2 * Math.PI * R;
-}
-
-type CometLayerConfig = [dashLen: number, strokeWidth: number, opacity: number, trailOffset: number, color: string];
-
-const LAYERS: CometLayerConfig[] = [
-  [150, 12, 0.06, 180, '#7C3AED'],  // deep violet tail glow
-  [100,  8, 0.13, 110, '#3B82F6'],  // blue mid glow
-  [ 55,  5, 0.32,  50, '#60A5FA'],  // light blue inner
-  [ 22,  2, 0.88,   0, '#C4B5FD'],  // bright lavender head
+// Violet → blue → pink, fading to transparent — creates a partial arc
+// that sweeps around the border as the gradient layer rotates
+const GRADIENT_COLORS: [string, string, string, string] = [
+  '#7C3AED',
+  '#3B82F6',
+  '#EC4899',
+  'rgba(236,72,153,0)',
 ];
 
 function FocusIcon() {
@@ -78,50 +75,13 @@ function ChevronDownIcon() {
   );
 }
 
-function CometLayer({
-  dims,
-  dashOffset,
-  dashLen,
-  strokeWidth,
-  opacity,
-  trailOffset,
-  perimeter,
-  color,
-}: {
-  dims: { width: number; height: number };
-  dashOffset: Reanimated.SharedValue<number>;
-  dashLen: number;
-  strokeWidth: number;
-  opacity: number;
-  trailOffset: number;
-  perimeter: number;
-  color: string;
-}) {
-  const animatedProps = useAnimatedProps(() => ({
-    strokeDashoffset: dashOffset.value + trailOffset,
-  }));
-  return (
-    <AnimatedRect
-      x={0.5}
-      y={0.5}
-      width={dims.width - 1}
-      height={dims.height - 1}
-      rx={R}
-      fill="none"
-      stroke={color}
-      strokeOpacity={opacity}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeDasharray={`${dashLen} ${perimeter - dashLen}`}
-      animatedProps={animatedProps}
-    />
-  );
-}
-
 export function AskCoachButton() {
   const [text, setText] = useState('');
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const [mode, setMode] = useState<CoachMode>('coach');
+  const [tabFocused, setTabFocused] = useState(true);
+  const placeholder = useTypewriter(!tabFocused || text.length > 0);
+
   function openModeSelector() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     ActionSheetIOS.showActionSheetWithOptions(
@@ -139,52 +99,71 @@ export function AskCoachButton() {
     );
   }
 
-  const dashOffset = useSharedValue(0);
-  const beamOpacity = useSharedValue(0);
-  const cardOpacity = useSharedValue(0);
+  // borderRotation drives the spinning gradient (ae-r equivalent)
+  // cardProgress drives the bg color transition: white 50% → full black (ae-c equivalent)
+  // borderOpacity fades the gradient out (ae-f equivalent)
+  const borderRotation = useSharedValue(135);
+  const borderOpacity = useSharedValue(1);
+  const cardProgress = useSharedValue(0);
 
-  // Ref so useFocusEffect can read dims without it being in the dep array
   const dimsRef = useRef(dims);
   useEffect(() => { dimsRef.current = dims; }, [dims]);
 
-  const runAnimation = useCallback((w: number, h: number) => {
-    const p = calcPerimeter(w, h);
-    dashOffset.value = 0;
-    beamOpacity.value = 1;
-    cardOpacity.value = 0;
-    dashOffset.value = withTiming(-p * 1.15, {
-      duration: SWEEP_DURATION,
-      easing: Easing.inOut(Easing.cubic),
+  const runAnimation = useCallback(() => {
+    borderRotation.value = 135;
+    borderOpacity.value = 1;
+    cardProgress.value = 0;
+
+    // Spin the gradient arc just over one full rotation (like Google's ae-r: 135→565°)
+    borderRotation.value = withTiming(565, {
+      duration: SPIN_DURATION,
+      easing: Easing.bezier(0.2, 0, 0, 1),
     });
-    beamOpacity.value = withDelay(
+    // Fade out the gradient border
+    borderOpacity.value = withDelay(
       FADE_START,
       withTiming(0, { duration: FADE_DURATION, easing: Easing.out(Easing.quad) }),
     );
-    cardOpacity.value = withDelay(
+    // Transition card bg: white 50% → full black
+    cardProgress.value = withDelay(
       FADE_START,
-      withTiming(1, { duration: FADE_DURATION, easing: Easing.in(Easing.quad) }),
+      withTiming(1, { duration: FADE_DURATION, easing: Easing.bezier(0.4, 0, 0.2, 1) }),
     );
   }, []);
 
-  // Initial play — fires once after first layout
   useEffect(() => {
     if (!dims) return;
-    runAnimation(dims.width, dims.height);
+    runAnimation();
   }, [dims?.width, dims?.height]);
 
-  // Replay every time the Coach tab comes into focus
   useFocusEffect(
     useCallback(() => {
-      const d = dimsRef.current;
-      if (!d) return; // first mount: dims not set yet, useEffect above handles it
-      runAnimation(d.width, d.height);
+      setTabFocused(true);
+      if (dimsRef.current) runAnimation();
+      return () => setTabFocused(false);
     }, [])
   );
 
-  const overlayStyle = useAnimatedStyle(() => ({ opacity: beamOpacity.value }));
-  const cardBgStyle = useAnimatedStyle(() => ({ opacity: cardOpacity.value }));
+  const rotateStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${borderRotation.value}deg` }],
+  }));
 
-  const perimeter = dims ? calcPerimeter(dims.width, dims.height) : 0;
+  const borderOpacityStyle = useAnimatedStyle(() => ({
+    opacity: borderOpacity.value,
+  }));
+
+  const cardBgStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      cardProgress.value,
+      [0, 1],
+      ['rgba(255,255,255,0.5)', 'rgba(0,0,0,0.95)'],
+    ),
+  }));
+
+  // Oversized so the gradient fully covers the card at all rotation angles
+  const gradientSize = dims
+    ? Math.ceil(Math.sqrt(dims.width ** 2 + dims.height ** 2)) + 4
+    : 600;
 
   function handleLayout(e: LayoutChangeEvent) {
     const { width, height } = e.nativeEvent.layout;
@@ -206,14 +185,40 @@ export function AskCoachButton() {
 
   return (
     <View style={styles.wrapper} onLayout={handleLayout}>
-      <Reanimated.View style={[StyleSheet.absoluteFill, styles.cardBg, cardBgStyle]} />
+      {/* Spinning gradient arc — oversized square, clipped by wrapper's overflow:hidden */}
+      {dims && (
+        <Reanimated.View
+          style={[
+            rotateStyle,
+            borderOpacityStyle,
+            {
+              position: 'absolute',
+              width: gradientSize,
+              height: gradientSize,
+              left: (dims.width - gradientSize) / 2,
+              top: (dims.height - gradientSize) / 2,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <LinearGradient
+            colors={GRADIENT_COLORS}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Reanimated.View>
+      )}
+
+      {/* Inner fill — white 50% on entry, transitions to full black when spin ends */}
+      <Reanimated.View style={[styles.innerFill, cardBgStyle]} />
 
       <View style={styles.content}>
         <TextInput
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="Ask your coach anything..."
+          placeholder={placeholder}
           placeholderTextColor="rgba(255,255,255,0.45)"
           returnKeyType="send"
           onSubmitEditing={handleSend}
@@ -232,26 +237,6 @@ export function AskCoachButton() {
           </TouchableOpacity>
         </View>
       </View>
-
-      {dims && (
-        <Reanimated.View style={[StyleSheet.absoluteFill, overlayStyle]} pointerEvents="none">
-          <Svg width={dims.width} height={dims.height}>
-            {LAYERS.map(([dashLen, sw, op, trail, color]) => (
-              <CometLayer
-                key={trail}
-                dims={dims}
-                dashOffset={dashOffset}
-                dashLen={dashLen}
-                strokeWidth={sw}
-                opacity={op}
-                trailOffset={trail}
-                perimeter={perimeter}
-                color={color}
-              />
-            ))}
-          </Svg>
-        </Reanimated.View>
-      )}
     </View>
   );
 }
@@ -261,8 +246,13 @@ const styles = StyleSheet.create({
     borderRadius: R,
     overflow: 'hidden',
   },
-  cardBg: {
-    backgroundColor: 'rgba(0,0,0,0.95)',
+  innerFill: {
+    position: 'absolute',
+    top: BORDER_WIDTH,
+    left: BORDER_WIDTH,
+    right: BORDER_WIDTH,
+    bottom: BORDER_WIDTH,
+    borderRadius: R - BORDER_WIDTH,
   },
   content: {
     paddingTop: 18,

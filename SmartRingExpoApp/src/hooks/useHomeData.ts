@@ -1031,18 +1031,43 @@ async function pushSleepOverrideToSupabase(params: {
     if (!sessionId) return;
 
     const dur = (s: SleepSegment) => Math.round((s.endTime.getTime() - s.startTime.getTime()) / 60000);
-    await supabase
-      .from('sleep_sessions')
-      .update({
-        start_time:  correctedBed.toISOString(),
-        end_time:    correctedWake.toISOString(),
-        deep_min:    newSegs.filter(s => s.stage === 'deep').reduce((a, s) => a + dur(s), 0),
-        light_min:   newSegs.filter(s => s.stage === 'core').reduce((a, s) => a + dur(s), 0),
-        rem_min:     newSegs.filter(s => s.stage === 'rem').reduce((a, s) => a + dur(s), 0),
-        awake_min:   newSegs.filter(s => s.stage === 'awake').reduce((a, s) => a + dur(s), 0),
-        sleep_score: newScore,
-      })
-      .eq('id', sessionId);
+    const { deepMin, lightMin, remMin, awakeMin } = newSegs.reduce(
+      (acc, s) => {
+        const m = dur(s);
+        if (s.stage === 'deep')  acc.deepMin  += m;
+        else if (s.stage === 'core')  acc.lightMin += m;
+        else if (s.stage === 'rem')   acc.remMin   += m;
+        else if (s.stage === 'awake') acc.awakeMin  += m;
+        return acc;
+      },
+      { deepMin: 0, lightMin: 0, remMin: 0, awakeMin: 0 },
+    );
+
+    const now = new Date();
+    const todayDate = now.toISOString().split('T')[0];
+
+    // sleep_sessions and daily_summaries are independent — run in parallel
+    await Promise.all([
+      supabase
+        .from('sleep_sessions')
+        .update({
+          start_time:  correctedBed.toISOString(),
+          end_time:    correctedWake.toISOString(),
+          deep_min:    deepMin,
+          light_min:   lightMin,
+          rem_min:     remMin,
+          awake_min:   awakeMin,
+          sleep_score: newScore,
+        })
+        .eq('id', sessionId),
+      // daily_summaries.sleep_total_min drives sleep debt — update it immediately
+      // so SleepDebtCard recalculates without waiting for the next full sync
+      supabase
+        .from('daily_summaries')
+        .update({ sleep_total_min: deepMin + lightMin + remMin, updated_at: now.toISOString() })
+        .eq('user_id', userId)
+        .eq('date', todayDate),
+    ]);
 
   } catch (e: any) {
     console.warn('[override] Supabase push failed:', e?.message);
@@ -2469,11 +2494,11 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
     // Update React state immediately
     setData(prev => ({ ...prev, lastNightSleep: newSleep, sleepScore: newScore, unifiedSleepSessions: unified }));
 
-    // Push override to Supabase so AI coach sees corrected data
+    // Push override to Supabase so AI coach + sleep debt see corrected data
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData?.user?.id;
     if (userId) {
-      void pushSleepOverrideToSupabase({ userId, correctedBed, correctedWake, newSegs, newScore });
+      await pushSleepOverrideToSupabase({ userId, correctedBed, correctedWake, newSegs, newScore });
     }
   }, []);
 

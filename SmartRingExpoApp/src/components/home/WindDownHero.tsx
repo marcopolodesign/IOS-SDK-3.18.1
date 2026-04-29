@@ -9,13 +9,24 @@ interface WindDownHeroProps {
   sleepDebtTotalMin: number;
 }
 
-function formatBedtime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${m} ${ampm}`;
+function formatBedtimeRange(ms: number): string {
+  const start = new Date(ms - 30 * 60 * 1000);
+  const end = new Date(ms + 30 * 60 * 1000);
+
+  const fmt12 = (d: Date) => {
+    const h = d.getHours();
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${m}`;
+  };
+
+  const startAmpm = start.getHours() >= 12 ? 'PM' : 'AM';
+  const endAmpm = end.getHours() >= 12 ? 'PM' : 'AM';
+
+  if (startAmpm === endAmpm) {
+    return `${fmt12(start)} – ${fmt12(end)} ${endAmpm}`;
+  }
+  return `${fmt12(start)} ${startAmpm} – ${fmt12(end)} ${endAmpm}`;
 }
 
 function formatCountdown(minsUntilBed: number): { text: string; isLate: boolean } {
@@ -44,7 +55,7 @@ export function WindDownHero({ targetBedtimeMs, minsUntilBed, sleepDebtTotalMin 
     <View style={styles.container}>
       <Ionicons name="moon-outline" size={24} color="rgba(255,255,255,0.5)" />
       <Text style={styles.label}>WIND DOWN</Text>
-      <Text style={styles.bedtime}>{formatBedtime(targetBedtimeMs)}</Text>
+      <Text style={styles.bedtime}>{formatBedtimeRange(targetBedtimeMs)}</Text>
       <Text style={[styles.countdown, isLate && styles.countdownLate]}>
         {countdownText}
       </Text>
@@ -76,9 +87,9 @@ const styles = StyleSheet.create({
   },
   bedtime: {
     color: '#FFFFFF',
-    fontSize: 72,
+    fontSize: 36,
     fontFamily: fontFamily.regular,
-    lineHeight: 80,
+    lineHeight: 44,
   },
   countdown: {
     color: 'rgba(255,255,255,0.6)',

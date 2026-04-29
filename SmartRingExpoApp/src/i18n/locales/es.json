@@ -373,7 +373,7 @@
     "detail_warning_sleep": "El tiempo despierto es {{delta}} {{unit}} por encima del promedio — el sueño fragmentado puede preceder a una enfermedad."
   },
   "last_run": {
-    "card_title": "Última Carrera",
+    "card_title": "Revisa tu última carrera",
     "verdict_harder": "Más duro de lo esperado",
     "verdict_easier": "Más fácil de lo esperado",
     "verdict_expected": "Como se esperaba",
@@ -388,10 +388,9 @@
     "date_days_ago": "Hace {{days}} días",
     "view_strava": "Ver en Strava",
     "hr_comparison": "FC media: {{actual}} bpm · Esperada: ~{{expected}} bpm",
-    "talk_through": "Habla con el Coach",
-    "body_as_expected": "Una buena carrera a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo dentro del rango esperado de {{low}}–{{high}} BPM",
-    "body_harder": "Una carrera exigente a {{pace}}. Tu esfuerzo de {{avgHR}} BPM superó el rango esperado de {{low}}–{{high}} BPM",
-    "body_easier": "Una carrera liviana a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo por debajo del rango esperado de {{low}}–{{high}} BPM"
+    "body_as_expected": "Una buena carrera de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo dentro del rango esperado de {{low}}–{{high}} BPM",
+    "body_harder": "Una carrera exigente de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM superó el rango esperado de {{low}}–{{high}} BPM",
+    "body_easier": "Una carrera liviana de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo por debajo del rango esperado de {{low}}–{{high}} BPM"
   },
   "strava": {
     "header_title": "Entrenamiento",

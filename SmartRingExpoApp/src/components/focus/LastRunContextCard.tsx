@@ -1,9 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { fontFamily, fontSize, borderRadius, spacing } from '../../theme/colors';
 import type { LastRunContext, EffortVerdict } from '../../types/focus.types';
@@ -51,34 +50,63 @@ function formatPace(paceMinsPerKm: number): string {
 
 function useBodyText() {
   const { t } = useTranslation();
+  const formatRunDate = useFormatRunDate();
   return (lastRun: LastRunContext): string => {
     const pace = formatPace(lastRun.paceMinsPerKm);
     const avgHR = Math.round(lastRun.avgHR);
     const low = lastRun.hrRangeLow;
     const high = lastRun.hrRangeHigh;
+    const distance = lastRun.distanceKm.toFixed(1);
+    const date = formatRunDate(lastRun.runDate);
     if (lastRun.effortVerdict === 'harder_than_expected') {
-      return t('last_run.body_harder', { pace, avgHR, low, high });
+      return t('last_run.body_harder', { pace, avgHR, low, high, distance, date });
     }
     if (lastRun.effortVerdict === 'easier_than_expected') {
-      return t('last_run.body_easier', { pace, avgHR, low, high });
+      return t('last_run.body_easier', { pace, avgHR, low, high, distance, date });
     }
-    return t('last_run.body_as_expected', { pace, avgHR, low, high });
+    return t('last_run.body_as_expected', { pace, avgHR, low, high, distance, date });
   };
+}
+
+const EFFORT_LABEL: Record<EffortVerdict, string> = {
+  as_expected: 'as expected',
+  harder_than_expected: 'harder than expected',
+  easier_than_expected: 'easier than expected',
+};
+
+function buildRunAnalysisQuery(lastRun: LastRunContext): string {
+  const pace = formatPace(lastRun.paceMinsPerKm);
+  const readiness = lastRun.bodyStateAtRun.readinessScore != null
+    ? `${lastRun.bodyStateAtRun.readinessScore}/100`
+    : 'unknown';
+  const sleep = lastRun.bodyStateAtRun.sleepMinutes != null
+    ? `${lastRun.bodyStateAtRun.sleepMinutes} min`
+    : 'unknown';
+  const hrv = lastRun.bodyStateAtRun.hrvVsNorm ?? 'unknown';
+
+  return (
+    `Analyze my last run:\n\n` +
+    `Activity: ${lastRun.runName} — ${lastRun.runDate.slice(0, 10)}\n` +
+    `Distance: ${lastRun.distanceKm.toFixed(1)} km | Pace: ${pace} | Avg HR: ${Math.round(lastRun.avgHR)} bpm\n` +
+    `Effort: ${EFFORT_LABEL[lastRun.effortVerdict]} (expected HR ${lastRun.hrRangeLow}–${lastRun.hrRangeHigh} bpm)\n\n` +
+    `Body state that day:\n` +
+    `- Readiness: ${readiness}\n` +
+    `- Sleep: ${sleep}\n` +
+    `- HRV vs baseline: ${hrv}\n\n` +
+    `Give me a thorough post-run analysis: how did my biometric state affect this run, was the effort level appropriate given my recovery, what does this tell me about my current fitness and training load? Also factor in weather conditions (temperature, wind) for that date if relevant.`
+  );
 }
 
 export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunContextCardProps) {
   const { t } = useTranslation();
-  const formatRunDate = useFormatRunDate();
-  const verdictLabel = useVerdictLabel();
   const buildBodyText = useBodyText();
 
   return (
     <View style={styles.glowWrap}>
       <Pressable
-        onPress={() => lastRun != null
-          ? router.push({ pathname: '/(tabs)/coach/strava-detail', params: { id: String(lastRun.stravaActivityId) } })
-          : undefined
-        }
+        onPress={() => {
+          router.push({ pathname: '/chat', params: { q: buildRunAnalysisQuery(lastRun!), mode: 'coach', activityId: String(lastRun!.stravaActivityId) } });
+        }}
         disabled={lastRun == null || isLoading}
         style={({ pressed }) => [styles.card, pressed && lastRun != null && styles.cardPressed]}
       >
@@ -91,18 +119,6 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
         <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
         <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.titleRow} numberOfLines={2}>
-            <Text style={styles.titleBold}>{t('last_run.card_title')}</Text>
-            {!isLoading && lastRun != null && (
-              <Text style={styles.titleMeta}>{`  ·  ${lastRun.distanceKm.toFixed(1)} km  ·  ${formatRunDate(lastRun.runDate)}  ·  ${verdictLabel(lastRun.effortVerdict)}`}</Text>
-            )}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.55)" />
-        </View>
-
-        {/* Body */}
         <View style={styles.body}>
           {isLoading ? (
             <>
@@ -123,20 +139,7 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
           ) : lastRun == null ? (
             <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>
           ) : (
-            <>
-              <Text style={styles.explanation}>{buildBodyText(lastRun)}</Text>
-              <TouchableOpacity
-                style={styles.coachChip}
-                onPress={() => router.push({
-                  pathname: '/(tabs)/settings/chat',
-                  params: { q: `Tell me more about my last run — ${lastRun.explanation}` },
-                })}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.coachChipText}>{t('last_run.talk_through')}</Text>
-                <Ionicons name="arrow-forward" size={13} color="rgba(255,255,255,0.55)" />
-              </TouchableOpacity>
-            </>
+            <Text style={styles.explanation}>{buildBodyText(lastRun)}</Text>
           )}
         </View>
       </Pressable>
@@ -173,52 +176,17 @@ const styles = StyleSheet.create({
   edgeBottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  titleRow: {
-    flex: 1,
-    flexShrink: 1,
-    paddingRight: 8,
-  },
-  titleBold: {
-    color: '#FFFFFF',
-    fontFamily: fontFamily.demiBold,
-    fontSize: 18,
-    letterSpacing: 0.2,
-  },
-  titleMeta: {
-    color: 'rgba(255,255,255,0.5)',
-    fontFamily: fontFamily.regular,
-    fontSize: 13,
-  },
   body: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     gap: 8,
   },
   explanation: {
     fontFamily: fontFamily.regular,
-    fontSize: 17,
+    fontSize: 14,
     color: 'rgba(255,255,255,0.85)',
-    lineHeight: 26,
-  },
-  coachChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  coachChipText: {
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.55)',
+    lineHeight: 22,
   },
 
   noStravaBody: {
