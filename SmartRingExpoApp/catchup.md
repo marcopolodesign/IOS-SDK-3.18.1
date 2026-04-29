@@ -4,6 +4,17 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-04-28: TrendsData — fix inverted date order in line charts
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** All three bucket builders (`buildDailyBuckets`, `buildWeeklyBuckets`, `buildMonthlyBuckets`) produce arrays newest-first (index 0 = today). The `TrendLineChart` renders points left→right in array order, so today was appearing on the left. Fixed by calling `.reverse()` on each bucket array in the `useMemo` inside `useTrendsData`, giving oldest-left / newest-right chronological order.
+
+**Files modified:**
+- `src/hooks/useTrendsData.ts` — added `.reverse()` to all three bucket builder calls
+
+---
+
 ### 2026-04-28: Run analysis — weather, splits, HR zones, activityId wiring, scroll fix
 
 **Source:** Claude Code — Macbook Pro

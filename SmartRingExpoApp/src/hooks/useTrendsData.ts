@@ -112,9 +112,9 @@ export function useTrendsData(domain: TrendsDomain | null, rangeMode: RangeMode)
   const hrvHistory = useMetricHistory<DayHRVData>('hrv', { initialDays: 14, fullDays: 180, enabled: isHRDomain });
 
   const buckets = useMemo<TrendBucket[]>(() => {
-    if (rangeMode === 'daily') return buildDailyBuckets();
-    if (rangeMode === 'weekly') return buildWeeklyBuckets();
-    return buildMonthlyBuckets();
+    if (rangeMode === 'daily') return buildDailyBuckets().reverse();
+    if (rangeMode === 'weekly') return buildWeeklyBuckets().reverse();
+    return buildMonthlyBuckets().reverse();
   }, [rangeMode]);
 
   const rawData = useMemo<Map<string, any>>(() => {
