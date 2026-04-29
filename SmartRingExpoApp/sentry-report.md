@@ -168,6 +168,40 @@
 | 7431794956 | Error: V8 getActivityModeData timed out after 10000ms | error | 2026-04-22T00:59:59Z | Skipped — V8 service off-limits per project constraints |
 | 7406751015 | WatchdogTermination: OS watchdog terminated app (possible RAM overuse) | fatal | 2026-04-13T00:38:05Z | Needs manual review — recurring fatal, no JS stack; requires Xcode Instruments profiling |
 
+## 2026-04-29
+
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7448232385 | Error: Unable to determine production URL (global "location" undefined) | error | 2026-04-29T01:48Z | Needs manual review — Metro/Expo bundler config issue; no JS fix possible from app code |
+| 7448177877 | Error: [object Object] — upsertDailySummary (SupabaseService) | error | 2026-04-29T01:04Z | Auto-fixed (PR #8) |
+| 7448177794 | Error: [object Object] — getSleepSessions (SupabaseService) | error | 2026-04-29T01:04Z | Auto-fixed (PR #8) |
+| 7448177757 | Error: [object Object] — getHeartRateReadings (SupabaseService) | error | 2026-04-29T01:04Z | Auto-fixed (PR #8) |
+| 7447487625 | Error: [object Object] — insertHeartRateReadings (SupabaseService) | error | 2026-04-28T17:47Z | Auto-fixed (PR #8) |
+| 7447487603 | Error: [object Object] — insertStressReadings (SupabaseService) | error | 2026-04-28T17:47Z | Auto-fixed (PR #8) |
+| 7440315301 | Error: [object Object] — getSportRecords (SupabaseService) | error | 2026-04-25T01:40Z | Auto-fixed (PR #8) |
+| 7447495272 | Error: Connection reset before pending data request completed | warning | 2026-04-28T17:52Z | Needs manual review — expected BLE race on reconnect |
+| 7446778802 | TypeError: JstyleBridge.getSleepAndActivityData is not a function | warning | 2026-04-28T12:08Z | Needs manual review — old production build calling a removed method; will resolve when users update |
+| 7446777310 | Error: Pending data request cancelled by JS timeout recovery | warning | 2026-04-28T12:07Z | Needs manual review — expected recovery path; JS timeout fired and cancelled native request |
+| 7408046962 | TypeError: event.breadcrumbs.values.map is not a function | error | 2026-04-13T13:51Z | Fix already in main (PR #2); events from old build, will stop once updated build is distributed |
+| 7444044573 | Error: sleep_ring_empty | warning | 2026-04-27T08:16Z | Needs manual review — ring returned no sleep; expected when ring not worn |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19Z | Needs manual review — expected BLE state; sync invoked while disconnected |
+| 7431794312 | Error: NOT_CONNECTED: No device connected (JstyleService) | warning | 2026-04-22T00:59Z | Needs manual review — same pattern; high-volume telemetry |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57Z | Needs manual review — expected BLE race condition |
+| 7431041612 | Error: getStepsData timed out after 5000ms | warning | 2026-04-21T19:45Z | Needs manual review — BLE timeout; `withNativeTimeout` already in place |
+| 7434372098 | Error: getSleepData timed out after 10000ms | warning | 2026-04-22T17:51Z | Needs manual review — BLE timeout; `withNativeTimeout` already in place |
+| 7434420472 | Error: com.apple.healthkit Code=6 Protected health data inaccessible | warning | 2026-04-22T18:08Z | Fix in PR #4; expected iOS background-lock condition |
+| 7444201961 | Error: Query timeout after 10s (StravaService) | error | 2026-04-27T09:51Z | Needs manual review — Strava API network timeout; retry logic may help |
+| 7434420739 | Error: autoReconnect.jstyle returned failure | error | 2026-04-22T18:08Z | Needs manual review — intentional diagnostic; consider downgrading to warning |
+| 7431794314 | Error: sleep_ring_empty (useHomeData) | warning | 2026-04-22T00:59Z | Needs manual review — ring returned 0 sleep records, Supabase fallback ran |
+
+### 2026-04-29 Notes
+- 21 issues active in last 24 h; 5 issues first seen today (7448232385, 7448177877, 7448177794, 7448177757).
+- **Auto-fixed (PR #8) — 6 `[object Object]` Supabase errors:** Root cause: `reportError()` in `src/utils/sentry.ts:19` called `String(error)` on Supabase's `PostgrestError` (a plain object, not an `Error` instance), producing `"[object Object]"`. Fix: prefer `error.message` when available. Single-line change covers all current and future Supabase error reporting. Branch `sentry/fix-7448177877` → PR #8.
+- **7448232385 (NEW TODAY) — production URL / location undefined:** Metro bundler cannot determine chunk hosting URL. This is a production Expo config issue — the global `location` variable (used by Metro's lazy chunk loader) is unavailable in the RN environment. Not fixable from app JS code; requires Expo/Metro bundler configuration review.
+- **7446778802 — JstyleBridge.getSleepAndActivityData undefined:** The method `getSleepAndActivityData` does not exist anywhere in the current source. An older production build is calling a method that was removed or renamed. Will self-resolve when users update. No source-code fix needed.
+- **7408046962 — breadcrumbs.values.map:** Source-code fix already applied (PR #2); events originate from older deployed build. No code change needed.
+- `gh` CLI not available — PR #8 created via GitHub MCP.
+
 ### 2026-04-23 Notes
 - 25 unresolved issues total; all 25 active within the last 24 h.
 - **Auto-fixed:** HealthKit `Code=5` / `Code=6` errors (PR #4). Both are expected iOS OS conditions — Code=6 fires when device is locked while a background task reads HealthKit, Code=5 fires before permissions are granted. Fix guards all `reportError` call-sites in `HealthKitDataFetchers.ts` and `HealthKitPermissions.ts` with `isExpectedHealthKitError()`. Branch: `sentry/fix-7434420472` → PR #4.
