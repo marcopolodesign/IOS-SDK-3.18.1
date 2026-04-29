@@ -22,7 +22,9 @@ import { Platform } from 'react-native';
 import HealthKitService from '../services/HealthKitService';
 import { stravaService } from '../services/StravaService';
 import { mergeActivities } from '../services/ActivityDeduplicator';
-import { formatSleepDuration, calculateSleepScore, extractSleepVitalsFromRaw } from '../utils/ringData/sleep';
+import { formatSleepDuration, calculateSleepScore, calculateSleepScoreFromStages, extractSleepVitalsFromRaw } from '../utils/ringData/sleep';
+import { getSleepOverride } from '../services/SleepOverrideService';
+import { fillSleepGap } from '../services/SleepGapFillService';
 
 type AuthUser = { user_metadata?: Record<string, any>; email?: string | null } | null | undefined;
 
@@ -635,7 +637,7 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
       lastNightSleep: {
         ...data.lastNightSleep,
         segments: data.lastNightSleep.segments
-          ? data.lastNightSleep.segments.map(s => ({ stage: s.stage, startTime: new Date(s.startTime), endTime: new Date(s.endTime) }))
+          ? data.lastNightSleep.segments.map(s => ({ stage: s.stage, startTime: new Date(s.startTime), endTime: new Date(s.endTime), isInferred: (s as any).isInferred }))
           : [],
         bedTime: new Date(data.lastNightSleep.bedTime),
         wakeTime: new Date(data.lastNightSleep.wakeTime),
@@ -665,7 +667,9 @@ async function loadFromCache(): Promise<Partial<HomeData> | null> {
  * Component: 'awake', 'rem', 'core', 'deep'
  */
 function mapSleepType(type: number): SleepStage {
-  // SDK SLEEPTYPE per demo docs: 1=Deep, 2=Light, 3=REM, other=Awake/none
+  // X3 SDK confirmed Apr 2026: 1=Deep, 2=Light, 3=REM, default=Awake
+  // Value 3 appears in classic REM positions (end of cycles, dominant in early morning)
+  // Value 4 (awake) has never been observed in practice — ring may not report it
   switch (type) {
     case 1: return 'deep';
     case 2: return 'core';
@@ -745,7 +749,10 @@ function deriveFromRaw(rawRecords: any[]): { night: SleepData | null; ringNaps: 
     const start = r.startTimestamp || parseStart(r.startTime_SleepData);
     const unit = Number(r.sleepUnitLength) || 1;
     const arr: number[] = r.arraySleepQuality || [];
-    const durationMin = Number(r.totalSleepTime) || arr.length * unit;
+    // Use recording-period length (arr.length × unit) for block grouping — NOT totalSleepTime.
+    // totalSleepTime is net sleep (excludes awake minutes), so it undershoots the 2-hour chunk
+    // boundary and creates false >60 min gaps between adjacent records.
+    const durationMin = arr.length * unit;
     return { start, unit, arr, durationMin };
   }).filter(r => typeof r.start === 'number' && r.start > 0);
 
@@ -832,7 +839,11 @@ function deriveFromRaw(rawRecords: any[]): { night: SleepData | null; ringNaps: 
       const dur = b.end - b.start;
       const isToday = b.start >= todayStartMs;
       const isShort = dur <= MAX_NAP_DURATION_MS;
-      return isToday && isShort;
+      // Early-morning blocks (start 0–9 AM, end before 9 AM) are sleep tails, not daytime naps
+      const startHour = new Date(b.start).getHours();
+      const endHour = new Date(b.end).getHours();
+      const isMorningSleepTail = startHour < 9 && endHour < 9;
+      return isToday && isShort && !isMorningSleepTail;
     })
     .map(blockToRingNap)
     .filter(n => n.totalMin > 0);
@@ -994,6 +1005,60 @@ function buildBlockResult(
 }
 
 
+async function pushSleepOverrideToSupabase(params: {
+  userId: string;
+  correctedBed: Date;
+  correctedWake: Date;
+  newSegs: SleepSegment[];
+  newScore: number;
+}): Promise<void> {
+  const { userId, correctedBed, correctedWake, newSegs, newScore } = params;
+  try {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(18, 0, 0, 0);
+
+    const { data: sessions } = await supabase
+      .from('sleep_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .neq('session_type', 'nap')
+      .gte('start_time', yesterday.toISOString())
+      .order('start_time', { ascending: false })
+      .limit(1);
+
+    const sessionId = (sessions as any)?.[0]?.id;
+    if (!sessionId) return;
+
+    const dur = (s: SleepSegment) => Math.round((s.endTime.getTime() - s.startTime.getTime()) / 60000);
+    await supabase
+      .from('sleep_sessions')
+      .update({
+        start_time:  correctedBed.toISOString(),
+        end_time:    correctedWake.toISOString(),
+        deep_min:    newSegs.filter(s => s.stage === 'deep').reduce((a, s) => a + dur(s), 0),
+        light_min:   newSegs.filter(s => s.stage === 'core').reduce((a, s) => a + dur(s), 0),
+        rem_min:     newSegs.filter(s => s.stage === 'rem').reduce((a, s) => a + dur(s), 0),
+        awake_min:   newSegs.filter(s => s.stage === 'awake').reduce((a, s) => a + dur(s), 0),
+        sleep_score: newScore,
+      })
+      .eq('id', sessionId);
+
+  } catch (e: any) {
+    console.warn('[override] Supabase push failed:', e?.message);
+  }
+}
+
+function scoreFromSegments(segs: SleepSegment[]): number {
+  const dur = (s: SleepSegment) => Math.round((s.endTime.getTime() - s.startTime.getTime()) / 60000);
+  return calculateSleepScoreFromStages({
+    deep:  segs.filter(s => s.stage === 'deep').reduce((a, s) => a + dur(s), 0),
+    light: segs.filter(s => s.stage === 'core').reduce((a, s) => a + dur(s), 0),
+    rem:   segs.filter(s => s.stage === 'rem').reduce((a, s) => a + dur(s), 0),
+    awake: segs.filter(s => s.stage === 'awake').reduce((a, s) => a + dur(s), 0),
+  });
+}
+
 function generateInsight(sleepScore: number, activityScore: number): { insight: string; type: 'sleep' | 'activity' | 'general' } {
   const t = i18next.t.bind(i18next);
   const insights = [
@@ -1097,8 +1162,10 @@ const getEmptyData = (): HomeData => ({
 });
 
 // Hook
-export function useHomeData(enabled = true): HomeData & { refresh: () => Promise<void> } {
+export function useHomeData(enabled = true): HomeData & { refresh: () => Promise<void>; applyOverrideNow: () => Promise<void> } {
   const [data, setData] = useState<HomeData>(getEmptyData);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   // Track app state for foreground detection
   const appState = useRef(AppState.currentState);
@@ -1862,6 +1929,48 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
       }
       if (finalSleepData && restingHR > 0) finalSleepData.restingHR = restingHR;
 
+      // Apply manual sleep time override + fill gap with estimated stages
+      try {
+        const override = await getSleepOverride();
+        if (override && finalSleepData) {
+          const correctedBed = new Date(override.bedTime);
+          const correctedWake = new Date(override.wakeTime);
+          const firstSeg = finalSleepData.segments[0];
+          const gapMinutes = firstSeg
+            ? Math.round((firstSeg.startTime.getTime() - correctedBed.getTime()) / 60000)
+            : 0;
+
+          if (gapMinutes >= 10 && firstSeg) {
+            const inferred = fillSleepGap(correctedBed, firstSeg.startTime);
+            const newSegs  = [...inferred, ...finalSleepData.segments];
+            const newTotal = finalSleepData.timeAsleepMinutes + gapMinutes;
+            const newScore = scoreFromSegments(newSegs);
+            finalSleepData = {
+              ...finalSleepData,
+              segments:          newSegs,
+              score:             newScore,
+              bedTime:           correctedBed,
+              wakeTime:          correctedWake,
+              inBedTime:         correctedBed,
+              timeAsleepMinutes: newTotal,
+              timeAsleep:        formatSleepDuration(newTotal),
+            };
+            if (userId) {
+              void pushSleepOverrideToSupabase({ userId, correctedBed, correctedWake, newSegs, newScore });
+            }
+          } else {
+            finalSleepData = {
+              ...finalSleepData,
+              bedTime:   correctedBed,
+              wakeTime:  correctedWake,
+              inBedTime: correctedBed,
+            };
+          }
+        }
+      } catch (e: any) {
+        console.warn('[useHomeData] Failed to apply sleep override:', e?.message);
+      }
+
       const sleep: SleepData = finalSleepData || {
         score: 0, timeAsleep: '0h 0m', timeAsleepMinutes: 0,
         restingHR, respiratoryRate: 0, segments: [], bedTime: new Date(), wakeTime: new Date(),
@@ -2314,12 +2423,67 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
     };
   }, []);
 
+  // Instantly apply a saved sleep override to current state — no BLE sync.
+  // Call this right after setSleepOverride() for immediate hypnogram update.
+  const applyOverrideNow = useCallback(async () => {
+    const override = await getSleepOverride();
+    if (!override) return;
+
+    const cur            = dataRef.current.lastNightSleep;
+    const correctedBed   = new Date(override.bedTime);
+    const correctedWake  = new Date(override.wakeTime);
+
+    // Strip any previously-inferred segments so we can re-fill cleanly
+    const realSegs = cur.segments.filter((s: any) => !s.isInferred);
+    const prevInferredMin = cur.segments
+      .filter((s: any) => s.isInferred)
+      .reduce((acc: number, s: any) => acc + Math.round((s.endTime.getTime() - s.startTime.getTime()) / 60000), 0);
+
+    const firstReal = realSegs[0];
+    const gapMin    = firstReal
+      ? Math.round((firstReal.startTime.getTime() - correctedBed.getTime()) / 60000)
+      : 0;
+
+    const newSegs  = gapMin >= 10 && firstReal
+      ? [...fillSleepGap(correctedBed, firstReal.startTime), ...realSegs]
+      : realSegs;
+    const extraMin = gapMin >= 10 ? gapMin : 0;
+    const newTotal = cur.timeAsleepMinutes - prevInferredMin + extraMin;
+    const newScore = scoreFromSegments(newSegs);
+
+    const newSleep: SleepData = {
+      ...cur,
+      segments:          newSegs,
+      score:             newScore,
+      bedTime:           correctedBed,
+      wakeTime:          correctedWake,
+      inBedTime:         correctedBed,
+      timeAsleepMinutes: newTotal,
+      timeAsleep:        formatSleepDuration(newTotal),
+    };
+    const unified = newSegs.length > 0
+      ? [{ segments: newSegs, bedTime: correctedBed, wakeTime: correctedWake, label: 'Night' as const },
+         ...dataRef.current.unifiedSleepSessions.filter(s => s.label !== 'Night')]
+      : dataRef.current.unifiedSleepSessions;
+
+    // Update React state immediately
+    setData(prev => ({ ...prev, lastNightSleep: newSleep, sleepScore: newScore, unifiedSleepSessions: unified }));
+
+    // Push override to Supabase so AI coach sees corrected data
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id;
+    if (userId) {
+      void pushSleepOverrideToSupabase({ userId, correctedBed, correctedWake, newSegs, newScore });
+    }
+  }, []);
+
   return {
     ...data,
     refreshMissingCardData,
     refresh: async () => {
       await fetchData(true, 'manual');
-    }, // Always force refresh on manual refresh
+    },
+    applyOverrideNow,
   };
 }
 

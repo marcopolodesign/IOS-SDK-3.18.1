@@ -73,7 +73,7 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 - **User ID:** Never use `authService.currentUser` (it's always undefined). Always use `supabase.auth.getUser()` directly.
 - **Sync services** must handle: no user ID, no data, JSON parse errors gracefully.
 - **Native bridge calls** must always use `withNativeTimeout()` wrapper to prevent hanging promises.
-- **Sleep quality enum:** SDK values are 1=awake, 2=light, 3=deep (not the reverse).
+- **Sleep quality enum:** X3 SDK official (`infoView.m`): 1=deep, 2=light, 3=REM, other=awake. Source: `每分钟的睡眠质量，1代表深睡 2代表浅睡 3代表REM 其他代表清醒`
 
 ## i18n Rules
 

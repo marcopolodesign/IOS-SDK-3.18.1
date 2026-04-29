@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, LayoutChangeEvent } from 'react-native';
-import { router } from 'expo-router';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, LayoutChangeEvent, ActionSheetIOS } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Rect } from 'react-native-svg';
 import Reanimated, {
@@ -12,7 +12,7 @@ import Reanimated, {
   Easing,
 } from 'react-native-reanimated';
 import { fontFamily, fontSize } from '../../theme/colors';
-import { useTypewriter } from '../../hooks/useTypewriter';
+import type { CoachMode } from '../../types/focus.types';
 
 const AnimatedRect = Reanimated.createAnimatedComponent(Rect);
 
@@ -25,12 +25,13 @@ function calcPerimeter(w: number, h: number) {
   return 2 * (w - 2 * R) + 2 * (h - 2 * R) + 2 * Math.PI * R;
 }
 
-// Comet tail layers: [dashLength, strokeWidth, opacity, trailOffset]
-const LAYERS: [number, number, number, number][] = [
-  [120, 9,   0.07, 140],  // outermost glow
-  [90,  6,   0.14, 90],   // mid glow
-  [50,  3.5, 0.28, 45],   // inner glow
-  [18,  1.8, 0.80, 0],    // sharp head
+type CometLayerConfig = [dashLen: number, strokeWidth: number, opacity: number, trailOffset: number, color: string];
+
+const LAYERS: CometLayerConfig[] = [
+  [150, 12, 0.06, 180, '#7C3AED'],  // deep violet tail glow
+  [100,  8, 0.13, 110, '#3B82F6'],  // blue mid glow
+  [ 55,  5, 0.32,  50, '#60A5FA'],  // light blue inner
+  [ 22,  2, 0.88,   0, '#C4B5FD'],  // bright lavender head
 ];
 
 function FocusIcon() {
@@ -54,8 +55,22 @@ function SendIcon() {
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
       <Path
         d="M12 19V5M5 12l7-7 7 7"
-        stroke="white"
+        stroke="#000000"
         strokeWidth={2.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <Svg width={11} height={11} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M6 9l6 6 6-6"
+        stroke="rgba(255,255,255,0.55)"
+        strokeWidth={2.2}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -71,6 +86,7 @@ function CometLayer({
   opacity,
   trailOffset,
   perimeter,
+  color,
 }: {
   dims: { width: number; height: number };
   dashOffset: Reanimated.SharedValue<number>;
@@ -79,6 +95,7 @@ function CometLayer({
   opacity: number;
   trailOffset: number;
   perimeter: number;
+  color: string;
 }) {
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: dashOffset.value + trailOffset,
@@ -91,7 +108,8 @@ function CometLayer({
       height={dims.height - 1}
       rx={R}
       fill="none"
-      stroke={`rgba(255,255,255,${opacity})`}
+      stroke={color}
+      strokeOpacity={opacity}
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeDasharray={`${dashLen} ${perimeter - dashLen}`}
@@ -103,16 +121,37 @@ function CometLayer({
 export function AskCoachButton() {
   const [text, setText] = useState('');
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
-  const placeholder = useTypewriter();
+  const [mode, setMode] = useState<CoachMode>('coach');
+  function openModeSelector() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: ['Cancel', 'Coach', 'Analyst'],
+        cancelButtonIndex: 0,
+        title: 'Response Mode',
+        message: 'Coach is warm and concise. Analyst uses deep thinking for detailed data analysis.',
+        userInterfaceStyle: 'dark',
+      },
+      (index) => {
+        if (index === 1) setMode('coach');
+        if (index === 2) setMode('analyst');
+      }
+    );
+  }
 
   const dashOffset = useSharedValue(0);
   const beamOpacity = useSharedValue(0);
+  const cardOpacity = useSharedValue(0);
 
-  useEffect(() => {
-    if (!dims) return;
-    const p = calcPerimeter(dims.width, dims.height);
+  // Ref so useFocusEffect can read dims without it being in the dep array
+  const dimsRef = useRef(dims);
+  useEffect(() => { dimsRef.current = dims; }, [dims]);
+
+  const runAnimation = useCallback((w: number, h: number) => {
+    const p = calcPerimeter(w, h);
     dashOffset.value = 0;
     beamOpacity.value = 1;
+    cardOpacity.value = 0;
     dashOffset.value = withTiming(-p * 1.15, {
       duration: SWEEP_DURATION,
       easing: Easing.inOut(Easing.cubic),
@@ -121,9 +160,29 @@ export function AskCoachButton() {
       FADE_START,
       withTiming(0, { duration: FADE_DURATION, easing: Easing.out(Easing.quad) }),
     );
+    cardOpacity.value = withDelay(
+      FADE_START,
+      withTiming(1, { duration: FADE_DURATION, easing: Easing.in(Easing.quad) }),
+    );
+  }, []);
+
+  // Initial play — fires once after first layout
+  useEffect(() => {
+    if (!dims) return;
+    runAnimation(dims.width, dims.height);
   }, [dims?.width, dims?.height]);
 
+  // Replay every time the Coach tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const d = dimsRef.current;
+      if (!d) return; // first mount: dims not set yet, useEffect above handles it
+      runAnimation(d.width, d.height);
+    }, [])
+  );
+
   const overlayStyle = useAnimatedStyle(() => ({ opacity: beamOpacity.value }));
+  const cardBgStyle = useAnimatedStyle(() => ({ opacity: cardOpacity.value }));
 
   const perimeter = dims ? calcPerimeter(dims.width, dims.height) : 0;
 
@@ -139,37 +198,45 @@ export function AskCoachButton() {
     const q = text.trim();
     if (q) {
       setText('');
-      router.push({ pathname: '/chat', params: { q } });
+      router.push({ pathname: '/chat', params: { q, mode } });
     } else {
-      router.push('/chat');
+      router.push({ pathname: '/chat', params: { mode } });
     }
   }
 
   return (
     <View style={styles.wrapper} onLayout={handleLayout}>
-      <View style={styles.btn}>
-        <View style={styles.left}>
-          <FocusIcon />
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            placeholder={placeholder}
-            placeholderTextColor="rgba(255,255,255,0.45)"
-            returnKeyType="send"
-            onSubmitEditing={handleSend}
-            blurOnSubmit={false}
-          />
+      <Reanimated.View style={[StyleSheet.absoluteFill, styles.cardBg, cardBgStyle]} />
+
+      <View style={styles.content}>
+        <TextInput
+          style={styles.input}
+          value={text}
+          onChangeText={setText}
+          placeholder="Ask your coach anything..."
+          placeholderTextColor="rgba(255,255,255,0.45)"
+          returnKeyType="send"
+          onSubmitEditing={handleSend}
+          blurOnSubmit={false}
+        />
+        <View style={styles.toolbar}>
+          <View style={styles.modeGroup}>
+            <FocusIcon />
+            <TouchableOpacity style={styles.modeBtn} onPress={openModeSelector} activeOpacity={0.7}>
+              <Text style={styles.modeBtnText}>{mode === 'coach' ? 'Coach' : 'Analyst'}</Text>
+              <ChevronDownIcon />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSend} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <SendIcon />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.sendBtn} onPress={handleSend} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <SendIcon />
-        </TouchableOpacity>
       </View>
 
       {dims && (
         <Reanimated.View style={[StyleSheet.absoluteFill, overlayStyle]} pointerEvents="none">
           <Svg width={dims.width} height={dims.height}>
-            {LAYERS.map(([dashLen, sw, op, trail]) => (
+            {LAYERS.map(([dashLen, sw, op, trail, color]) => (
               <CometLayer
                 key={trail}
                 dims={dims}
@@ -179,6 +246,7 @@ export function AskCoachButton() {
                 opacity={op}
                 trailOffset={trail}
                 perimeter={perimeter}
+                color={color}
               />
             ))}
           </Svg>
@@ -191,38 +259,49 @@ export function AskCoachButton() {
 const styles = StyleSheet.create({
   wrapper: {
     borderRadius: R,
-  },
-  btn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    borderRadius: R,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
     overflow: 'hidden',
   },
-  left: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
+  cardBg: {
+    backgroundColor: 'rgba(0,0,0,0.95)',
+  },
+  content: {
+    paddingTop: 18,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
   },
   input: {
     color: '#FFFFFF',
-    fontSize: fontSize.md,
+    fontSize: fontSize.lg,
     fontFamily: fontFamily.regular,
-    flexShrink: 1,
-    flex: 1,
     padding: 0,
+    marginBottom: 14,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeBtnText: {
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.lg,
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.1,
   },
   sendBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },

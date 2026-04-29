@@ -387,7 +387,11 @@
     "date_yesterday": "Ayer",
     "date_days_ago": "Hace {{days}} días",
     "view_strava": "Ver en Strava",
-    "hr_comparison": "FC media: {{actual}} bpm · Esperada: ~{{expected}} bpm"
+    "hr_comparison": "FC media: {{actual}} bpm · Esperada: ~{{expected}} bpm",
+    "talk_through": "Habla con el Coach",
+    "body_as_expected": "Una buena carrera a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo dentro del rango esperado de {{low}}–{{high}} BPM",
+    "body_harder": "Una carrera exigente a {{pace}}. Tu esfuerzo de {{avgHR}} BPM superó el rango esperado de {{low}}–{{high}} BPM",
+    "body_easier": "Una carrera liviana a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo por debajo del rango esperado de {{low}}–{{high}} BPM"
   },
   "strava": {
     "header_title": "Entrenamiento",

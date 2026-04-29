@@ -4,6 +4,245 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+## 2026-04-28: Performance fix — Today-tab lag (FocusScreen offscreen animations)
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Diagnosed and fixed a severe Today-tab lag caused by two infinite Reanimated `withRepeat` loops driving a 90%-screen-height blurred SVG in `FocusScreen` — running continuously in the background because `NativeTabs` (UIKit `UITabBarController`) sibling-mounts all tabs. Replaced the mount-only `useEffect` with `useFocusEffect` + `cancelAnimation` cleanup so the animations pause when the Coach tab is off-screen and resume on re-focus. Also removed three debug `console.log` calls (stages block + override logs) that ran on every sync, and made `IllnessWatchCard` properly memoized with a value-equality comparator so `React.memo` actually works despite `illness` being a new object reference each render.
+
+**Files modified:**
+- `src/screens/FocusScreen.tsx` — replaced `useEffect` (no cleanup) with `useFocusEffect(useCallback(...))` + `cancelAnimation(blobFloat)` / `cancelAnimation(overlayOpacity)` in the cleanup return; added `cancelAnimation` + `useFocusEffect` imports; removed `useEffect` import
+- `src/hooks/useHomeData.ts` — removed stages debug block (4-pass filter+reduce + console.log on every sync at ~line 1600), removed `✏️ [override]` console.log inside `pushSleepOverrideToSupabase`, removed `✏️ [useHomeData] Sleep override:` console.log in fetchData
+- `src/components/focus/IllnessWatchCard.tsx` — renamed function to `IllnessWatchCardInner`; added `useMemo` for `edgeColors` (stops 4 new array allocations per render); wrapped export in `React.memo` with custom `areEqual` comparator (checks `status`, `score`, `stale` by value — prevents re-renders when `illness` object is recreated with same data)
+
+**Key notes:**
+- Root cause confirmed: `NativeTabs` in `app/(tabs)/_layout.tsx` is UIKit `UITabBarController` — all tab screens are mounted simultaneously on first render, so `FocusScreen` runs even while user is on Today
+- `withRepeat(..., -1, true)` with no cleanup = infinite animation driving a `feGaussianBlur stdDeviation="50"` SVG blob (CoreGraphics rasterises on every frame) = heavy GPU + JS work offscreen
+- `cancelAnimation` leaves shared value at its current position; `withTiming(1, ...)` on re-focus starts from that frozen value — visually seamless, no reset needed
+- `React.memo` custom comparator on `IllnessWatchCard` compares `illness.status`, `illness.score`, `illness.stale` — sufficient since visual output only changes when these change; `details.hrDelta` etc. only change with status/score
+- No native rebuild required — JS-only changes, OTA-eligible
+
+---
+
+### 2026-04-28: AskCoachButton — replay animation on every Coach tab focus
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Animation now replays every time the user navigates back to the Coach tab, not just on first mount. Added `useFocusEffect` (from `expo-router`) with a stable callback that reads dims via `dimsRef` to avoid stale closure. `runAnimation` extracted as a stable `useCallback` that resets `cardOpacity` to 0 before each play — required for re-runs since the simplify pass had removed the reset (correct for first mount, but needed for replays).
+
+**Files modified:**
+- `src/components/focus/AskCoachButton.tsx` — added `useCallback`, `useRef`, `useFocusEffect`; extracted `runAnimation`; added `dimsRef` + sync effect; `useFocusEffect` guard skips if dims not yet known (first layout handled by existing `useEffect`)
+
+**Key notes:**
+- `useFocusEffect` fires before layout on initial mount → `dimsRef.current` is null → early return; `useEffect([dims])` handles the first play
+- On re-focus dims is stable → only `useFocusEffect` fires (not `useEffect`), no double-play
+- `cardOpacity.value = 0` is now inside `runAnimation` (load-bearing for replays even though redundant on first mount)
+
+---
+
+### 2026-04-28: AskCoachButton — colored comet animation + card materialise effect
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Replaced the white SVG comet border animation with a blue→violet→lavender colored gradient comet. The card now starts fully transparent on mount; the colored comet sweeps around the border for ~4.2 s, then fades out while the black card background simultaneously fades in — the card "materialises" as the animation resolves. BlurView removed (was 95% opaque anyway). Mode selector (Coach / Analyst) added to toolbar with ActionSheet.
+
+**Files modified:**
+- `src/components/focus/AskCoachButton.tsx` — new `CometLayerConfig` type; LAYERS updated with hex colors; `cardOpacity` shared value drives black-bg fade-in; JSX restructured (bg layer + content separated); BlurView dropped; ChevronDownIcon + openModeSelector added; styles for `cardBg` / `content` / `toolbar` / `modeGroup` / `modeBtn`
+
+**Key notes:**
+- `wrapper` has `overflow: hidden` + `borderRadius: R` — `cardBg` does not need its own `borderRadius`
+- `cardOpacity` initialises to 0 via `useSharedValue(0)`; no reset inside useEffect (was redundant)
+- Reanimated cancels previous animation automatically when a new `withTiming` is assigned to a shared value — dims-change mid-animation is safe
+
+---
+
+### 2026-04-28: Sleep override — score recalculation + hypnogram boundary labels
+
+**Source:** Claude Code — Macbook Pro
+
+**Score recalculation**: Added `scoreFromSegments(segs)` helper (uses `calculateSleepScoreFromStages`) — recomputes score from all segment stage minutes including the inferred gap. Both the `fetchData` gap-fill path and `applyOverrideNow` now set `score: newScore` and `sleepScore: newScore` so the sleep score card updates immediately alongside the hypnogram.
+
+**Hypnogram boundary labels**: The dashed vertical "RING ON" separator now shows "Estimated" (right-aligned) on the left side and "Recorded data" (left-aligned) on the right side, both at `fontSize=8` and 35% opacity.
+
+**Files:** `src/hooks/useHomeData.ts`, `src/components/home/SleepHypnogram.tsx`
+
+---
+
+### 2026-04-28: Sleep edit UX — instant hypnogram update + drag timeline
+
+**Source:** Claude Code — Macbook Pro
+
+**Hypnogram instant update** (`src/hooks/useHomeData.ts`, `src/context/HomeDataContext.tsx`):
+Added `applyOverrideNow()` — reads the saved override from AsyncStorage, strips existing inferred segments, re-applies `fillSleepGap`, calls `setData` immediately (no BLE). Rebuilds `unifiedSleepSessions` in the same call. `SleepTab.onSaved` now calls `applyOverrideNow()` first (instant hypnogram), then `homeData.refresh()` (background ring sync). Also fixed `loadFromCache` to preserve `isInferred` on segments (was dropped on hot restart).
+
+**Drag timeline modal** (`src/components/sleep/SleepTimeEditModal.tsx` — full rewrite):
+Replaced +/− pickers with horizontal drag timeline (6 PM → 2 PM, 20h). Moon/sun thumb handles; snaps to 15-min; 30-min minimum gap; live readouts update on drag; PanResponder per handle with refs for stale-closure safety.
+
+**Supabase**: overrides are local-only (AsyncStorage). Supabase keeps original ring data unmodified.
+
+**Files:** `src/hooks/useHomeData.ts`, `src/context/HomeDataContext.tsx`, `src/components/sleep/SleepTimeEditModal.tsx`, `src/screens/home/SleepTab.tsx`
+
+---
+
+### 2026-04-28: FocusScreen — AskCoachButton pinned above tab bar
+
+**Source:** Claude Code — Macbook Pro
+
+`AskCoachButton` removed from the `ScrollView` and repositioned as `position: absolute` inside the `LinearGradient` container. Uses `useBottomTabBarHeight()` from `@react-navigation/bottom-tabs` to measure the exact tab bar height at runtime, then sets `bottom: tabBarHeight + 24` so the button always clears the tab bar by ~24px regardless of device. `scrollContent.paddingBottom` set to 160px to prevent cards from hiding behind the fixed bar.
+
+**Files:** `src/screens/FocusScreen.tsx`
+
+---
+
+### 2026-04-28: LastRunContextCard — title restructure + HR range body text
+
+**Source:** Claude Code — Macbook Pro
+
+Header collapsed to a single inline row: "**Last Run**  ·  5.2 km  ·  Yesterday  ·  As expected  ›" — using nested `<Text>` spans (demiBold title + regular dimmer meta on the same line). Body text now built from run fields, format: *"A solid run at 4:54/km. Your effort of 148 BPM matched your expected range of 140–156 BPM"* with harder/easier variants. HR range is `expectedHR ± 8 BPM` (the verdict threshold). `hrRangeLow`/`hrRangeHigh` added to `LastRunContext` type and `ReadinessService`. Translation keys `body_as_expected/harder/easier` added to en/es. Removed `hrComparison` row and unused `verdictColor`.
+
+**Files:** `src/types/focus.types.ts`, `src/services/ReadinessService.ts`, `src/components/focus/LastRunContextCard.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+### 2026-04-28: Fix false nap detection from adjacent 2-hour ring chunks
+
+**Source:** Claude Code — Macbook Pro
+
+**Root cause:** The X3 ring stores sleep in 2-hour paginated chunks. Each chunk has `totalSleepTime` = net sleep minutes (excluding awake). `deriveFromRaw` was using `totalSleepTime` to compute block end times, which undershot the actual chunk boundary. Example: chunk 1 (2:41–4:41 AM) with 60 min net sleep → block end = 3:41 AM → 60-min gap to chunk 2 (4:41 AM) → separate blocks. Both blocks were <180 min → neither was a night candidate → previous night chosen as "night", today's chunks became ring naps.
+
+**Fix 1 (primary):** Changed `durationMin` in `normalizedAll` to always use `arr.length × unit` (recording period length) instead of `totalSleepTime`. The quality array already encodes awake minutes per-minute, so period length is always `arr.length × unit`. With correct period lengths, adjacent chunks have 0-min gaps and merge into one ≥180 min night block.
+
+**Fix 2 (guard):** Added early-morning sleep-tail guard to ring nap filter: blocks with `startHour < 9 && endHour < 9` are never classified as naps (they're sleep fragments, not daytime naps). Belt-and-suspenders in case period-length fix doesn't cover an edge case.
+
+**Verified via Supabase:** Only one sleep session exists for Apr 28 — a single night session from 2:41–6:40 AM (239 min). No nap sessions stored. The false nap was purely from ring-derived misclassification.
+
+**File modified:** `src/hooks/useHomeData.ts`
+
+---
+
+### 2026-04-28: Sleep gap-fill — ultradian model for missing ring data
+
+**Source:** Claude Code — Macbook Pro
+
+When the ring fails to record the beginning of the night (hardware miss), and the user corrects their bedtime via the edit modal, the app now fills the unrecorded gap with estimated sleep stages using a standard ultradian architecture model.
+
+**SleepGapFillService** (`src/services/SleepGapFillService.ts` — new):
+Pure function `fillSleepGap(gapStart, gapEnd)` generates per-minute stages from an ultradian model (3 cycle templates: deep-heavy → balanced → REM-heavy). Groups consecutive same-stage minutes into `SleepSegment[]` objects, each with `isInferred: true`. Returns empty array if gap < 10 minutes.
+
+**useHomeData.ts** wiring:
+After applying a sleep time override, if the corrected bedtime is ≥10 minutes before the first real ring segment, calls `fillSleepGap` and prepends inferred segments. Also adds `gapMinutes` to `timeAsleepMinutes`/`timeAsleep` so the total sleep display is correct. Score is not recomputed — it remains based on real ring data only.
+
+**SleepHypnogram.tsx** rendering:
+- `SleepSegment.isInferred?: boolean` added to the interface
+- Inferred rect blocks and connectors render at `opacity={0.4}` (visually distinct from confirmed data)
+- A dashed vertical "RING ON" separator line appears at the boundary between inferred and real data
+- BEDTIME stat shows `~11:00 PM` (tilde prefix) when estimated data is present
+- `getXPosition` refactored to `useCallback` so `inferredBoundaryX` memoization works correctly
+
+**SleepStagesChart.tsx**: Added `isInferred?: boolean` to its `SleepSegment` interface (same type used by useHomeData).
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/components/home/SleepHypnogram.tsx`, `src/components/home/SleepStagesChart.tsx`
+**Files created:** `src/services/SleepGapFillService.ts`
+
+---
+
+### 2026-04-28: Sleep time edit + stage verification + confirmed X3 sleep mapping
+
+**Source:** Claude Code — Macbook Pro
+
+Investigated why ring reported 2:41 AM bedtime (root cause: hardware didn't capture before that — not a code bug). Added two mitigations + permanent diagnostics:
+
+**Manual sleep time editor** (`src/components/sleep/SleepTimeEditModal.tsx` — new):
+Bottom-sheet modal with +/− hour/minute pickers for bed and wake time. Pencil icon in the hypnogram card header (`SleepTab.tsx`) opens it. Uses `SleepOverrideService` to persist overrides keyed by local date (`sleep_time_override_v1` in AsyncStorage). On save, calls `homeData.refresh()` to re-derive sleep from ring data with the corrected times applied.
+
+**SleepOverrideService** (`src/services/SleepOverrideService.ts` — new):
+AsyncStorage CRUD for `{ bedTime, wakeTime }` overrides. `dateKey()` uses local `getFullYear/getMonth/getDate` (not UTC `.toISOString()`) to avoid midnight-timezone bug. Applied in `useHomeData.ts` after ring sync — patches `finalSleepData.bedTime/wakeTime/inBedTime` if an override exists for today.
+
+**Sleep stage mapping confirmed** (`src/hooks/useHomeData.ts`, `X3_JSTYLE_SDK.md`, `CLAUDE.md`, `src/utils/ringData/sleep.ts`):
+Definitive confirmation from SDK demo `infoView.m`: 1=Deep, 2=Light, 3=REM, other=Awake. `mapSleepType` in `useHomeData.ts` updated to reflect this (was previously wrong for case 3). Metro log added: `🛏️ [stages] deep=Xm light=Ym rem=Zm awake=Wm` — confirmed 51m REM on first real run.
+
+**Permanent Xcode NSLog** (`ios/JstyleBridge/JstyleBridge.m`):
+`handleSleepData:` now logs last 3 records' raw quality arrays when pagination completes (`🛏️ [raw][N] startTime Nmin unit=N stages=1,2,3,...`). Permanent — not a one-off.
+
+**Type 82 investigation + removal**: Temporarily added `getSleepAndActivityData` / `handleSleepAndActivityData` to compare type 82 vs type 27. Confirmed type 82 has identical 2-hour chunking — no advantage for missing bedtime data. All type82 diagnostic code removed.
+
+**CoachMode deduplication** (`src/types/focus.types.ts`): `CoachMode = 'coach' | 'analyst'` moved to shared types file; removed duplicate definitions from `AskCoachButton.tsx` and `AIChatScreen.tsx`.
+
+**Files modified:** `ios/JstyleBridge/JstyleBridge.m`, `src/hooks/useHomeData.ts`, `src/screens/home/SleepTab.tsx`, `src/types/focus.types.ts`, `src/components/focus/AskCoachButton.tsx`, `src/screens/AIChatScreen.tsx`, `X3_JSTYLE_SDK.md`, `CLAUDE.md`, `src/utils/ringData/sleep.ts`
+**Files created:** `src/services/SleepOverrideService.ts`, `src/components/sleep/SleepTimeEditModal.tsx`
+**Xcode rebuild required** for NSLog to appear in Console.app.
+
+---
+
+### 2026-04-28: Coach UI polish — bold input, chip spacing, conversational LastRunContextCard
+
+**Source:** Claude Code — Macbook Pro
+
+Three visual changes to the coach interface:
+
+1. **Input bold** (`AIChatScreen.tsx`): `styles.input.fontFamily` changed from `regular` to `demiBold` — applies to both the typed text and the placeholder ("Ask your coach anything...").
+
+2. **Chip-to-input spacing** (`AIChatScreen.tsx`): `inputContainer.marginTop` increased from 8 → 20, creating more breathing room between the suggestion chips and the input field.
+
+3. **LastRunContextCard conversational rewrite** (`LastRunContextCard.tsx`): Explanation text is now plain voice (no italic, no quotes), 17px to match the input placeholder size. Added "Talk this through →" chip that deep-links to the coach with the explanation pre-filled as a query. HR comparison line kept as a dimmer supporting detail. Translation keys `last_run.talk_through` added to `en.json` + `es.json`.
+
+**Files:** `src/screens/AIChatScreen.tsx`, `src/components/focus/LastRunContextCard.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+---
+
+### 2026-04-28: AskCoachButton — dark BlurView card + clean toolbar
+
+**Source:** Claude Code — Macbook Pro
+
+Card background replaced with `BlurView intensity=60 tint="dark"` + `rgba(0,0,0,0.35)` overlay — gives a frosted dark glass look. Border moved to `wrapper` so `overflow: hidden` clips the blur correctly to the border radius. AI icon and mode selector grouped in a single `modeGroup` row (no borders, no bg on either element). Send button unchanged.
+
+**Files:** `src/components/focus/AskCoachButton.tsx`
+
+---
+
+### 2026-04-28: Sleep — Stage mapping fix + manual bedtime editor
+
+**Source:** Claude Code — Macbook Pro
+
+**What changed:**
+
+**Bug fix — sleep stage enum was wrong (3↔4 swapped):**
+The `mapSleepType` function in `useHomeData.ts` had `3 → 'rem'` and `4 → 'awake'` (falls to default), but X3 SDK docs (`X3_JSTYLE_SDK.md`) say `3 = Awake`, `4 = REM`. This caused every awake period to render as REM and every REM period to show as awake in the hypnogram. Fixed to `3 → 'awake'`, `4 → 'rem'`. Also corrected the stale comment in `sleep.ts` (was documenting QCBand enum, not X3) and the wrong line in `CLAUDE.md`.
+
+**Diagnosis — why ring showed 2:30 AM as bedtime:**
+From Metro logs: the ring only synced 2 records for last night (2:41 AM and 4:41 AM), nothing before that. The prior night block ends at 6:45 AM Apr 27, and there is a 20-hour gap to the next record at 2:41 AM Apr 28 — the ring simply didn't capture (or lost) the earlier part of the night. Bridge pagination and `parseStart` were confirmed correct. This is a hardware data-capture issue, not a parsing bug.
+
+**New feature — manual sleep time editor:**
+Pencil icon added to the sleep hypnogram card header (next to the info button). Tapping opens a bottom-sheet modal with +/− time pickers for "In Bed" and "Wake Up" times. Override is persisted to AsyncStorage (`sleep_time_override_v1`, keyed by local date). On next sync, `useHomeData` reads the override and replaces `bedTime`/`wakeTime`/`inBedTime` in `finalSleepData` before committing to state. "Reset to Ring Data" button clears the override.
+
+**Simplify fixes applied:**
+- `CoachMode` type was duplicated in `AskCoachButton.tsx` and `AIChatScreen.tsx` — moved to `focus.types.ts`, imported in both files
+- `clamp()` dead function removed from `SleepTimeEditModal.tsx`
+- `handleSave` wrapped in try/catch/finally so `saving` always resets even on AsyncStorage error
+- `dateKey()` in `SleepOverrideService` was using `toISOString().slice(0,10)` (UTC) — switched to local `getFullYear/getMonth/getDate` to avoid wrong date at midnight in UTC+ timezones
+- Empty `catch {}` on override read replaced with `console.warn`
+
+**Files created:**
+- `src/services/SleepOverrideService.ts` — AsyncStorage CRUD for per-day sleep time overrides
+- `src/components/sleep/SleepTimeEditModal.tsx` — Bottom-sheet modal with +/− hour/minute pickers for bed and wake time
+
+**Files modified:**
+- `src/hooks/useHomeData.ts` — Fixed `mapSleepType` (3=awake, 4=rem), added `getSleepOverride` import + apply after ring sync, `console.warn` on catch
+- `src/screens/home/SleepTab.tsx` — Added `editModalVisible` state, pencil icon in hypnogram card `headerRight`, `SleepTimeEditModal` mount
+- `src/types/focus.types.ts` — Added `export type CoachMode`
+- `src/components/focus/AskCoachButton.tsx` — Removed local `CoachMode` type, imports from `focus.types`
+- `src/screens/AIChatScreen.tsx` — Removed local `CoachMode` type, imports from `focus.types`
+- `src/utils/ringData/sleep.ts` — Corrected enum comment (was QCBand, now X3)
+- `CLAUDE.md` — Corrected sleep quality enum note
+
+**Key notes:**
+- The stage mapping bug (3↔4) was present since the hypnogram was built — all historical sleep hypnograms had awake/REM swapped
+- Record [0] in the logs (`arraySleepQuality.length=undefined`, 119 min) is the active/unsettled session — those minutes fill as `awake` (stage 0 → default). Normal behavior
+- Bridge/SDK fetching confirmed correct: `handleSleepData` paginates on `parsed.dataEnd`, 69 records returned across 2 pages, matches demo pattern
+- Manual override applies only to `bedTime`/`wakeTime`/`inBedTime` display fields — segments and score still come from ring data
+
+---
+
 ### 2026-04-28: IllnessWatchCard — Siri-style multi-hue gradient border
 
 **Source:** Claude Code — Macbook Pro
@@ -18,23 +257,13 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
-### 2026-04-27: Coach mode selector — Coach vs Analyst pill
+### 2026-04-27: Coach mode selector — AskCoachButton toolbar + ActionSheet
 
 **Source:** Claude Code — Macbook Pro
 
-Added a dark two-segment pill toggle to the coach chat input bar (between text input and send arrow). Tapping switches between **Coach** mode (warm, concise, Haiku) and **Analyst** mode (data-first, detailed, Sonnet with extended thinking). The pill has a dark background (`rgba(0,0,0,0.80)`) that stands out against the coach screen gradient. Active segment: white bg + black text. Inactive: muted white text.
+Redesigned the coach input area into two rows: text input ("Hey coach...") on top, then a toolbar row: **AI icon** (left) | **Mode + chevron** (center) | **Send arrow** (right). Tapping the mode button opens a native iOS dark `ActionSheetIOS` (`userInterfaceStyle: 'dark'`) to choose Coach or Analyst. Removed `ModePill`. Added `ChevronDownIcon`. `inputContainer` is now a plain text wrapper; toolbar lives below it inside the same `inputWrapper`.
 
-**Frontend (`AIChatScreen.tsx`):**
-- `CoachMode = 'coach' | 'analyst'` type + `coachMode` state
-- `ModePill` component with haptic feedback on switch
-- `TypingIndicator` now shows "Thinking deeply..." in analyst mode vs "Analyzing your data..." in coach mode
-- `callCoach()` passes `mode` to the edge function
-
-**Backend (`supabase/functions/coach-chat/index.ts`):**
-- Reads `mode` from request body
-- Analyst mode: `claude-sonnet-4-6` + extended thinking (`budget_tokens: 10000`, `anthropic-beta: interleaved-thinking-2025-05-14`) + data-first system prompt directive + 16k max_tokens
-- Coach mode: unchanged (`claude-haiku-4-5-20251001`, 1k tokens, warm/concise directive)
-- Response parsing finds the `text` block (skips `thinking` blocks) for analyst mode
+Backend (`coach-chat`): `mode` field added — Analyst uses `claude-sonnet-4-6` + extended thinking (10k budget, `interleaved-thinking-2025-05-14` beta), Coach keeps Haiku. `TypingIndicator` shows "Thinking deeply..." for Analyst.
 
 ---
 

@@ -3,28 +3,28 @@
  * Oura-style insight headline + explanation, inline chat bar, then metric cards.
  */
 
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   StyleSheet,
   RefreshControl,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withTiming,
+  cancelAnimation,
   Easing,
-  interpolate,
-  Extrapolation,
 } from 'react-native-reanimated';
 import { SvgXml } from 'react-native-svg';
 import { spacing } from '../theme/colors';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
-import { IllnessWatchCard } from '../components/focus/IllnessWatchCard';
 import { LastRunContextCard } from '../components/focus/LastRunContextCard';
 import { AskCoachButton } from '../components/focus/AskCoachButton';
 
@@ -51,26 +51,31 @@ const BLOB_SVG = `<svg width="440" height="754" viewBox="0 0 440 754" fill="none
 export default function FocusScreen() {
   const focusData = useFocusDataContext();
   const hasStrava = focusData.lastRun != null || focusData.isLoading;
-
-  const scrollY = useSharedValue(0);
-  const cardOpacity = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [10, 160], [0.15, 1], Extrapolation.CLAMP),
-  }));
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 49 + insets.bottom;
 
   const blobFloat = useSharedValue(0);
   const overlayOpacity = useSharedValue(0);
-  useEffect(() => {
-    blobFloat.value = withRepeat(
-      withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    overlayOpacity.value = withRepeat(
-      withTiming(0.55, { duration: 9800, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-  }, []);
+  // Pause infinite animations when this tab is off-screen — sibling-mounted NativeTabs
+  // would otherwise keep driving the blurred SVG blob while user is on Today.
+  useFocusEffect(
+    useCallback(() => {
+      blobFloat.value = withRepeat(
+        withTiming(1, { duration: 7200, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
+      overlayOpacity.value = withRepeat(
+        withTiming(0.55, { duration: 9800, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
+      return () => {
+        cancelAnimation(blobFloat);
+        cancelAnimation(overlayOpacity);
+      };
+    }, []),
+  );
 
   const blobAnimStyle = useAnimatedStyle(() => ({
     transform: [
@@ -103,8 +108,6 @@ export default function FocusScreen() {
       <Reanimated.ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
-          onScroll={(e) => { scrollY.value = e.nativeEvent.contentOffset.y; }}
-          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={focusData.isLoading}
@@ -122,26 +125,18 @@ export default function FocusScreen() {
           />
 
           <View style={styles.cardWrap}>
-            <AskCoachButton />
-          </View>
-
-          <Reanimated.View style={[styles.cardWrap, cardOpacity]}>
-            <IllnessWatchCard
-              illness={focusData.illness}
-              isLoading={focusData.isLoading}
-            />
-          </Reanimated.View>
-
-          <Reanimated.View style={[styles.cardWrap, cardOpacity]}>
             <LastRunContextCard
               lastRun={focusData.lastRun}
               isLoading={focusData.isLoading}
               hasStrava={hasStrava}
             />
-          </Reanimated.View>
-
-          <View style={{ height: 40 }} />
+          </View>
         </Reanimated.ScrollView>
+
+      {/* Fixed ask-coach bar — sits just above the tab bar */}
+      <View style={[styles.fixedBottom, { bottom: tabBarHeight + 24 }]}>
+        <AskCoachButton />
+      </View>
     </LinearGradient>
   );
 }
@@ -159,10 +154,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: spacing.xxl,
+    paddingBottom: 160,
   },
   cardWrap: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
+  },
+  fixedBottom: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
   },
 });

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated, FlatList, ImageBackground, Dimensions } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, Animated, FlatList, ImageBackground, Dimensions, TouchableOpacity } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { useTabScroll } from '../../hooks/useTabScroll';
 import { router } from 'expo-router';
@@ -20,6 +20,8 @@ import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors'
 import { InfoButton } from '../../components/common/InfoButton';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { useRelativeTime } from '../../hooks/useRelativeTime';
+import { Ionicons } from '@expo/vector-icons';
+import SleepTimeEditModal from '../../components/sleep/SleepTimeEditModal';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -58,6 +60,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
   const baseline = useBaselineMode();
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshCount, setRefreshCount] = React.useState(0);
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
 
   const onRefresh = React.useCallback(async () => {
@@ -120,6 +123,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
     : 'rgba(255,255,255,0.4)';
 
   return (
+    <>
     <Animated.ScrollView
       ref={scrollRef}
       style={styles.container}
@@ -177,7 +181,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
               ]}
               insight={[sleepMessage, sleepInsight].filter(Boolean).join(' ')}
               scrollY={scrollY}
-              isScrolled={isScrolled}
+
             />
           </View>
         </>
@@ -211,7 +215,14 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
               ]}
               gradientCenter={{ x: 0.51, y: -0.86 }}
               gradientRadii={{ rx: '80%', ry: '300%' }}
-              headerRight={<InfoButton metricKey="sleep_deep" />}
+              headerRight={
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TouchableOpacity onPress={() => setEditModalVisible(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="pencil-outline" size={16} color="rgba(255,255,255,0.5)" />
+                  </TouchableOpacity>
+                  <InfoButton metricKey="sleep_deep" />
+                </View>
+              }
             >
               <SleepHypnogram
                 segments={sleep.segments}
@@ -371,6 +382,18 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
       {/* Spacer for bottom padding */}
       <View style={styles.bottomSpacer} />
     </Animated.ScrollView>
+
+    <SleepTimeEditModal
+      visible={editModalVisible}
+      initialBedTime={sleep.inBedTime ?? sleep.bedTime}
+      initialWakeTime={sleep.wakeTime}
+      onClose={() => setEditModalVisible(false)}
+      onSaved={() => {
+        homeData.applyOverrideNow();   // instant — updates hypnogram from current state
+        homeData.refresh();            // background — full ring sync to confirm
+      }}
+    />
+    </>
   );
 }
 

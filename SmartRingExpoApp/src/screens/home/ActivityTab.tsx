@@ -222,7 +222,6 @@ export function ActivityTab({ onScroll, isActive = false }: ActivityTabProps) {
             { label: t('activity.active_kcal'), value: caloriesRounded },
           ]}
           scrollY={scrollY}
-          isScrolled={isScrolled}
         />
       </TouchableOpacity>
 

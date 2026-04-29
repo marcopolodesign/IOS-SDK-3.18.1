@@ -49,9 +49,10 @@ serve(async (req: Request) => {
       });
     }
 
-    const { message, history, readiness, illness } = await req.json() as {
+    const { message, history, readiness, illness, mode } = await req.json() as {
       message: string;
       history: { role: string; content: string }[];
+      mode?: 'coach' | 'analyst';
       readiness: {
         score: number;
         recommendation: 'GO' | 'EASY' | 'REST';
@@ -447,21 +448,36 @@ serve(async (req: Request) => {
       : 'No health data synced yet.';
 
     // ── System prompt ─────────────────────────────────────────────────────────
+    const isAnalyst = mode === 'analyst';
+
     const memoriesSection = memories.length > 0
       ? `\nWhat I know about you from past conversations:\n${memories.map(m => `  • ${m.key.replace(/_/g, ' ')}: ${m.value}`).join('\n')}`
       : '';
 
-    const systemPrompt = `You are a personal health coach for a smart ring app called Focus. You have access to the user's full biometric data from their smart ring and Strava.
-
-${healthContext}${memoriesSection}
-
-Guidelines:
+    const modeGuidelines = isAnalyst
+      ? `Guidelines:
+- ANALYST MODE: be thorough, data-first, and precise
+- Lead every answer with specific numbers and metrics from the data above
+- Use bullet points for multi-metric comparisons
+- Cite percentages, deltas, and trends where available
+- Longer detailed answers are appropriate here (5-12 sentences or equivalent bullets)
+- Speak in second person ("Your HRV is...", "You slept...")
+- If asked about data not in the snapshot, say so honestly
+- Never invent values not listed above
+- Tone: precise, science-informed, analytical`
+      : `Guidelines:
 - Answer questions using the specific data above — always cite actual numbers
 - Speak in second person ("You slept...", "Your HRV is...")
 - Keep answers concise (2-5 sentences) and actionable
 - If asked about data not in the snapshot, say so honestly
 - Never invent values not listed above
-- Tone: warm, direct, science-informed
+- Tone: warm, direct, science-informed`;
+
+    const systemPrompt = `You are a personal health coach for a smart ring app called Focus. You have access to the user's full biometric data from their smart ring and Strava.
+
+${healthContext}${memoriesSection}
+
+${modeGuidelines}
 
 IMPORTANT: Always respond with a valid JSON object in this exact format:
 {
@@ -515,19 +531,32 @@ Generative rules:
       content: m.content,
     }));
 
+    const anthropicHeaders: Record<string, string> = {
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    };
+    if (isAnalyst) {
+      anthropicHeaders['anthropic-beta'] = 'interleaved-thinking-2025-05-14';
+    }
+
+    const anthropicBody = isAnalyst ? {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 16000,
+      thinking: { type: 'enabled', budget_tokens: 10000 },
+      system: systemPrompt,
+      messages: [...chatHistory, { role: 'user', content: message }],
+    } : {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [...chatHistory, { role: 'user', content: message }],
+    };
+
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [...chatHistory, { role: 'user', content: message }],
-      }),
+      headers: anthropicHeaders,
+      body: JSON.stringify(anthropicBody),
     });
 
     if (!anthropicRes.ok) {
@@ -536,7 +565,10 @@ Generative rules:
     }
 
     const anthropicData = await anthropicRes.json();
-    const rawText: string = anthropicData.content?.[0]?.text ?? '';
+    // For analyst mode, extended thinking returns interleaved thinking+text blocks — find the text block
+    const rawText: string = isAnalyst
+      ? (anthropicData.content ?? []).find((b: { type: string }) => b.type === 'text')?.text ?? ''
+      : anthropicData.content?.[0]?.text ?? '';
 
     let reply: string = rawText;
     let followUps: string[] = [];

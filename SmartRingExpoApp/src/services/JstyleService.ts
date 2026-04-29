@@ -574,7 +574,7 @@ class JstyleService {
     };
   }
 
-  async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
+async getSleepByDay(dayIndex: number = 0): Promise<SleepData> {
     // Fetch all records once and cache — the SDK returns 0 records on subsequent calls
     if (!this._sleepRecordsCache) {
       const result = await this.getSleepData();

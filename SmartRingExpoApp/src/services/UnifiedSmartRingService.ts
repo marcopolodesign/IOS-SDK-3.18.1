@@ -931,11 +931,11 @@ class UnifiedSmartRingService {
   async getSleepDataRaw(): Promise<{ records: any[]; timestamp?: number }> {
     this.ensureConnected();
     if (this.isV8()) {
-      // Return raw SDK records so deriveFromRaw() can parse them
       return await V8Service.getSleepDataRaw();
     }
     return await JstyleService.getSleepData();
   }
+
 
   /**
    * Continuous HR with {records} shape — used by useHomeData & DailyHeartRateCard

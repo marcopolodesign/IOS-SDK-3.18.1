@@ -80,6 +80,8 @@ export interface LastRunContext {
   paceMinsPerKm: number;
   avgHR: number;
   expectedHR: number;
+  hrRangeLow: number;
+  hrRangeHigh: number;
   effortVerdict: EffortVerdict;
   explanation: string;
   bodyStateAtRun: {
@@ -113,3 +115,5 @@ export interface FocusState {
   baselines: FocusBaselines | null;
   refresh: () => void;
 }
+
+export type CoachMode = 'coach' | 'analyst';

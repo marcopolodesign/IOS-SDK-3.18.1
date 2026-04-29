@@ -1,13 +1,12 @@
 /**
  * Sleep data utilities for Smart Ring
  *
- * SDK SLEEPTYPE enum:
- * 0 = SLEEPTYPENONE    (no data)
- * 1 = SLEEPTYPESOBER   (awake)
- * 2 = SLEEPTYPELIGHT   (light sleep)
- * 3 = SLEEPTYPEDEEP    (deep sleep)
- * 4 = SLEEPTYPEREM     (REM)
- * 5 = SLEEPTYPEUNWEARED (not wearing)
+ * X3 SDK arraySleepQuality values — official source: infoView.m (Jstyle SDK demo):
+ * 每分钟的睡眠质量，1代表深睡 2代表浅睡 3代表REM 其他代表清醒
+ * 1 = Deep sleep
+ * 2 = Light sleep
+ * 3 = REM
+ * other (0, 4, 5…) = Awake / not wearing
  */
 
 import UnifiedSmartRingService from '../../services/UnifiedSmartRingService';

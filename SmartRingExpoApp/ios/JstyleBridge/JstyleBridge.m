@@ -1450,7 +1450,21 @@ RCT_EXPORT_METHOD(stopMeasurement:(RCTPromiseResolveBlock)resolve
     if (parsed.dataEnd) {
         if (self.pendingDataResolver && self.pendingDataType == DetailSleepData_X3) {
             [self debugLog:[NSString stringWithFormat:@"Sleep data complete: %lu records", (unsigned long)self.accumulatedSleepData.count]];
-            // Pass a copy of the array, not the mutable array that gets cleared
+
+            // Permanent log: last 3 records' raw quality arrays for stage verification
+            NSUInteger total = self.accumulatedSleepData.count;
+            NSUInteger start = total > 3 ? total - 3 : 0;
+            for (NSUInteger i = start; i < total; i++) {
+                NSDictionary *rec = self.accumulatedSleepData[i];
+                NSArray *quality = rec[@"arraySleepQuality"];
+                NSLog(@"🛏️ [raw][%lu] %@ %@min unit=%@ stages=%@",
+                      (unsigned long)i,
+                      rec[@"startTime_SleepData"],
+                      rec[@"totalSleepTime"],
+                      rec[@"sleepUnitLength"],
+                      quality ? [quality componentsJoinedByString:@","] : @"(none)");
+            }
+
             NSArray *sleepDataCopy = [self.accumulatedSleepData copy];
             self.pendingDataResolver(@{@"data": sleepDataCopy});
             [self clearPendingDataRequest];

@@ -203,7 +203,7 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
               ]}
               insight={insightText}
               scrollY={scrollY}
-              isScrolled={isScrolled}
+
             />
           </TouchableOpacity>
 
