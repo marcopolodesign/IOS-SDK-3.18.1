@@ -373,7 +373,11 @@
     "date_yesterday": "Yesterday",
     "date_days_ago": "{{days}} days ago",
     "view_strava": "View Strava",
-    "hr_comparison": "Avg HR: {{actual}} bpm · Expected: ~{{expected}} bpm"
+    "hr_comparison": "Avg HR: {{actual}} bpm · Expected: ~{{expected}} bpm",
+    "talk_through": "Talk this through",
+    "body_as_expected": "A solid run at {{pace}}. Your effort of {{avgHR}} BPM matched your expected range of {{low}}–{{high}} BPM",
+    "body_harder": "A tough run at {{pace}}. Your effort of {{avgHR}} BPM exceeded your expected range of {{low}}–{{high}} BPM",
+    "body_easier": "An easy run at {{pace}}. Your effort of {{avgHR}} BPM was below your expected range of {{low}}–{{high}} BPM"
   },
   "strava": {
     "header_title": "Training",

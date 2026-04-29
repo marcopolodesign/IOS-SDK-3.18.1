@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
@@ -77,12 +76,13 @@ function SignalRow({
   );
 }
 
-export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) {
+function IllnessWatchCardInner({ illness, isLoading }: IllnessWatchCardProps) {
   const { t } = useTranslation();
 
   const status = illness?.status ?? 'CLEAR';
   const score = illness?.score ?? 0;
   const collarColor = statusColor(status);
+  const edgeColors = useMemo<[string, string]>(() => [collarColor + '80', collarColor + '00'], [collarColor]);
 
   const nhrSeverity: Severity = illness
     ? (illness.signals.restingHRElevated ? getSeverityFromDelta(illness.details.hrDelta) : 'normal')
@@ -109,14 +109,14 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
         disabled={!canNavigate}
         style={({ pressed }) => [styles.card, pressed && canNavigate && styles.cardPressed]}
       >
-      {/* Glassmorphic blur base */}
-      <BlurView intensity={20} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
+      {/* Dark glass base — no BlurView (GPU-heavy, causes RAM spike + transition lag) */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(18,18,28,0.92)' }]} />
 
       {/* Subtle inward color bleed from each edge */}
-      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
-      <LinearGradient colors={[collarColor + '80', collarColor + '00']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
+      <LinearGradient colors={edgeColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={edgeColors} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
+      <LinearGradient colors={edgeColors} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={edgeColors} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -183,6 +183,15 @@ export function IllnessWatchCard({ illness, isLoading }: IllnessWatchCardProps) 
     </View>
   );
 }
+
+export const IllnessWatchCard = React.memo(IllnessWatchCardInner, (prev, next) => {
+  if (prev.isLoading !== next.isLoading) return false;
+  if (prev.illness === next.illness) return true;
+  if (!prev.illness || !next.illness) return false;
+  return prev.illness.status === next.illness.status &&
+    prev.illness.score === next.illness.score &&
+    prev.illness.stale === next.illness.stale;
+});
 
 /** Derive a rough severity tier from a magnitude label string */
 function getSeverityFromDelta(delta: string | null | undefined): Severity {

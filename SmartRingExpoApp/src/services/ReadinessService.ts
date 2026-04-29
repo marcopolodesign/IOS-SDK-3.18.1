@@ -583,6 +583,8 @@ export async function computeLastRunContext(
       paceMinsPerKm,
       avgHR,
       expectedHR,
+      hrRangeLow: expectedHR - 8,
+      hrRangeHigh: expectedHR + 8,
       effortVerdict,
       explanation,
       bodyStateAtRun: {

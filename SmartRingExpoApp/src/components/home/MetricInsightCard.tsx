@@ -8,12 +8,11 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
+import { RollingNumber, isNumericInt } from '../common/RollingNumber';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import { fontFamily, fontSize, spacing } from '../../theme/colors';
-import { useTypewriter } from '../../hooks/useTypewriter';
-import { RollingNumber, isNumericInt } from '../common/RollingNumber';
 
 type Metric = {
   label: string;
@@ -72,13 +71,11 @@ interface MetricInsightCardProps {
   metrics: Metric[];
   insight?: string;
   scrollY?: SharedValue<number>;
-  isScrolled?: boolean;
 }
 
-export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = false }: MetricInsightCardProps) {
+export function MetricInsightCard({ metrics, insight, scrollY }: MetricInsightCardProps) {
   const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(0);
-  const typewriterText = useTypewriter();
   // Fallback when no scrollY is provided (SleepTab / ActivityTab) — stays expanded
   const fallbackScrollY = useSharedValue(0);
   const activeScrollY = scrollY ?? fallbackScrollY;
@@ -178,7 +175,7 @@ export function MetricInsightCard({ metrics, insight, scrollY, isScrolled = fals
           <View style={styles.askCoachCenter}>
             <FocusIcon />
             <Text style={styles.askCoachText} numberOfLines={1}>
-              {isScrolled ? t('overview.ask_coach') : typewriterText}
+              {t('overview.ask_coach')}
             </Text>
           </View>
           <Animated.View style={[styles.askCoachRight, rightGroupStyle]}>

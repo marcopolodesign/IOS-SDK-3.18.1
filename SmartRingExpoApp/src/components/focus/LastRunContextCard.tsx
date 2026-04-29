@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { colors, fontFamily, fontSize, borderRadius, spacing } from '../../theme/colors';
+import { fontFamily, fontSize, borderRadius, spacing } from '../../theme/colors';
 import type { LastRunContext, EffortVerdict } from '../../types/focus.types';
 
 interface LastRunContextCardProps {
@@ -43,19 +43,34 @@ function useVerdictLabel() {
   };
 }
 
-function verdictColor(v: EffortVerdict): string {
-  if (v === 'harder_than_expected') return colors.warning;
-  if (v === 'easier_than_expected') return colors.success;
-  return colors.info;
+function formatPace(paceMinsPerKm: number): string {
+  const mins = Math.floor(paceMinsPerKm);
+  const secs = String(Math.round((paceMinsPerKm % 1) * 60)).padStart(2, '0');
+  return `${mins}:${secs}/km`;
+}
+
+function useBodyText() {
+  const { t } = useTranslation();
+  return (lastRun: LastRunContext): string => {
+    const pace = formatPace(lastRun.paceMinsPerKm);
+    const avgHR = Math.round(lastRun.avgHR);
+    const low = lastRun.hrRangeLow;
+    const high = lastRun.hrRangeHigh;
+    if (lastRun.effortVerdict === 'harder_than_expected') {
+      return t('last_run.body_harder', { pace, avgHR, low, high });
+    }
+    if (lastRun.effortVerdict === 'easier_than_expected') {
+      return t('last_run.body_easier', { pace, avgHR, low, high });
+    }
+    return t('last_run.body_as_expected', { pace, avgHR, low, high });
+  };
 }
 
 export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunContextCardProps) {
   const { t } = useTranslation();
   const formatRunDate = useFormatRunDate();
   const verdictLabel = useVerdictLabel();
-  const titleSub = lastRun
-    ? `${lastRun.distanceKm.toFixed(1)} km · ${formatRunDate(lastRun.runDate)} • ${verdictLabel(lastRun.effortVerdict)}`
-    : null;
+  const buildBodyText = useBodyText();
 
   return (
     <View style={styles.glowWrap}>
@@ -78,12 +93,12 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
 
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>{t('last_run.card_title')}</Text>
-            {!isLoading && titleSub != null && (
-              <Text style={styles.titleSub}>{titleSub}</Text>
+          <Text style={styles.titleRow} numberOfLines={2}>
+            <Text style={styles.titleBold}>{t('last_run.card_title')}</Text>
+            {!isLoading && lastRun != null && (
+              <Text style={styles.titleMeta}>{`  ·  ${lastRun.distanceKm.toFixed(1)} km  ·  ${formatRunDate(lastRun.runDate)}  ·  ${verdictLabel(lastRun.effortVerdict)}`}</Text>
             )}
-          </View>
+          </Text>
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.55)" />
         </View>
 
@@ -109,13 +124,18 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
             <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>
           ) : (
             <>
-              <Text style={styles.explanation}>"{lastRun.explanation}"</Text>
-              <Text style={styles.hrComparison}>
-                {t('last_run.hr_comparison', {
-                  actual: Math.round(lastRun.avgHR),
-                  expected: Math.round(lastRun.expectedHR),
+              <Text style={styles.explanation}>{buildBodyText(lastRun)}</Text>
+              <TouchableOpacity
+                style={styles.coachChip}
+                onPress={() => router.push({
+                  pathname: '/(tabs)/settings/chat',
+                  params: { q: `Tell me more about my last run — ${lastRun.explanation}` },
                 })}
-              </Text>
+                activeOpacity={0.7}
+              >
+                <Text style={styles.coachChipText}>{t('last_run.talk_through')}</Text>
+                <Ionicons name="arrow-forward" size={13} color="rgba(255,255,255,0.55)" />
+              </TouchableOpacity>
             </>
           )}
         </View>
@@ -161,41 +181,44 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
   },
-  titleBlock: {
+  titleRow: {
     flex: 1,
-    gap: 3,
+    flexShrink: 1,
+    paddingRight: 8,
   },
-  title: {
+  titleBold: {
     color: '#FFFFFF',
     fontFamily: fontFamily.demiBold,
-    fontSize: 22,
+    fontSize: 18,
     letterSpacing: 0.2,
   },
-  titleSub: {
-    color: 'rgba(255,255,255,0.55)',
+  titleMeta: {
+    color: 'rgba(255,255,255,0.5)',
     fontFamily: fontFamily.regular,
     fontSize: 13,
-    lineHeight: 17,
   },
   body: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     gap: 8,
   },
-
-
-
   explanation: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.7)',
-    fontStyle: 'italic',
-    lineHeight: 20,
+    fontSize: 17,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 26,
   },
-  hrComparison: {
+  coachChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  coachChipText: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.xs,
-    color: 'rgba(255,255,255,0.45)',
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.55)',
   },
 
   noStravaBody: {

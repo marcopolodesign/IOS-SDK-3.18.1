@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, PanResponder } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { spacing, fontFamily } from '../../theme/colors';
@@ -9,6 +9,7 @@ export interface SleepSegment {
   stage: SleepStage;
   startTime: Date;
   endTime: Date;
+  isInferred?: boolean;
 }
 
 export interface SleepSession {
@@ -120,10 +121,18 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   const totalDuration  = timelineWake.getTime() - timelineBed.getTime();
   const chartAreaWidth = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
 
-  const getXPosition = (time: Date) => {
+  const getXPosition = useCallback((time: Date) => {
     const elapsed = time.getTime() - timelineBed.getTime();
     return PADDING_LEFT + (elapsed / totalDuration) * chartAreaWidth;
-  };
+  }, [timelineBed, totalDuration, chartAreaWidth]);
+
+  // Inferred gap boundary — x position where estimated data ends and real data begins
+  const inferredBoundaryX = useMemo(() => {
+    const firstReal = allSegments.find(s => !s.isInferred);
+    const hasInferred = allSegments.some(s => s.isInferred);
+    if (!hasInferred || !firstReal) return null;
+    return getXPosition(firstReal.startTime);
+  }, [allSegments, getXPosition]);
 
   const getLaneY       = (idx: number) => PADDING_TOP + idx * (LANE_HEIGHT + LANE_GAP);
   const getStageIndex  = (s: SleepStage) => stages.indexOf(s);
@@ -174,13 +183,13 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   const stepPaths = useMemo(() => {
     return resolvedSessions.map(session => {
       if (session.segments.length === 0) return null;
-      const rects: Array<{ x: number; width: number; stage: SleepStage }> = [];
-      const connectors: Array<{ x: number; y: number; height: number }> = [];
+      const rects: Array<{ x: number; width: number; stage: SleepStage; isInferred?: boolean }> = [];
+      const connectors: Array<{ x: number; y: number; height: number; isInferred?: boolean }> = [];
       for (let i = 0; i < session.segments.length; i++) {
         const seg = session.segments[i];
         const x1 = getXPosition(seg.startTime);
         const x2 = getXPosition(seg.endTime);
-        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage });
+        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage, isInferred: seg.isInferred });
         if (i < session.segments.length - 1) {
           const next = session.segments[i + 1];
           if (seg.stage !== next.stage) {
@@ -192,6 +201,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
               x: x2 - CONNECTOR_W / 2,
               y: connY,
               height: connBottom - connY,
+              isInferred: seg.isInferred,
             });
           }
         }
@@ -270,7 +280,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           </View>
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>BEDTIME</Text>
-            <Text style={styles.statValue}>{formatTimeLabel(timelineBed)}</Text>
+            <Text style={styles.statValue}>{inferredBoundaryX ? '~' : ''}{formatTimeLabel(timelineBed)}</Text>
           </View>
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>WAKE</Text>
@@ -373,6 +383,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
                   width={r.width}
                   height={LANE_HEIGHT}
                   fill="url(#sleepGradient)"
+                  opacity={r.isInferred ? 0.4 : 1}
                 />
               ))}
               {p.connectors.map((c, j) => (
@@ -383,10 +394,42 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
                   width={CONNECTOR_W}
                   height={c.height}
                   fill="url(#sleepGradient)"
+                  opacity={c.isInferred ? 0.4 : 1}
                 />
               ))}
             </React.Fragment>
           ) : null
+        )}
+
+        {/* Boundary between estimated and real ring data */}
+        {inferredBoundaryX !== null && (
+          <React.Fragment>
+            <Line
+              x1={inferredBoundaryX} y1={PADDING_TOP}
+              x2={inferredBoundaryX} y2={laneAreaBottom}
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={1}
+              strokeDasharray="3,3"
+            />
+            <SvgText
+              x={inferredBoundaryX - 4}
+              y={PADDING_TOP + 10}
+              fill="rgba(255,255,255,0.35)"
+              fontSize={8}
+              textAnchor="end"
+            >
+              Estimated
+            </SvgText>
+            <SvgText
+              x={inferredBoundaryX + 4}
+              y={PADDING_TOP + 10}
+              fill="rgba(255,255,255,0.35)"
+              fontSize={8}
+              textAnchor="start"
+            >
+              Recorded data
+            </SvgText>
+          </React.Fragment>
         )}
 
         {/* X-axis time labels */}

@@ -9,7 +9,7 @@ const DOT_PAUSE_MS = 900;
 
 type Phase = 'dots' | 'typing' | 'deleting';
 
-export function useTypewriter(): string {
+export function useTypewriter(paused = false): string {
   const { t } = useTranslation();
 
   const askCoach = t('overview.ask_coach');
@@ -34,6 +34,7 @@ export function useTypewriter(): string {
   questionsRef.current = questions;
 
   useEffect(() => {
+    if (paused) return;
     let timer: ReturnType<typeof setTimeout>;
 
     function tick() {
@@ -88,7 +89,7 @@ export function useTypewriter(): string {
 
     timer = setTimeout(tick, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [paused]);
 
   return display;
 }

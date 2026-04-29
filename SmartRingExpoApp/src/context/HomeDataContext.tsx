@@ -4,6 +4,7 @@ import { useOnboarding } from './OnboardingContext';
 
 interface HomeDataContextValue extends HomeData {
   refresh: () => Promise<void>;
+  applyOverrideNow: () => Promise<void>;
 }
 
 const HomeDataContext = createContext<HomeDataContextValue | null>(null);

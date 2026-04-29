@@ -58,11 +58,19 @@ X3 sleep data (`DetailSleepData_X3`) contains:
 - `arraySleepQuality`: Array of quality values per time unit
 - `sleepUnitLength`: Duration in minutes per unit
 
-Sleep quality values (to be confirmed with physical device testing):
-- `1` = Deep sleep
-- `2` = Light sleep
-- `3` = Awake
-- `4` = REM
+Sleep quality values — **official source: SDK demo `infoView.m` line 40** (Jstyle's own in-app documentation):
+
+> `每分钟的睡眠质量，1代表深睡 2代表浅睡 3代表REM 其他代表清醒`
+> *"Per-minute sleep quality: 1=deep sleep, 2=light sleep, 3=REM, other values=awake"*
+
+| Value | Meaning |
+|-------|---------|
+| `1` | Deep sleep |
+| `2` | Light sleep |
+| `3` | REM |
+| other (0, 4, 5…) | Awake / not wearing |
+
+Confirmed by raw data analysis Apr 2026: value 3 appears at end of NREM cycles and dominates early-morning records — classic REM timing.
 
 ## HRV Data Format
 

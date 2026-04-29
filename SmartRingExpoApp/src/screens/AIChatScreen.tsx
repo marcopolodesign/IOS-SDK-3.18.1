@@ -38,7 +38,7 @@ import { useHomeDataContext } from '../context/HomeDataContext';
 import { useFocusDataContext } from '../context/FocusDataContext';
 import { useSleepDebt } from '../hooks/useSleepDebt';
 import type { HomeData } from '../hooks/useHomeData';
-import type { ReadinessScore, IllnessWatch, ReadinessRecommendation, FocusBaselines, LastRunContext } from '../types/focus.types';
+import type { ReadinessScore, IllnessWatch, ReadinessRecommendation, FocusBaselines, LastRunContext, CoachMode } from '../types/focus.types';
 import type { SleepDebtState } from '../types/sleepDebt.types';
 import { SleepHypnogram } from '../components/home/SleepHypnogram';
 import { FocusScoreRing } from '../components/focus/FocusScoreRing';
@@ -172,6 +172,7 @@ const MAX_HISTORY_MESSAGES = 20;
 async function callCoach(
   message: string,
   history: Message[],
+  mode: CoachMode,
   focusContext?: { readiness: ReadinessScore | null; illness: IllnessWatch | null }
 ): Promise<{ text: string; artifact?: Artifact; followUps?: string[] }> {
   const { data, error } = await supabase.functions.invoke('coach-chat', {
@@ -180,6 +181,7 @@ async function callCoach(
       history: history.slice(-MAX_HISTORY_MESSAGES).map(m => ({ role: m.role, content: m.text })),
       readiness: focusContext?.readiness ?? null,
       illness: focusContext?.illness ?? null,
+      mode,
     },
   });
 
@@ -705,7 +707,8 @@ const BLOB_SVG = `<svg width="440" height="754" viewBox="0 0 440 754" fill="none
 export function AIChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { q } = useLocalSearchParams<{ q?: string }>();
+  const { q, mode: modeParam } = useLocalSearchParams<{ q?: string; mode?: string }>();
+  const coachMode: CoachMode = modeParam === 'analyst' ? 'analyst' : 'coach';
   const homeData = useHomeDataContext();
   const focusState = useFocusDataContext();
   const { sleepDebt } = useSleepDebt();
@@ -779,7 +782,7 @@ export function AIChatScreen() {
       try {
         await stravaService.backgroundSync(3).catch(() => null);
 
-        const { text: aiText, artifact, followUps } = await callCoach(text, messages, {
+        const { text: aiText, artifact, followUps } = await callCoach(text, messages, coachMode, {
           readiness: focusState.readiness,
           illness: focusState.illness,
         });
@@ -1067,7 +1070,7 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     borderTopLeftRadius: 50,
     borderTopRightRadius: 50,
-    marginTop: 8,
+    marginTop: 20,
     paddingHorizontal: 16,
     paddingVertical: 20,
   },
@@ -1079,7 +1082,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontFamily: fontFamily.regular,
+    fontFamily: fontFamily.demiBold,
     fontSize: 17,
     color: '#FFFFFF',
     maxHeight: 120,
