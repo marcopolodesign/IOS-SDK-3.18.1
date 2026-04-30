@@ -253,6 +253,22 @@
 - **Query timeouts (7431041612, 7444201961):** StravaService `loadTokensFromDatabase` 10 s guard fires when Supabase is slow. Intentional `reportError` call. Consider downgrading severity to `warning` since this is a non-fatal fallback.
 - **autoReconnect.jstyle returned failure (7434420739):** Persisting. Intentional `reportError` at `UnifiedSmartRingService.ts:383`. The auto-reconnect failing is a normal expected path (ring out of range). Recommend downgrading `reportError` severity from `error` to `warning` in `UnifiedSmartRingService.ts:383`.
 
+## 2026-04-30
+
+| Issue ID | Title | Severity | First Seen | Action Taken |
+|---|---|---|---|---|
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | Needs manual review — recurring (26 events total, last seen today). Sync attempted while ring disconnected; expected runtime condition. No auto-fix applied. |
+| 7450693721 | Error: sleep_ring_empty | warning | 2026-04-30T00:10:55Z | Needs manual review — new issue ID (1 event). Same root cause as 7444044573; intentional `reportError` in `useHomeData.ts:1634` when ring returns 0 sleep records and Supabase fallback is used. Not a code bug. No auto-fix applied. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — recurring (21 events total, last seen today). Native bridge rejects pending data request on BLE disconnect (`JstyleBridge.m:1188`); no in-app stack frames available. Expected BLE race condition. No auto-fix applied. |
+
+### 2026-04-30 Notes
+- 3 issues active within the last 24 hours. Project slug: `focus-app`.
+- **No auto-fixes applied today.** All three active issues are known, handled, warning-level conditions:
+  - **7434824620** (NOT_CONNECTED): Recurring. Thrown by `JstyleService.normalizeNativeError` when native bridge rejects with `NOT_CONNECTED`. Already partially guarded in `DataSyncService.ts:96–100`. The remaining occurrences come from other callers (hooks, background task) that correctly propagate this as a `warning`. No code change warranted without identifying the specific unguarded caller via source maps.
+  - **7450693721** (sleep_ring_empty): New Sentry issue ID (first seen today), same semantic as 7444044573. The `reportError(new Error('sleep_ring_empty'), ...)` at `useHomeData.ts:1634` is intentional monitoring instrumentation added to track a suspected native SDK no-fresh-data bug. Working as designed.
+  - **7434391393** (Connection dropped): Recurring. `[self rejectPendingDataRequestWithCode:@"DISCONNECTED" message:@"Connection dropped..."]` fires in `JstyleBridge.m:1187–1188` on BLE peripheral disconnect. Correct behavior; Sentry entry is the only side-effect.
+- `gh` CLI not available — PR creation skipped.
+
 ## 2026-04-28
 
 | Issue ID | Title | Severity | First Seen | Action Taken |
