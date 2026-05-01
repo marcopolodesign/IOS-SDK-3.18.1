@@ -128,13 +128,12 @@ export function LastRunContextCard({ lastRun, isLoading, hasStrava }: LastRunCon
           ) : !hasStrava && lastRun == null ? (
             <View style={styles.noStravaBody}>
               <Text style={styles.emptyText}>{t('last_run.no_strava')}</Text>
-              <TouchableOpacity
+              <Pressable
                 style={styles.ctaButton}
                 onPress={() => router.push('/(tabs)/coach/strava')}
-                activeOpacity={0.7}
               >
                 <Text style={styles.ctaText}>{t('last_run.connect_strava')}</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : lastRun == null ? (
             <Text style={styles.emptyText}>{t('last_run.no_runs')}</Text>

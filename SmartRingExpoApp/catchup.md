@@ -4,6 +4,128 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-05-01: Fix — hypnogram shows inBedTime as BEDTIME; suppress false gap banner
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem 1 — wrong BEDTIME in hypnogram:** The hypnogram showed `bedTime` (sleep onset, e.g. 12:08 AM) as BEDTIME. The ring's block start (`inBedTime`, e.g. 11:05 PM) is the actual in-bed time — the user was awake in bed for ~63 min before sleep onset. Chart and header stat should show 11:05.
+
+**Problem 2 — false "Ring missed" banner:** `getSuggestedBedtime` was called with `bedTime` (12:08) and found HealthKit 11:16 was 52 min earlier, triggering "Ring missed ~52m · bed at 11:16?". The ring already recorded from 11:05 — it missed nothing.
+
+**Fix:**
+- `SleepTab.tsx`: Compute `hypnogramSegments` by prepending a synthetic `'awake'` segment from `inBedTime → first_segment_start` when gap exists. Pass `hypnogramBedTime = inBedTime ?? bedTime` to `SleepHypnogram` so chart starts at 11:05 PM.
+- `useHomeData.ts`: Skip `getSuggestedBedtime` when `bedTime − inBedTime ≥ 45 min` — the ring already captured the in-bed period.
+
+**Files modified:**
+- `src/screens/home/SleepTab.tsx`
+- `src/hooks/useHomeData.ts`
+
+---
+
+### 2026-05-01: Baseline Detail Screen — IllnessDetailScreen design system applied
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Rewrote `app/detail/baseline-detail.tsx` to use the same design system and chrome as `IllnessDetailScreen` — full-screen radial gradient backdrop, nav row with status chip, 80 px hero number, chrome-less signal cards with line charts, and interactive trend bars — while keeping all existing baseline data wiring untouched.
+
+**Files modified:**
+- `app/detail/baseline-detail.tsx` — Full rewrite: dropped `DetailPageHeader`, `LinearGradient` cards, and `MiniTrendBars`. Added `SafeAreaView edges=['top']`, deep-blue radial gradient bg (`GRAD_COLOR = '#0D1B40'`), `BackArrow` + BUILDING/READY chip nav row, 80 px `heroScore` showing overall % with date context below, 3 tip `recInlineText` lines, six chrome-less `MetricSignalCard`s (36 px value, progress chip, SVG line chart with 7-day-avg dotted reference), interactive 7-day `TrendBars` section (tapping a bar expands per-metric breakdown), and info `BottomSheetModal` per metric. `TODAY` extracted to module level; averages consolidated into a single `useMemo`; `trendBars` useMemo correctly includes `t` in deps for language-switch correctness; `METRIC_LINE_COLORS` typed `as const`.
+- `src/i18n/locales/en.json` — Added 17 new `baseline.*` keys: `status_building`, `status_ready`, `ready`, `days_complete`, `more_nights_needed`, `detail_rec_1/2/3`, `detail_trend_title`, `detail_trend_today`, `detail_explain_sleep|heart_rate|hrv|temperature|spo2|activity`.
+- `src/i18n/locales/es.json` — Spanish translations of all 17 new keys (Latin American Spanish).
+- `components.md` — Added `BaselineDetailScreen` entry; updated `BaselineProgressCard` entry to note the navigation target.
+
+**Key notes:**
+- Gradient accent for baseline is deep blue (`#0D1B40`) — no status-based color variants (unlike illness which uses red/amber/green per SICK/WATCH/CLEAR).
+- Hero number is `overallProgress * 100` (0–100%); `heroDate` line shows "X of 3 days complete" while building, "Baseline ready" when `canShowScores`.
+- Chip shows "BUILDING" / "READY" (i18n keys, so Spanish shows "CONSTRUYENDO" / "LISTO").
+- Per-metric progress chip shows `current/required` nights when not ready, "READY" when ready — no green/amber/red colors per project design rules.
+
+---
+
+### 2026-04-30: Fix — show actual date label when ring sleep is not from last night
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** A ring with stored historical sleep data (e.g., X6 with old sessions) always showed "LAST NIGHT" as the gauge label even when the sleep session was from days ago.
+
+**Fix:** In `SleepTab.tsx`, compute `sleepDateLabel` — if `wakeTime` is within the last 36 hours, show "LAST NIGHT"; otherwise show the actual date (e.g., "APR 23"). The ring data is always shown as-is; only the label changes to reflect the real date. Removed the previously added 36h discard guard in `useHomeData.ts`.
+
+**Files modified:**
+- `src/screens/home/SleepTab.tsx` — `sleepDateLabel` computed label replacing hardcoded `t('sleep.last_night')`
+- `src/hooks/useHomeData.ts` — removed stale-data discard guard
+
+---
+
+### 2026-04-29: Sleep — bedtime gap banner + HealthKit/history suggested bedtime
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** The Jstyle X3 ring repeatedly misses the first 1–2 hours of sleep (hardware recording gap). Users had to manually open the sleep editor every morning to fix the bedtime.
+
+**Solution (Option B + C):**
+
+**Option C (HealthKit):** `getSuggestedBedtime(ringBedTime, userId)` in `useHomeData.ts` — tries HealthKit first (uses `HealthKitSleepProcessor.fetchSleepData()`, which sources in-bed start time from iPhone motion). If the HealthKit `bedTime` is ≥45 min before the ring's first block, returns it as the suggestion. Falls back to a circular mean of the last 7 nights' `sleep_sessions.start_time` from Supabase (requires ≥2 sessions). Returns `null` if the gap is small or data is insufficient.
+
+**Option B (banner):** `suggestedBedTime?: Date` added to `SleepData`. After ring sleep is derived in `fetchData()`, `getSuggestedBedtime` is called and the result attached. `SleepTab` shows an amber-border banner ("Ring missed ~Xh · bed at HH:MM?") between MetricInsightCard and the hypnogram when `suggestedBedTime` is set and no inferred segments exist yet. Tapping "Fix" calls `setSleepOverride(suggestedBedTime, wakeTime)` + `applyOverrideNow()` — same path as the manual editor.
+
+**Files modified:**
+- `src/hooks/useHomeData.ts` — `SleepData.suggestedBedTime`, `getSuggestedBedtime()`, call in `fetchData`
+- `src/screens/home/SleepTab.tsx` — gap banner, `handleFixBedtime`, `fixingBedtime` state, styles
+
+---
+
+### 2026-04-29: Fix wind_down showing at wake-up for post-midnight sleepers
+
+**Source:** Claude Code — Macbook Pro
+
+**Bug:** `resolveGaugePhase` checks wind_down (Phase 1) before sleep (Phase 2). For any bedtime between ~12:30 AM and 3:00 AM, `minsUntilBed` at 6:30 AM falls within [-360, 120], so wind_down fires and the sleep gauge is never reached. A user who sleeps at 1 AM would see the bedtime countdown at 6:30 AM on app open.
+
+**Fix:** Added `hasWokenToday` guard — wind_down is suppressed when `wakeTime` is set, is from today, and `now >= wakeTime`. Once the ring confirms wakeup (via background fetch cache patch or foreground sync), the hero immediately shows Phase 2 (sleep gauge) instead.
+
+**Files modified:**
+- `src/utils/overviewGaugePhase.ts` — `hasWokenToday` guard on Phase 1
+
+**Dependency:** Works best paired with the background fetch `patchHeroCache` (writes `wakeTime` to cache before app open). If background task hasn't run yet, wind_down still shows briefly until the foreground sync writes `wakeTime` (~5-10s).
+
+---
+
+### 2026-04-29: Sleep — fix UTC timestamp parsing (ring stores UTC, was parsed as local)
+
+**Source:** Claude Code — Macbook Pro
+
+**Root cause:** The ring's `startTime_SleepData` strings (e.g. `"2026.04.29 01:33:57"`) are in UTC. Both `parseStart()` in `useHomeData.ts` and `parseX3DateTime()` in `JstyleService.ts` were using `new Date(y, m-1, d, h, m, s)` — which JavaScript treats as **local time (ART = UTC-3)**. This caused every ring timestamp to display ~3h later than the user's actual local bedtime/wake time (ring UTC 01:33 → displayed 01:33 ART instead of correct 22:33 ART).
+
+**Fix:**
+1. `parseStart()` (`useHomeData.ts`) — changed to `new Date(Date.UTC(y, m-1, d, h, m, s))` 
+2. `parseX3DateTime()` (`JstyleService.ts`) — same fix
+3. `getSleepByDay` date filter (`JstyleService.ts`) — was matching exact local date; switched to a 6 PM (prev day) → 6 PM (target day) window so overnight sessions starting as "22:33 local" are still included for the correct target day
+4. `buildBlockResult` (`useHomeData.ts`) — re-enabled `trimAwakeEdges` (was temporarily disabled for diagnosis; UTC fix is the actual root cause)
+
+**Files modified:** `src/hooks/useHomeData.ts`, `src/services/JstyleService.ts`
+
+---
+
+### 2026-04-29: Background fetch — hero cache patch so overview is fresh on cold-start
+
+**Source:** Claude Code — Macbook Pro
+
+**Problem:** Background task synced ring data to Supabase but never wrote to `home_data_cache` (AsyncStorage). On cold-start, the hero showed stale cached data until the foreground sync completed (~10–30s). Also: once the morning sleep notification was scheduled, the task early-returned and never ran `syncAllData()` again for the rest of the day.
+
+**Fix:**
+1. Added `patchHeroCache(userId)` to `BackgroundSleepTask.ts` — after each successful sync (sleep-only or full), queries Supabase for the latest `sleep_sessions` row and patches `home_data_cache` with fresh `bedTime`, `wakeTime`, `sleepScore`, `timeAsleepMinutes`. Only applies if the session ended within 24h (staleness guard).
+2. Restructured task flow: the early-return on `alreadyScheduledToday` now only skips the sleep-notification path. The full data sync + `patchHeroCache` still runs every 2h all day, regardless of notification status.
+3. `userId` extracted once at task entry (from `supabase.auth.getUser()`) and passed to `patchHeroCache` — avoids the N+1 auth calls that `bgLog` does internally.
+
+**Files modified:**
+- `src/services/BackgroundSleepTask.ts` — `patchHeroCache`, task restructure, `HOME_CACHE_KEY` constant, userId extraction
+
+**Key notes:**
+- `patchHeroCache` is best-effort — catches all errors and logs to `background_logs` table
+- The hero phase (`resolveGaugePhase`) is still computed at render time from cache — only the DATA is pre-warmed
+- `caffeineCurrentMg` and `sleepDebtTotalMin` come from separate contexts (not cache), so those phases update normally on app open
+
+---
+
 ### 2026-04-28: TrendsData — fix inverted date order in line charts
 
 **Source:** Claude Code — Macbook Pro

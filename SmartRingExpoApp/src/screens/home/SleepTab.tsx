@@ -16,12 +16,14 @@ import SleepBaselineTierCard from '../../components/home/SleepBaselineTierCard';
 import NapCard from '../../components/home/NapCard';
 import { useHomeDataContext } from '../../context/HomeDataContext';
 import { getSleepMessage } from '../../hooks/useHomeData';
+import type { SleepSegment } from '../../components/home/SleepStagesChart';
 import { spacing, fontSize, fontFamily, borderRadius } from '../../theme/colors';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useBaselineMode } from '../../context/BaselineModeContext';
 import { useRelativeTime } from '../../hooks/useRelativeTime';
 import { Ionicons } from '@expo/vector-icons';
 import SleepTimeEditModal from '../../components/sleep/SleepTimeEditModal';
+import { setSleepOverride } from '../../services/SleepOverrideService';
 
 type SleepTabProps = {
   onScroll?: (event: any) => void;
@@ -61,6 +63,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
   const [refreshing, setRefreshing] = React.useState(false);
   const [refreshCount, setRefreshCount] = React.useState(0);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [fixingBedtime, setFixingBedtime] = useState(false);
   const lastSyncLabel = useRelativeTime(homeData.lastSyncedAt);
 
   const onRefresh = React.useCallback(async () => {
@@ -87,8 +90,41 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
 
   const { scrollRef, scrollY, handleScroll, isScrolled, firstCardStyle } = useTabScroll(isActive, onScroll);
 
+  const handleFixBedtime = async () => {
+    if (!sleep.suggestedBedTime || fixingBedtime) return;
+    setFixingBedtime(true);
+    try {
+      await setSleepOverride(sleep.suggestedBedTime, sleep.wakeTime);
+      await homeData.applyOverrideNow();
+      homeData.refresh();
+      setRefreshCount(c => c + 1);
+    } catch (e) {
+      console.warn('[SleepTab] fix bedtime failed:', e);
+    } finally {
+      setFixingBedtime(false);
+    }
+  };
+
   const sleepMessage = getSleepMessage(homeData.sleepScore, t);
   const sleep = homeData.lastNightSleep;
+
+  const sleepDateLabel = (() => {
+    const cutoff = Date.now() - 36 * 60 * 60 * 1000;
+    if (!sleep.wakeTime || sleep.wakeTime.getTime() >= cutoff) return t('sleep.last_night');
+    return sleep.wakeTime.toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase();
+  })();
+
+  // Hypnogram uses inBedTime (ring block start) as chart start and prepends a synthetic
+  // awake segment to cover the in-bed awake period before sleep onset.
+  const hypnogramBedTime = sleep.inBedTime ?? sleep.bedTime;
+  const hypnogramSegments: SleepSegment[] = useMemo(() => {
+    if (!sleep.inBedTime || sleep.segments.length === 0) return sleep.segments;
+    const firstSeg = sleep.segments[0];
+    if (sleep.inBedTime >= firstSeg.startTime) return sleep.segments;
+    const awake: SleepSegment = { stage: 'awake', startTime: sleep.inBedTime, endTime: firstSeg.startTime, isInBed: true };
+    return [awake, ...sleep.segments];
+  }, [sleep.inBedTime, sleep.segments]);
+
   const sleepInsight =
     homeData.insightType === 'sleep'
       ? homeData.insight
@@ -160,7 +196,7 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
           <View style={styles.gaugeSection}>
             <SemiCircularGauge
               score={sleep.score}
-              label={t('sleep.last_night')}
+              label={sleepDateLabel}
               animated={!homeData.isLoading}
             />
             <View style={styles.gaugeInfoBtn}>
@@ -196,6 +232,30 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
         />
       </View> */}
 
+      {/* Bedtime Gap Banner — ring started recording late, HealthKit/history suggests earlier bedtime */}
+      {sleep.suggestedBedTime && !sleep.segments.some(s => (s as any).isInferred) && (() => {
+        const gapMin = Math.round((sleep.bedTime.getTime() - sleep.suggestedBedTime!.getTime()) / 60000);
+        const gapText = gapMin >= 60 ? `${Math.floor(gapMin / 60)}h${gapMin % 60 > 0 ? ` ${gapMin % 60}m` : ''}` : `${gapMin}m`;
+        const suggestedStr = sleep.suggestedBedTime!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return (
+          <TouchableOpacity
+            style={styles.gapBanner}
+            onPress={handleFixBedtime}
+            disabled={fixingBedtime}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="moon-outline" size={15} color="rgba(255,255,255,0.75)" />
+            <Text style={styles.gapBannerText}>
+              Ring missed ~{gapText} · bed at {suggestedStr}?
+            </Text>
+            {fixingBedtime
+              ? <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
+              : <Text style={styles.gapBannerFix}>Fix</Text>
+            }
+          </TouchableOpacity>
+        );
+      })()}
+
       {/* Sleep Stages Hypnogram (unified: night + naps) */}
       {sleep.segments.length > 0 && (() => {
         const allSessions = homeData.unifiedSleepSessions;
@@ -225,8 +285,8 @@ export function SleepTab({ onScroll, onHypnogramTouchStart, onHypnogramTouchEnd,
               }
             >
               <SleepHypnogram
-                segments={sleep.segments}
-                bedTime={sleep.bedTime}
+                segments={hypnogramSegments}
+                bedTime={hypnogramBedTime}
                 wakeTime={sleep.wakeTime}
                 sessions={hasNaps ? allSessions : undefined}
                 onTouchStart={onHypnogramTouchStart}
@@ -426,6 +486,29 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: fontSize.sm,
     fontFamily: fontFamily.regular,
+  },
+  gapBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 12,
+    gap: 8,
+  },
+  gapBannerText: {
+    flex: 1,
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.regular,
+  },
+  gapBannerFix: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.demiBold,
   },
   gaugeSection: {
     alignItems: 'center',

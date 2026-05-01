@@ -69,9 +69,18 @@ export function resolveGaugePhase(ctx: GaugeContext): GaugePhase {
 
   const windDownMeta = { targetBedtimeMs: targetBedtime.getTime(), minsUntilBed };
 
+  // Whether the ring has confirmed the user already woke up today.
+  // When true, suppress wind_down so they see the sleep/readiness phase instead.
+  const hasWokenToday =
+    wakeTime instanceof Date &&
+    !Number.isNaN(wakeTime.getTime()) &&
+    wakeTime.toDateString() === now.toDateString() &&
+    now.getTime() >= wakeTime.getTime();
+
   // Phase 1: Wind-down — 120 min before target bedtime, stays until 6h past it
-  // (user must know they've missed their sleep window)
-  if (minsUntilBed <= 120 && minsUntilBed >= -360) {
+  // Suppressed once the ring confirms wakeup (handles post-midnight sleepers who
+  // would otherwise see wind_down past their actual wake time).
+  if (!hasWokenToday && minsUntilBed <= 120 && minsUntilBed >= -360) {
     return {
       key: 'wind_down',
       score: 0, // unused — WindDownHero renders instead of the gauge

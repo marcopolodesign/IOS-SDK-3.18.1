@@ -11,6 +11,7 @@ export interface SleepSegment {
   startTime: Date;
   endTime: Date;
   isInferred?: boolean;
+  isInBed?: boolean;
 }
 
 interface SleepStagesChartProps {

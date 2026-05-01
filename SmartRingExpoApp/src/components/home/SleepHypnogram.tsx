@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, PanResponder } from 'react-native';
-import Svg, { Defs, Line, LinearGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Defs, Line, LinearGradient, Pattern, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { spacing, fontFamily } from '../../theme/colors';
 
 export type SleepStage = 'awake' | 'rem' | 'core' | 'deep';
@@ -46,7 +46,7 @@ const stageTooltipLabel: Record<SleepStage, string> = {
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH   = SCREEN_WIDTH - spacing.lg * 4;
-const PADDING_LEFT  = 45;
+const PADDING_LEFT  = 0;
 const PADDING_RIGHT = 0;
 const PADDING_TOP   = 15;
 const PADDING_BOTTOM = 38;
@@ -173,6 +173,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   // Stage duration totals across all sessions
   const stageDurations: Record<SleepStage, number> = { awake: 0, rem: 0, core: 0, deep: 0 };
   allSegments.forEach(seg => {
+    if ((seg as any).isInBed) return;
     stageDurations[seg.stage] += (seg.endTime.getTime() - seg.startTime.getTime()) / 60000;
   });
 
@@ -183,13 +184,13 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   const stepPaths = useMemo(() => {
     return resolvedSessions.map(session => {
       if (session.segments.length === 0) return null;
-      const rects: Array<{ x: number; width: number; stage: SleepStage; isInferred?: boolean }> = [];
+      const rects: Array<{ x: number; width: number; stage: SleepStage; isInferred?: boolean; isInBed?: boolean }> = [];
       const connectors: Array<{ x: number; y: number; height: number; isInferred?: boolean }> = [];
       for (let i = 0; i < session.segments.length; i++) {
         const seg = session.segments[i];
         const x1 = getXPosition(seg.startTime);
         const x2 = getXPosition(seg.endTime);
-        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage, isInferred: seg.isInferred });
+        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage, isInferred: seg.isInferred, isInBed: (seg as any).isInBed });
         if (i < session.segments.length - 1) {
           const next = session.segments[i + 1];
           if (seg.stage !== next.stage) {
@@ -307,6 +308,11 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
             <Stop offset="66%"  stopColor="#CC3535" />
             <Stop offset="100%" stopColor="#8C0B0B" />
           </LinearGradient>
+          {/* Dashed pattern for in-bed awake period (before sleep onset) */}
+          <Pattern id="inBedPattern" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+            <Rect x="0" y="0" width="8" height="8" fill="transparent" />
+            <Line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.55)" strokeWidth="2" />
+          </Pattern>
         </Defs>
 
         {/* Hourly vertical grid lines */}
@@ -342,21 +348,8 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           </React.Fragment>
         ))}
 
-        {/* Horizontal lane separators */}
-        {stages.map((stage, i) => {
-          if (i === stages.length - 1) return null;
-          const y = getLaneY(i) + LANE_HEIGHT + LANE_GAP / 2;
-          return (
-            <Line
-              key={`hg-${stage}`}
-              x1={PADDING_LEFT} y1={y} x2={CHART_WIDTH - PADDING_RIGHT} y2={y}
-              stroke="rgba(255,255,255,0.10)"
-              strokeWidth={1}
-            />
-          );
-        })}
 
-        {/* Y-axis labels */}
+        {/* Y-axis stage labels — overlaid on left edge of chart */}
         {stages.map((stage, i) => {
           const y = getLaneY(i);
           return (
@@ -382,7 +375,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
                   y={getLaneY(getStageIndex(r.stage))}
                   width={r.width}
                   height={LANE_HEIGHT}
-                  fill="url(#sleepGradient)"
+                  fill={r.isInBed ? 'url(#inBedPattern)' : 'url(#sleepGradient)'}
                   opacity={r.isInferred ? 0.4 : 1}
                 />
               ))}

@@ -73,7 +73,14 @@ Smart Ring Expo App - A React Native app using Expo SDK 54 for health monitoring
 - **User ID:** Never use `authService.currentUser` (it's always undefined). Always use `supabase.auth.getUser()` directly.
 - **Sync services** must handle: no user ID, no data, JSON parse errors gracefully.
 - **Native bridge calls** must always use `withNativeTimeout()` wrapper to prevent hanging promises.
-- **Sleep quality enum:** X3 SDK official (`infoView.m`): 1=deep, 2=light, 3=REM, other=awake. Source: `每分钟的睡眠质量，1代表深睡 2代表浅睡 3代表REM 其他代表清醒`
+- **Sleep quality enum — two layers (confirmed via X3-API-20260306.pdf):**
+  - **BLE protocol layer** (raw bytes from ring): `0=deep, 1=light, 2=REM, ≥3=awake`
+  - **iOS SDK layer** (`arraySleepQuality` in `dicData`): `1=deep, 2=light, 3=REM, ≥4=awake` — the SDK remaps BLE values before exposing them
+  - Our `mapSleepType` in `useHomeData.ts` correctly handles the **SDK layer**: `case 1→deep, case 2→core, case 3→rem, default(≥4)→awake`
+  - Do NOT use BLE-layer values in JS code — those are only relevant if reading raw BLE packets
+- **Ring timestamps are LOCAL time** (confirmed via API doc): `Set Time` command sends phone's local date/time to the ring. All `startTime_SleepData` strings ("YYYY.MM.DD HH:mm:ss") are in the device's local timezone. Never parse them with `Date.UTC()`.
+- **Bedtime recording gap is hardware behavior** (confirmed via API doc): The ring requires sleep onset detection before opening a new sleep block. It cannot retroactively record the time between getting in bed and confirmed sleep onset. Fix via HealthKit/history suggestion banner + manual editor.
+- **Battery charging state**: BLE protocol command 6 returns `A7: 0=not charging, 1=charging`. However the iOS SDK does not surface this byte in `dicData` — `isCharging` will always be `false` from the SDK. No workaround until SDK is updated.
 
 ## i18n Rules
 

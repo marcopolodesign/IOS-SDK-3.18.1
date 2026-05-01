@@ -29,6 +29,7 @@ const BG_SYNC_KEY = '@focus_bg_sync_last_at';
 const SLEEP_SYNCED_PREFIX = '@focus_sleep_synced_for_';
 const NOTIFICATION_DELAY_MS = 30 * 60 * 1000; // 30 minutes after wake
 const MIN_HOUR = 7; // Don't process wake times before 7 AM (fragmented sleep guard)
+const HOME_CACHE_KEY = 'home_data_cache';
 
 /** Returns the AsyncStorage key for the sleep-sync dedupe flag for a given date string (YYYY-MM-DD). */
 export function sleepSyncedKey(dateStr: string): string {
@@ -99,6 +100,70 @@ async function scheduleSleepNotification(
 }
 
 /**
+ * After a successful background sync, read the freshly-synced sleep session from Supabase
+ * and patch home_data_cache so the hero shows correct data on cold-start.
+ * Only patches fields driven by the hero phase computation (bedTime, wakeTime, sleepScore).
+ * Best-effort — never throws.
+ */
+async function patchHeroCache(userId: string): Promise<void> {
+  try {
+    const [sleepRes, dailyRes] = await Promise.all([
+      supabase
+        .from('sleep_sessions')
+        .select('start_time, end_time, sleep_score, deep_min, light_min, rem_min, awake_min')
+        .eq('user_id', userId)
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('daily_summaries')
+        .select('hrv_avg, hr_min, total_steps')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const sleep = sleepRes.data;
+    if (!sleep?.start_time || !sleep?.end_time) return;
+
+    // Only apply if the sleep session ended within the last 24 hours
+    const endedAt = new Date(sleep.end_time).getTime();
+    if (Date.now() - endedAt > 24 * 60 * 60 * 1000) return;
+
+    const existingRaw = await AsyncStorage.getItem(HOME_CACHE_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+
+    const sleepMin = (sleep.deep_min ?? 0) + (sleep.light_min ?? 0) + (sleep.rem_min ?? 0);
+
+    const patched = {
+      ...existing,
+      sleepScore: sleep.sleep_score ?? existing.sleepScore ?? 0,
+      lastNightSleep: {
+        ...existing.lastNightSleep,
+        score: sleep.sleep_score ?? existing.lastNightSleep?.score ?? 0,
+        bedTime: sleep.start_time,
+        wakeTime: sleep.end_time,
+        timeAsleepMinutes: sleepMin,
+        timeAsleep: formatDurationHm(sleepMin),
+      },
+      cachedAt: Date.now(),
+      lastSyncedAt: Date.now(),
+    };
+
+    await AsyncStorage.setItem(HOME_CACHE_KEY, JSON.stringify(patched));
+    await bgLog('hero_cache_patched', {
+      sleepScore: patched.sleepScore,
+      bedTime: sleep.start_time,
+      wakeTime: sleep.end_time,
+      sleepMin,
+    });
+  } catch (e: any) {
+    await bgLog('hero_cache_patch_failed', { error: e?.message });
+  }
+}
+
+/**
  * The background task body. Called by iOS at its discretion (typically every 15-30 min).
  */
 TaskManager.defineTask(TASK_NAME, async () => {
@@ -112,88 +177,82 @@ TaskManager.defineTask(TASK_NAME, async () => {
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
-    // Check if we already scheduled today
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) {
+      await bgLog('no_user');
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
     const today = now.toDateString();
     const todayDateStr = now.toISOString().split('T')[0];
     const lastScheduled = await AsyncStorage.getItem(SCHEDULED_KEY);
-    if (lastScheduled === today) {
-      await bgLog('skipped_already_scheduled');
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
+    const alreadyScheduledToday = lastScheduled === today;
 
-    // Check connection — BLE stays alive via bluetooth-central background mode
-    const connStatus = await smartRingService.isConnected();
-    if (!connStatus.connected) {
-      // Try quick reconnect — ring should be on wrist and in range
-      try {
-        const reconResult = await smartRingService.autoReconnect();
-        if (!reconResult.success) {
-          await bgLog('reconnect_failed', { message: reconResult.message });
-          return BackgroundFetch.BackgroundFetchResult.Failed;
-        }
-        await bgLog('reconnected');
-      } catch (e: any) {
-        await bgLog('reconnect_error', { error: e?.message });
-        reportError(e, { op: 'backgroundTask.reconnect' });
-        return BackgroundFetch.BackgroundFetchResult.Failed;
-      }
-    }
-
-    // Fetch sleep data from ring
-    const rawResult = await smartRingService.getSleepDataRaw();
-    const rawRecords: any[] = rawResult.records || [];
-
-    if (rawRecords.length === 0) {
-      await bgLog('no_sleep_records');
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
-
-    // Extract wake time (latest endTime from night-length blocks after 7 AM)
-    const wakeTime = extractWakeTime(rawRecords);
-    if (!wakeTime) {
-      await bgLog('no_valid_wake_time', { recordCount: rawRecords.length });
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
-
-    // Sleep-only Supabase sync — once per day, ahead of the 9 AM WhatsApp cron
-    const alreadySynced = await AsyncStorage.getItem(sleepSyncedKey(todayDateStr));
-    let sessionForNotif: { totalMin: number; sleepScore: number | null } | null = null;
+    // ── Sleep notification path (morning only, once per day) ────────────────
     let didSleepSync = false;
+    let didSchedule = false;
 
-    if (!alreadySynced) {
-      try {
-        const syncResult = await dataSyncService.syncSleepOnly();
-        if (syncResult.success) {
-          await AsyncStorage.setItem(sleepSyncedKey(todayDateStr), '1');
-          didSleepSync = true;
-          sessionForNotif = syncResult.latestSession ?? null;
-          await bgLog('sleep_only_sync_complete', {
-            totalMin: sessionForNotif?.totalMin,
-            score: sessionForNotif?.sleepScore,
-          });
-        } else {
-          await bgLog('sleep_only_sync_failed', { error: syncResult.error });
+    if (!alreadyScheduledToday) {
+      // Check connection — BLE stays alive via bluetooth-central background mode
+      const connStatus = await smartRingService.isConnected();
+      if (!connStatus.connected) {
+        try {
+          const reconResult = await smartRingService.autoReconnect();
+          if (!reconResult.success) {
+            await bgLog('reconnect_failed', { message: reconResult.message });
+          } else {
+            await bgLog('reconnected');
+          }
+        } catch (e: any) {
+          await bgLog('reconnect_error', { error: e?.message });
+          reportError(e, { op: 'backgroundTask.reconnect' });
         }
-      } catch (e: any) {
-        await bgLog('sleep_only_sync_error', { error: e?.message });
+      }
+
+      const rawResult = await smartRingService.getSleepDataRaw();
+      const rawRecords: any[] = rawResult.records || [];
+      const wakeTime = rawRecords.length > 0 ? extractWakeTime(rawRecords) : null;
+
+      if (!wakeTime) {
+        await bgLog('no_valid_wake_time', { recordCount: rawRecords.length });
+      } else {
+        // Sleep-only Supabase sync — once per day, ahead of the 9 AM WhatsApp cron
+        const alreadySynced = await AsyncStorage.getItem(sleepSyncedKey(todayDateStr));
+        let sessionForNotif: { totalMin: number; sleepScore: number | null } | null = null;
+
+        if (!alreadySynced) {
+          try {
+            const syncResult = await dataSyncService.syncSleepOnly();
+            if (syncResult.success) {
+              await AsyncStorage.setItem(sleepSyncedKey(todayDateStr), '1');
+              didSleepSync = true;
+              sessionForNotif = syncResult.latestSession ?? null;
+              await bgLog('sleep_only_sync_complete', {
+                totalMin: sessionForNotif?.totalMin,
+                score: sessionForNotif?.sleepScore,
+              });
+              await patchHeroCache(userId);
+            } else {
+              await bgLog('sleep_only_sync_failed', { error: syncResult.error });
+            }
+          } catch (e: any) {
+            await bgLog('sleep_only_sync_error', { error: e?.message });
+          }
+        }
+
+        didSchedule = await scheduleSleepNotification(wakeTime, sessionForNotif);
+        await bgLog(didSchedule ? 'notification_scheduled' : 'notification_skipped_past', {
+          wakeTime: wakeTime.toISOString(),
+          fireAt: new Date(wakeTime.getTime() + NOTIFICATION_DELAY_MS).toISOString(),
+          recordCount: rawRecords.length,
+          enriched: !!sessionForNotif,
+        });
+        if (didSchedule) await AsyncStorage.setItem(SCHEDULED_KEY, today);
       }
     }
 
-    // Schedule notification for wakeTime + 30 min (enriched with real numbers if available)
-    const didSchedule = await scheduleSleepNotification(wakeTime, sessionForNotif);
-
-    await bgLog(didSchedule ? 'notification_scheduled' : 'notification_skipped_past', {
-      wakeTime: wakeTime.toISOString(),
-      fireAt: new Date(wakeTime.getTime() + NOTIFICATION_DELAY_MS).toISOString(),
-      recordCount: rawRecords.length,
-      enriched: !!sessionForNotif,
-    });
-
-    if (didSchedule) {
-      await AsyncStorage.setItem(SCHEDULED_KEY, today);
-    }
-
-    // Background full data sync — at most once every 2 hours, skipped if we just did sleep-only
+    // ── Full data sync + hero cache patch (every 2h, runs all day) ──────────
     if (!didSleepSync) {
       const lastBgSync = await AsyncStorage.getItem(BG_SYNC_KEY);
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
@@ -202,6 +261,7 @@ TaskManager.defineTask(TASK_NAME, async () => {
           const syncResult = await dataSyncService.syncAllData();
           await AsyncStorage.setItem(BG_SYNC_KEY, String(Date.now()));
           await bgLog('bg_sync_complete', { success: syncResult.success, error: syncResult.error });
+          if (syncResult.success) await patchHeroCache(userId);
         } catch (e: any) {
           await bgLog('bg_sync_error', { error: e?.message });
         }

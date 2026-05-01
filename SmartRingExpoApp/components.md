@@ -353,7 +353,15 @@ Use these terms consistently in code, comments, and conversation. The cover is a
 
 ### `BaselineProgressCard`
 **File:** `src/components/home/BaselineProgressCard.tsx`
-**Renders:** Progress tracker shown during the baseline data collection period (first N days of use).
+**Renders:** Progress tracker shown during the baseline data collection period (first N days of use). Tapping "View Baseline" navigates to `app/detail/baseline-detail.tsx`.
+
+---
+
+### `BaselineDetailScreen`
+**File:** `app/detail/baseline-detail.tsx`
+**Route:** `/detail/baseline-detail`
+**Renders:** Full-screen baseline progress detail page. Uses the same design system and chrome as `IllnessDetailScreen`: dark background with a deep-blue radial gradient, nav row (BackArrow + BUILDING/READY chip), 80px hero showing overall % complete, 3 recommendation tip lines, then 6 chrome-less signal cards (Sleep, HR, HRV, Temperature, SpO₂, Activity) each with a 36px current value, progress chip (X/N or READY), line chart with 7-day-avg dotted reference, and a calibration warning when not yet ready. Ends with an interactive 7-day "Baseline Progress" trend bar section and a bottom-sheet info modal per metric.
+**Data sources:** `useBaselineMode()`, `useHomeDataContext()`, `useMetricHistory<>()` (all 6 metric types).
 
 ---
 

@@ -20,6 +20,7 @@ import type { StravaActivitySummary } from '../types/strava.types';
 import type { UnifiedActivity } from '../types/activity.types';
 import { Platform } from 'react-native';
 import HealthKitService from '../services/HealthKitService';
+import HealthKitSleepProcessor from '../services/HealthKit/HealthKitSleepProcessor';
 import { stravaService } from '../services/StravaService';
 import { mergeActivities } from '../services/ActivityDeduplicator';
 import { formatSleepDuration, calculateSleepScore, calculateSleepScoreFromStages, extractSleepVitalsFromRaw } from '../utils/ringData/sleep';
@@ -92,6 +93,7 @@ export interface SleepData {
   bedTime: Date;       // sleep onset (first non-awake segment)
   wakeTime: Date;
   inBedTime?: Date;    // raw ring block start (when user got into bed)
+  suggestedBedTime?: Date; // from HealthKit/history when ring started recording late
 }
 
 export interface ActivityData {
@@ -723,6 +725,55 @@ function parseStart(str?: string): number | undefined {
   return new Date(y, (m ?? 1) - 1, day, hh, mm, ss).getTime();
 }
 
+// Returns a suggested bedtime when the ring started recording ≥45 min after the user
+// actually went to bed. Tries HealthKit in-bed time first, then Supabase 7-night average.
+async function getSuggestedBedtime(ringBedTime: Date, userId: string): Promise<Date | null> {
+  const MIN_GAP_MIN = 45;
+
+  try {
+    const hkSleep = await new HealthKitSleepProcessor().fetchSleepData();
+    if (hkSleep?.bedTime) {
+      const hkBed = new Date(hkSleep.bedTime);
+      const gapMin = (ringBedTime.getTime() - hkBed.getTime()) / 60000;
+      if (gapMin >= MIN_GAP_MIN) return hkBed;
+    }
+  } catch {}
+
+  if (!userId) return null;
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 8);
+    const { data } = await supabase
+      .from('sleep_sessions')
+      .select('start_time')
+      .eq('user_id', userId)
+      .neq('session_type', 'nap')
+      .gte('start_time', cutoff.toISOString())
+      .order('start_time', { ascending: false })
+      .limit(7);
+
+    const rows = data as Array<{ start_time: string }> | null;
+    if (!rows || rows.length < 2) return null;
+
+    // Circular mean of time-of-day: map pre-noon hours +1440 to keep night continuity
+    const toNightMin = (iso: string) => {
+      const d = new Date(iso);
+      const m = d.getHours() * 60 + d.getMinutes();
+      return m < 720 ? m + 1440 : m;
+    };
+    const avg = rows.reduce((s, r) => s + toNightMin(r.start_time), 0) / rows.length;
+    const normMin = avg >= 1440 ? avg - 1440 : avg;
+
+    const suggested = new Date(ringBedTime);
+    suggested.setHours(Math.floor(normMin / 60) % 24, Math.round(normMin % 60), 0, 0);
+    if (suggested.getTime() >= ringBedTime.getTime()) suggested.setDate(suggested.getDate() - 1);
+
+    const gapMin = (ringBedTime.getTime() - suggested.getTime()) / 60000;
+    if (gapMin >= MIN_GAP_MIN) return suggested;
+  } catch {}
+
+  return null;
+}
 
 /**
  * Build SleepData from raw JstyleService.getSleepData() records.
@@ -1667,6 +1718,18 @@ export function useHomeData(enabled = true): HomeData & { refresh: () => Promise
           }
         } catch (e: any) {
           console.log('⚠️ [useHomeData] Supabase sleep fallback failed:', e?.message);
+        }
+      }
+
+      // Attach suggested bedtime only when the ring didn't already capture in-bed awake time.
+      // If inBedTime is ≥45 min before bedTime (sleep onset), the ring recorded the full
+      // in-bed period itself — no external suggestion needed.
+      if (finalSleepData?.segments.length && userId) {
+        const ringInBedGapMin = finalSleepData.inBedTime
+          ? (finalSleepData.bedTime.getTime() - finalSleepData.inBedTime.getTime()) / 60000
+          : 0;
+        if (ringInBedGapMin < 45) {
+          finalSleepData.suggestedBedTime = (await getSuggestedBedtime(finalSleepData.bedTime, userId)) ?? undefined;
         }
       }
 
