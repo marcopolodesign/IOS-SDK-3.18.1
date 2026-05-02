@@ -56,5 +56,15 @@ target 'SmartRing' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # fmt uses consteval patterns incompatible with Xcode 26's stricter C++20.
+    # Force C++17 for the fmt target only so FMT_STRING compiles cleanly.
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
+      end
+    end
   end
 end
