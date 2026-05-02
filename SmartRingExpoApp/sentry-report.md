@@ -310,6 +310,33 @@
 | 7451975980 | Error: com.apple.healthkit Code=5 "Authorization not determined" | warning | 2026-04-30T13:53:45Z | 2026-04-30T14:00:22Z | Needs manual review — **new instance** (different ID from 7431794260). Same root cause: HealthKit permissions not yet granted. Fix guard from PR #4 applies; events from un-updated builds. |
 | 7451975773 | Error: V8 not connected | warning | 2026-04-30T13:53:38Z | 2026-04-30T14:00:14Z | **Skipped** — V8 service is off-limits per project constraints. |
 
+## 2026-05-02
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7431794260 | Error: com.apple.healthkit Code=5 "Authorization status is not determined for all types provided." | warning | 2026-04-22T00:59:31Z | 2026-05-02T11:46:39Z | Needs manual review — HealthKit permissions not yet granted by user; fix guard already in PR #4 (`isExpectedHealthKitError`). Events from pre-fix builds. |
+| 7434372098 | Error: getStepsData timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-05-02T11:43:15Z | Needs manual review — `withNativeTimeout` fires at `JstyleService.ts:69`; expected BLE timeout when ring is out of range or native SDK is busy. 88 total events. |
+| 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | 2026-05-02T11:37:01Z | Needs manual review — `normalizeNativeError` at `JstyleService.ts:131` surfaces this correctly; expected when sync is attempted before ring reconnects. 109 total events. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-02T11:37:01Z | Needs manual review — no stack trace; BLE peripheral disconnected while a native data request was in flight. `JstyleBridge.m` already calls `rejectPendingDataRequest` on disconnect. 28 total events. |
+| 7431794314 | Error: sleep_ring_empty | warning | 2026-04-22T00:59:34Z | 2026-05-02T11:34:57Z | Needs manual review — intentional `reportError` at `useHomeData.ts:1685` when ring returns 0 sleep records; Supabase fallback runs immediately after. Not a code bug. 24 total events. |
+| 7431041612 | Error: getStepsData timed out after 5000ms | warning | 2026-04-21T19:45:57Z | 2026-05-02T02:41:44Z | Needs manual review — minified-only stack; same root as 7434372098. 39 total events. |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | 2026-05-02T00:59:27Z | Needs manual review — minified stack; same pattern as 7431794312; sync invoked while ring is disconnected. 51 total events. |
+| 7450693721 | Error: sleep_ring_empty | warning | 2026-04-30T00:10:55Z | 2026-05-02T00:59:27Z | Needs manual review — minified stack; same root as 7431794314; ring returned 0 sleep records. 3 total events. |
+| 7451975980 | Error: com.apple.healthkit Code=5 "Authorization not determined" | warning | 2026-04-30T13:53:45Z | 2026-05-01T22:57:17Z | Needs manual review — new issue ID, same root as 7431794260; HealthKit auth not yet granted. Fix guard in PR #4 applies. 4 total events. |
+| 7444044573 | Error: autoReconnect.jstyle returned failure | error | 2026-04-27T08:16:30Z | 2026-05-01T22:57:15Z | Needs manual review — intentional `reportError` in `UnifiedSmartRingService.ts` when Jstyle auto-reconnect returns `{success:false}`; expected when ring is out of BLE range. Consider downgrading to `warning`. 27 total events. |
+
+### 2026-05-02 Notes
+- 25 unresolved issues total; 10 active within the last 24 h (cutoff 2026-05-01T12:00Z).
+- **No auto-fixes applied today.** All 10 active issues are recurring, well-documented operational conditions:
+  - **BLE timeouts (7434372098, 7431041612):** `withNativeTimeout` + `cancelPendingDataRequest` already in place. Working as designed. 127 combined events since 2026-04-22.
+  - **NOT_CONNECTED (7431794312, 7434824620):** `normalizeNativeError` correctly surfaces these at `warning` level. 160 combined events. Consider a pre-flight connectivity guard at call sites that issue data commands.
+  - **Connection dropped (7434391393):** `rejectPendingDataRequest` in `JstyleBridge.m` already handles this. No stack trace makes a code fix impossible.
+  - **sleep_ring_empty (7431794314, 7450693721):** Intentional monitoring instrumentation at `useHomeData.ts:1685`; Supabase fallback runs on the next line. Consider changing to `reportError(…, 'info')` or suppressing when fallback succeeds.
+  - **autoReconnect.jstyle failure (7444044573):** Intentional `reportError` at `error` level; recommend downgrading to `warning` since ring being out of BLE range is a normal condition.
+  - **HealthKit Code=5 (7431794260, 7451975980):** Fix guard (`isExpectedHealthKitError`) already in `main` via PR #4. Events originate from pre-fix builds; will self-resolve once updated build is distributed.
+- `gh` CLI not available — PR creation skipped.
+- No new issue types seen today vs. prior daily runs.
+
 ### 2026-05-01 Notes
 - 25 unresolved issues total; 10 active within the last 24 h (cutoff ≈ 2026-04-30T12:00Z).
 - **No auto-fixes applied today.** None of the within-24h issues meet the confidence threshold for an automated fix — all have either minified-only stack traces or are expected runtime conditions.
