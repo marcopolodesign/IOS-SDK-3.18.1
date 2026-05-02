@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, PanResponder } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Pattern, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import { BedtimeIcon, SleptIcon, WakeTimeIcon } from '../../assets/icons';
 import { spacing, fontFamily } from '../../theme/colors';
 
 export type SleepStage = 'awake' | 'rem' | 'core' | 'deep';
@@ -10,6 +11,7 @@ export interface SleepSegment {
   startTime: Date;
   endTime: Date;
   isInferred?: boolean;
+  isInBed?: boolean;
 }
 
 export interface SleepSession {
@@ -45,16 +47,17 @@ const stageTooltipLabel: Record<SleepStage, string> = {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH   = SCREEN_WIDTH - spacing.lg * 4;
-const PADDING_LEFT  = 0;
-const PADDING_RIGHT = 0;
-const PADDING_TOP   = 15;
+const LABEL_COL_W    = 38;
+const MARGIN_RIGHT   = 20;
+const CHART_WIDTH    = SCREEN_WIDTH - spacing.lg * 4 - LABEL_COL_W - MARGIN_RIGHT;
+const PADDING_LEFT   = 0;
+const PADDING_RIGHT  = 0;
+const PADDING_TOP    = 15;
 const PADDING_BOTTOM = 38;
-const LANE_HEIGHT   = 40;
-const LANE_GAP      = 10;
-const CHART_HEIGHT  = PADDING_TOP + stages.length * (LANE_HEIGHT + LANE_GAP) - LANE_GAP + PADDING_BOTTOM;
-// Minimum SVG-unit gap between an hour-mark label and the bed/wake labels
-const MIN_LABEL_GAP = 38;
+const LANE_HEIGHT    = 40;
+const LANE_GAP       = 10;
+const CHART_HEIGHT   = PADDING_TOP + stages.length * (LANE_HEIGHT + LANE_GAP) - LANE_GAP + PADDING_BOTTOM;
+const MIN_LABEL_GAP  = 38;
 
 function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
@@ -101,13 +104,11 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   onTouchStartRef.current = onTouchStart;
   onTouchEndRef.current   = onTouchEnd;
 
-  // Build resolved sessions: use `sessions` prop if provided, otherwise wrap legacy single-session props
   const resolvedSessions = useMemo<SleepSession[]>(() => {
     if (sessions && sessions.length > 0) return sessions;
     return [{ segments, bedTime, wakeTime, label: 'Night' }];
   }, [sessions, segments, bedTime, wakeTime]);
 
-  // Compute unified timeline bounds
   const timelineBed = useMemo(() => {
     return new Date(Math.min(...resolvedSessions.map(s => s.bedTime.getTime())));
   }, [resolvedSessions]);
@@ -115,7 +116,6 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     return new Date(Math.max(...resolvedSessions.map(s => s.wakeTime.getTime())));
   }, [resolvedSessions]);
 
-  // All segments flattened for duration totals
   const allSegments = useMemo(() => resolvedSessions.flatMap(s => s.segments), [resolvedSessions]);
 
   const totalDuration  = timelineWake.getTime() - timelineBed.getTime();
@@ -126,7 +126,6 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     return PADDING_LEFT + (elapsed / totalDuration) * chartAreaWidth;
   }, [timelineBed, totalDuration, chartAreaWidth]);
 
-  // Inferred gap boundary — x position where estimated data ends and real data begins
   const inferredBoundaryX = useMemo(() => {
     const firstReal = allSegments.find(s => !s.isInferred);
     const hasInferred = allSegments.some(s => s.isInferred);
@@ -144,7 +143,6 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     const timeMs  = timelineBed.getTime() + ((svgX - PADDING_LEFT) / chartAreaWidth) * totalDuration;
     const clamped = new Date(Math.max(timelineBed.getTime(), Math.min(timelineWake.getTime(), timeMs)));
 
-    // Search across all sessions for the touched segment
     for (const session of resolvedSessions) {
       const seg = session.segments.find(s => clamped >= s.startTime && clamped <= s.endTime);
       if (seg) {
@@ -153,7 +151,6 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
         return;
       }
     }
-    // Touch landed in a gap — clear tooltip
     setTooltip(null);
   };
 
@@ -170,16 +167,13 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     })
   ).current;
 
-  // Stage duration totals across all sessions
+  // Stage duration totals — exclude in-bed awake period
   const stageDurations: Record<SleepStage, number> = { awake: 0, rem: 0, core: 0, deep: 0 };
   allSegments.forEach(seg => {
-    if ((seg as any).isInBed) return;
+    if (seg.isInBed) return;
     stageDurations[seg.stage] += (seg.endTime.getTime() - seg.startTime.getTime()) / 60000;
   });
 
-  // Step figure — Rect per segment + filled vertical connector rects between stage changes.
-  // Connectors span center-to-center (overlapping both blocks) using the destination color,
-  // creating a seamless mesh between stages.
   const CONNECTOR_W = 0.75;
   const stepPaths = useMemo(() => {
     return resolvedSessions.map(session => {
@@ -190,7 +184,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
         const seg = session.segments[i];
         const x1 = getXPosition(seg.startTime);
         const x2 = getXPosition(seg.endTime);
-        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage, isInferred: seg.isInferred, isInBed: (seg as any).isInBed });
+        rects.push({ x: x1, width: Math.max(2, x2 - x1), stage: seg.stage, isInferred: seg.isInferred, isInBed: seg.isInBed });
         if (i < session.segments.length - 1) {
           const next = session.segments[i + 1];
           if (seg.stage !== next.stage) {
@@ -198,20 +192,14 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
             const y2 = getLaneY(getStageIndex(next.stage));
             const connY = Math.min(y1, y2);
             const connBottom = Math.max(y1, y2) + LANE_HEIGHT;
-            connectors.push({
-              x: x2 - CONNECTOR_W / 2,
-              y: connY,
-              height: connBottom - connY,
-              isInferred: seg.isInferred,
-            });
+            connectors.push({ x: x2 - CONNECTOR_W / 2, y: connY, height: connBottom - connY, isInferred: seg.isInferred });
           }
         }
       }
       return { rects, connectors };
     });
-  }, [resolvedSessions]);
+  }, [resolvedSessions, getXPosition]);
 
-  // Gaps between sessions — render a dashed separator line
   const gaps = useMemo(() => {
     if (resolvedSessions.length <= 1) return [];
     const sorted = [...resolvedSessions].sort((a, b) => a.bedTime.getTime() - b.bedTime.getTime());
@@ -219,24 +207,22 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     for (let i = 0; i < sorted.length - 1; i++) {
       const gapStart = sorted[i].wakeTime.getTime();
       const gapEnd = sorted[i + 1].bedTime.getTime();
-      const midMs = (gapStart + gapEnd) / 2;
-      const midX = getXPosition(new Date(midMs));
+      const midX = getXPosition(new Date((gapStart + gapEnd) / 2));
       result.push({ midX, label: sorted[i + 1].label || 'Nap' });
     }
     return result;
   }, [resolvedSessions, getXPosition]);
 
-  // Hour marks — skip any that land too close to the bed/wake label positions
-  const wakeX          = CHART_WIDTH - PADDING_RIGHT;
-  const allHourMarks   = generateHourMarks(timelineBed, timelineWake);
-  const hourMarks      = allHourMarks.filter(mark => {
+  const wakeX        = CHART_WIDTH - PADDING_RIGHT;
+  const allHourMarks = generateHourMarks(timelineBed, timelineWake);
+  // Filter hour marks too close to either edge (accounts for bedtime label width ~55px start-anchored)
+  const hourMarks    = allHourMarks.filter(mark => {
     const x = getXPosition(mark);
-    return (x - PADDING_LEFT) > MIN_LABEL_GAP && (wakeX - x) > MIN_LABEL_GAP;
+    return x > 55 && (wakeX - x) > MIN_LABEL_GAP;
   });
 
-  // Build x-axis labels: bed/wake for each session
   const xAxisLabels = useMemo(() => {
-    if (resolvedSessions.length <= 1) return null; // Use default bed/wake labels
+    if (resolvedSessions.length <= 1) return null;
     const labels: Array<{ x: number; text: string; anchor: string }> = [];
     const sorted = [...resolvedSessions].sort((a, b) => a.bedTime.getTime() - b.bedTime.getTime());
     for (const session of sorted) {
@@ -248,13 +234,15 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
     return labels;
   }, [resolvedSessions, getXPosition]);
 
+  const totalSlept = stageDurations.rem + stageDurations.core + stageDurations.deep;
+
   return (
     <View
       style={styles.container}
       {...pan.panHandlers}
       onLayout={e => { layoutWidth.current = e.nativeEvent.layout.width; }}
     >
-      {/* ── Top row: summary chips OR tooltip (same vertical space) ── */}
+      {/* ── Top row: summary stats OR tooltip (same vertical space) ── */}
       {tooltip ? (
         <View style={styles.tooltipReplacement}>
           <Text style={styles.tooltipStage}>
@@ -274,23 +262,41 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
       ) : (
         <View style={styles.summaryRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>SLEPT</Text>
-            <Text style={styles.statValue}>
-              {formatDuration(stageDurations.rem + stageDurations.core + stageDurations.deep)}
-            </Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>BEDTIME</Text>
+            <View style={styles.iconWrap}><BedtimeIcon /></View>
+            <Text style={styles.statLabel}>Bedtime</Text>
             <Text style={styles.statValue}>{inferredBoundaryX ? '~' : ''}{formatTimeLabel(timelineBed)}</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statLabel}>WAKE</Text>
+            <View style={styles.iconWrap}><SleptIcon /></View>
+            <Text style={styles.statLabel}>Slept</Text>
+            <Text style={styles.statValue}>{formatDuration(totalSlept)}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <View style={styles.iconWrap}><WakeTimeIcon /></View>
+            <Text style={styles.statLabel}>Wake Up</Text>
             <Text style={styles.statValue}>{formatTimeLabel(timelineWake)}</Text>
           </View>
         </View>
       )}
 
       {/* ── Hypnogram chart ── */}
+      <View style={styles.chartRow}>
+        {/* Stage label column — aligned to lane rows */}
+        <View style={[styles.labelCol, { paddingTop: PADDING_TOP }]}>
+          {stages.map((stage, i) => (
+            <View
+              key={stage}
+              style={{
+                height: i < stages.length - 1 ? LANE_HEIGHT + LANE_GAP : LANE_HEIGHT,
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={styles.stageName}>{stageLabels[stage]}</Text>
+              <Text style={styles.stageDur}>{formatDuration(stageDurations[stage])}</Text>
+            </View>
+          ))}
+        </View>
+
       <Svg
         width="100%"
         height={CHART_HEIGHT}
@@ -308,10 +314,8 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
             <Stop offset="66%"  stopColor="#CC3535" />
             <Stop offset="100%" stopColor="#8C0B0B" />
           </LinearGradient>
-          {/* Dashed pattern for in-bed awake period (before sleep onset) */}
-          <Pattern id="inBedPattern" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
-            <Rect x="0" y="0" width="8" height="8" fill="transparent" />
-            <Line x1="0" y1="8" x2="8" y2="0" stroke="rgba(255,255,255,0.55)" strokeWidth="2" />
+          <Pattern id="inBedHatch" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+            <Line x1="0" y1="8" x2="8" y2="0" stroke="rgba(160,160,160,0.35)" strokeWidth="1.5" />
           </Pattern>
         </Defs>
 
@@ -348,37 +352,28 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           </React.Fragment>
         ))}
 
-
-        {/* Y-axis stage labels — overlaid on left edge of chart */}
-        {stages.map((stage, i) => {
-          const y = getLaneY(i);
-          return (
-            <React.Fragment key={stage}>
-              <SvgText x={5} y={y + 14} fill="rgba(255,255,255,0.9)" fontSize={12} fontWeight="600">
-                {stageLabels[stage]}
-              </SvgText>
-              <SvgText x={5} y={y + 28} fill="rgba(255,255,255,0.5)" fontSize={10}>
-                {formatDuration(stageDurations[stage])}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
-
         {/* Step-line figure — single gradient across blocks + connectors */}
         {stepPaths.map((p, i) =>
           p ? (
             <React.Fragment key={`sl-${i}`}>
-              {p.rects.map((r, j) => (
-                <Rect
-                  key={`bl-${i}-${j}`}
-                  x={r.x}
-                  y={getLaneY(getStageIndex(r.stage))}
-                  width={r.width}
-                  height={LANE_HEIGHT}
-                  fill={r.isInBed ? 'url(#inBedPattern)' : 'url(#sleepGradient)'}
-                  opacity={r.isInferred ? 0.4 : 1}
-                />
-              ))}
+              {p.rects.map((r, j) => {
+                const y = getLaneY(getStageIndex(r.stage));
+                return (
+                  <React.Fragment key={`bl-${i}-${j}`}>
+                    <Rect
+                      x={r.x} y={y} width={r.width} height={LANE_HEIGHT}
+                      fill="url(#sleepGradient)"
+                      opacity={r.isInferred ? 0.4 : 1}
+                    />
+                    {r.isInBed && (
+                      <Rect
+                        x={r.x} y={y} width={r.width} height={LANE_HEIGHT}
+                        fill="url(#inBedHatch)"
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
               {p.connectors.map((c, j) => (
                 <Rect
                   key={`cn-${i}-${j}`}
@@ -404,22 +399,10 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
               strokeWidth={1}
               strokeDasharray="3,3"
             />
-            <SvgText
-              x={inferredBoundaryX - 4}
-              y={PADDING_TOP + 10}
-              fill="rgba(255,255,255,0.35)"
-              fontSize={8}
-              textAnchor="end"
-            >
+            <SvgText x={inferredBoundaryX - 4} y={PADDING_TOP + 10} fill="rgba(255,255,255,0.35)" fontSize={8} textAnchor="end">
               Estimated
             </SvgText>
-            <SvgText
-              x={inferredBoundaryX + 4}
-              y={PADDING_TOP + 10}
-              fill="rgba(255,255,255,0.35)"
-              fontSize={8}
-              textAnchor="start"
-            >
+            <SvgText x={inferredBoundaryX + 4} y={PADDING_TOP + 10} fill="rgba(255,255,255,0.35)" fontSize={8} textAnchor="start">
               Recorded data
             </SvgText>
           </React.Fragment>
@@ -427,7 +410,6 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
 
         {/* X-axis time labels */}
         {xAxisLabels ? (
-          // Multi-session: show bed/wake for each session
           xAxisLabels.map((lbl, i) => (
             <SvgText
               key={`xl-${i}`}
@@ -438,11 +420,10 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
             </SvgText>
           ))
         ) : (
-          // Single session: original bed + hourMarks + wake
           <>
             <SvgText
               x={PADDING_LEFT} y={CHART_HEIGHT - 10}
-              fill="rgba(255,255,255,0.55)" fontSize={10} textAnchor="middle"
+              fill="rgba(255,255,255,0.55)" fontSize={10} textAnchor="start"
             >
               {formatTimeLabel(timelineBed)}
             </SvgText>
@@ -464,6 +445,20 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           </>
         )}
 
+        {/* Horizontal lane separator lines */}
+        {stages.map((stage, i) => {
+          if (i === stages.length - 1) return null;
+          const y = getLaneY(i) + LANE_HEIGHT + LANE_GAP / 2;
+          return (
+            <Line
+              key={`hl-${stage}`}
+              x1={0} y1={y} x2={CHART_WIDTH} y2={y}
+              stroke="rgba(255,255,255,0.10)"
+              strokeWidth={1}
+            />
+          );
+        })}
+
         {/* Touch cursor */}
         {tooltip && (
           <Line
@@ -472,6 +467,7 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
           />
         )}
       </Svg>
+      </View>
     </View>
   );
 }
@@ -480,34 +476,58 @@ const styles = StyleSheet.create({
   container: {
     paddingVertical: spacing.sm,
   },
-  // ── Summary stat row ──
-  // HEIGHT MUST match tooltipReplacement.height below — they occupy the same vertical slot.
+  chartRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingRight: MARGIN_RIGHT,
+  },
+  labelCol: {
+    width: LABEL_COL_W,
+    marginLeft: 0,
+  },
+  stageName: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 11,
+    fontFamily: fontFamily.demiBold,
+  },
+  stageDur: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+    fontFamily: fontFamily.regular,
+  },
+  // HEIGHT MUST match tooltipReplacement.height — they occupy the same vertical slot.
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     marginBottom: spacing.sm,
     paddingHorizontal: spacing.xs,
-    height: 50,
+    height: 68,
     alignItems: 'center',
   },
   statItem: {
     alignItems: 'center',
+    gap: 3,
+  },
+  iconWrap: {
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 1,
   },
   statLabel: {
     color: 'rgba(255,255,255,0.45)',
     fontSize: 10,
     fontFamily: fontFamily.regular,
-    letterSpacing: 0.8,
-    marginBottom: 3,
+    letterSpacing: 0.5,
   },
   statValue: {
     color: '#FFFFFF',
     fontSize: 14,
     fontFamily: fontFamily.demiBold,
   },
-  // ── Tooltip replacement — HEIGHT MUST match summaryRow.height above. ──
+  // HEIGHT MUST match summaryRow.height above.
   tooltipReplacement: {
-    height: 50,
+    height: 68,
     marginBottom: spacing.sm,
     paddingHorizontal: spacing.xs,
     alignItems: 'center',

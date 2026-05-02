@@ -98,8 +98,7 @@ function CaffeineBarChart({
 }) {
   const timeSpan  = Math.max(timeEnd - timeStart, 1);
   const totalBars = Math.ceil((timeEnd - timeStart) * 4);
-  const openEnd        = clearHour ?? win.end;
-  const slotW          = BAR_INNER_W / totalBars;
+  const slotW     = BAR_INNER_W / totalBars;
   const GAP            = 2;
   const isPlaceholder  = doses.length === 0;
 
@@ -249,13 +248,11 @@ const barChartStyles = StyleSheet.create({
 // ─── Window phase bar — pre-wake spacer + 3 colored phases + wake-time label ──
 function WindowPhaseBar({
   win,
-  clearHour,
   activePhase,
   wakeHour,
   bedHour,
 }: {
   win: { start: number; end: number };
-  clearHour: number | null;
   activePhase: 'pre' | 'open' | 'closed';
   wakeHour: number;
   bedHour: number;
@@ -264,7 +261,7 @@ function WindowPhaseBar({
   const timeStart = wakeHour;
   const timeEnd   = bedHour;
   const timeSpan  = Math.max(timeEnd - timeStart, 1);
-  const openEnd   = Math.min(clearHour ?? win.end, timeEnd);
+  const openEnd   = Math.min(win.end, timeEnd);
 
   const preFrac    = Math.max(0, (win.start - timeStart) / timeSpan);
   const openFrac   = Math.max(0, (openEnd   - win.start) / timeSpan);
@@ -479,10 +476,9 @@ export default function AdenosineDetailScreen() {
   const win       = useMemo(() => recommendedWindow(wakeHour, bedHour), [wakeHour, bedHour]);
 
   const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
-  // Phase is purely time-based: where is now relative to the recommended window?
-  const openEnd     = clearHour ?? win.end;
+  // Phase is purely time-based on the recommended window — never affected by caffeine clearance
   const activePhase: 'pre' | 'open' | 'closed' =
-    nowHour < win.start ? 'pre' : nowHour <= openEnd ? 'open' : 'closed';
+    nowHour < win.start ? 'pre' : nowHour <= win.end ? 'open' : 'closed';
 
   // 30-day aggregated mg totals for TrendBarChart
   const todayKey = DAY_ENTRIES[0]?.dateKey ?? '';
@@ -650,7 +646,7 @@ export default function AdenosineDetailScreen() {
 
         {/* Window phase indicator — same wake→bed span as bar chart */}
         <WindowPhaseBar
-          win={win} clearHour={clearHour} activePhase={activePhase}
+          win={win} activePhase={activePhase}
           wakeHour={wakeHour} bedHour={bedHour}
         />
 

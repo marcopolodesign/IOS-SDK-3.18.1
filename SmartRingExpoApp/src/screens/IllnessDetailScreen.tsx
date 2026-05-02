@@ -40,6 +40,8 @@ import {
   severityColor,
   statusColor,
 } from '../components/focus/IllnessWatchCard';
+import { IllnessStreakCard } from '../components/focus/IllnessStreakCard';
+import { IllnessStreakCardGlow } from '../components/focus/IllnessStreakCardGlow';
 import { BackArrow } from '../components/detail/BackArrow';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -460,7 +462,7 @@ export default function IllnessDetailScreen() {
           .select('*')
           .eq('user_id', userId)
           .order('score_date', { ascending: false })
-          .limit(7);
+          .limit(30);
 
         if (data && data.length > 0) {
           setLatestRow(data[0]);
@@ -569,6 +571,14 @@ export default function IllnessDetailScreen() {
             ))}
           </View>
         </View>
+
+        {/* ── Streak card A — manual glow ───────────────────────────────── */}
+        <Text style={styles.variantLabel}>A — manual glow</Text>
+        <IllnessStreakCard history={history} latestRow={latestRow} />
+
+        {/* ── Streak card B — react-native-animated-glow (needs rebuild) ── */}
+        <Text style={styles.variantLabel}>B — animated glow (Skia)</Text>
+        <IllnessStreakCardGlow history={history} latestRow={latestRow} />
 
         {/* ── Signal cards ──────────────────────────────────────────────── */}
         {SIGNALS.map(sig => (
@@ -832,6 +842,15 @@ const styles = StyleSheet.create({
   trendDetailVal: {
     fontFamily: fontFamily.demiBold,
     fontSize: 14,
+  },
+
+  variantLabel: {
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
 
   // Loading / empty

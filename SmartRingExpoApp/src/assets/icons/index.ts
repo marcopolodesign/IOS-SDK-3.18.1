@@ -9,6 +9,10 @@ export { SleepIcon } from './SleepIcon';
 
 export { ActivityIcon } from './ActivityIcon';
 export { SleepScoreIcon } from './SleepScoreIcon';
+export { WakeTimeIcon } from './WakeTimeIcon';
+export { NightTimeIcon } from './NightTimeIcon';
+export { BedtimeIcon } from './BedtimeIcon';
+export { SleptIcon } from './SleptIcon';
 
 // Device icon type for switching between ring and band
 export type DeviceType = 'ring' | 'band';

@@ -25,6 +25,8 @@ import { useAddOverlay } from '../../context/AddOverlayContext';
 import { spacing, fontSize, fontFamily } from '../../theme/colors';
 import NightTimeIcon from '../../assets/icons/NightTimeIcon';
 import WakeTimeIcon from '../../assets/icons/WakeTimeIcon';
+import { BedtimeIcon } from '../../assets/icons';
+import type { SleepSegment } from '../../components/home/SleepStagesChart';
 import { InfoButton } from '../../components/common/InfoButton';
 import { useSleepDebt } from '../../hooks/useSleepDebt';
 import { useBaselineMode } from '../../context/BaselineModeContext';
@@ -41,6 +43,21 @@ const DEBT_COLORS: Record<SleepDebtCategory, string> = {
   moderate: '#FF6B35',
   high: '#FF4444',
 };
+
+const STAGE_OPACITY: Record<string, number> = { awake: 1.0, rem: 0.75, core: 0.5, deep: 0.25 };
+
+function renderStageSegments(segments: SleepSegment[], fromMs: number, toMs: number): React.ReactElement[] {
+  const result: React.ReactElement[] = [];
+  segments.forEach((seg, i) => {
+    const s = Math.max(seg.startTime.getTime(), fromMs);
+    const e = Math.min(seg.endTime.getTime(), toMs);
+    if (e <= s) return;
+    result.push(
+      <View key={i} style={{ flex: e - s, backgroundColor: `rgba(255,255,255,${STAGE_OPACITY[seg.stage] ?? 0.3})` }} />
+    );
+  });
+  return result;
+}
 
 type OverviewTabProps = {
   onScroll?: Animated.AnimatedEvent<any>;
@@ -230,16 +247,65 @@ export function OverviewTab({ onScroll, onChartTouchStart, onChartTouchEnd, onSl
                   <NightTimeIcon />
                   <Text style={styles.sleepTimeText}>{formatTime(sleep.bedTime)}</Text>
                 </View>
-                <View style={styles.sleepProgress} />
                 <View style={styles.sleepTimeItem}>
                   <WakeTimeIcon />
                   <Text style={styles.sleepTimeText}>{formatTime(sleep.wakeTime)}</Text>
                 </View>
               </View>
 
+              <View style={styles.sleepProgressRow}>
+                {(() => {
+                  const segs = sleep.segments;
+                  const bedMs = sleep.bedTime?.getTime() ?? 0;
+                  const wakeMs = sleep.wakeTime?.getTime() ?? 0;
+                  if (!segs?.length || !bedMs || !wakeMs || wakeMs <= bedMs) {
+                    return (
+                      <>
+                        <View style={styles.sleepProgressDot} />
+                        <View style={[styles.sleepProgressBar, { flex: 1, backgroundColor: 'rgba(255,255,255,0.22)' }]} />
+                        <View style={styles.sleepProgressDot} />
+                      </>
+                    );
+                  }
+                  const midnight = new Date(sleep.bedTime);
+                  midnight.setHours(24, 0, 0, 0);
+                  const midMs = midnight.getTime();
+                  const hasMidnight = midMs > bedMs && midMs < wakeMs;
+                  return (
+                    <>
+                      <View style={styles.sleepProgressDot} />
+                      <View style={styles.sleepBarsArea}>
+                        {hasMidnight ? (
+                          <>
+                            <View style={[styles.sleepProgressBar, { flex: midMs - bedMs }]}>
+                              {renderStageSegments(segs, bedMs, midMs)}
+                            </View>
+                            <View style={styles.sleepMidnightGap} />
+                            <View style={[styles.sleepProgressBar, { flex: wakeMs - midMs }]}>
+                              {renderStageSegments(segs, midMs, wakeMs)}
+                            </View>
+                          </>
+                        ) : (
+                          <View style={[styles.sleepProgressBar, { flex: 1 }]}>
+                            {renderStageSegments(segs, bedMs, wakeMs)}
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.sleepProgressDot} />
+                    </>
+                  );
+                })()}
+              </View>
+
               <View style={styles.sleepStatsRow}>
-                <Text style={styles.sleepStatText}>{sleep.timeAsleep || '—'}</Text>
-                <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} ${t('overview.bpm_unit')}` : '—'}</Text>
+                <View style={styles.sleepStatItem}>
+                  <BedtimeIcon width={15} height={12} />
+                  <Text style={styles.sleepStatText}>{sleep.timeAsleep || '—'}</Text>
+                </View>
+                <View style={styles.sleepStatItem}>
+                  <BedtimeIcon width={15} height={12} />
+                  <Text style={styles.sleepStatText}>{sleep.restingHR ? `${sleep.restingHR} ${t('overview.bpm_unit')}` : '—'}</Text>
+                </View>
               </View>
 
               {sleepDebt.isReady && (
@@ -382,33 +448,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
   },
   sleepTimeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-  },
-  sleepTimeIcon: {
-    fontSize: 14,
+    gap: 4,
   },
   sleepTimeText: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fontFamily.regular,
   },
-  sleepProgress: {
+  sleepProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sleepProgressDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+  },
+  sleepBarsArea: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sleepProgressBar: {
     height: 6,
+    flexDirection: 'row',
+    overflow: 'hidden',
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  sleepMidnightGap: {
+    width: 8,
   },
   sleepStatsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 15,
+  },
+  sleepStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   sleepStatText: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fontFamily.regular,
+    letterSpacing: 0.5,
   },
   debtRow: {
     flexDirection: 'row',

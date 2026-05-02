@@ -356,7 +356,13 @@
     "detail_warning_hrv": "HRV is {{delta}} {{unit}} below baseline — your body may be under stress.",
     "detail_warning_spo2": "SpO₂ dipped to {{value}} (baseline {{baseline}}) — watch for respiratory symptoms.",
     "detail_warning_temperature": "Skin temperature is {{delta}} °C above baseline — possible inflammatory response.",
-    "detail_warning_sleep": "Awake time is {{delta}} {{unit}} above baseline — fragmented sleep can precede illness."
+    "detail_warning_sleep": "Awake time is {{delta}} {{unit}} above baseline — fragmented sleep can precede illness.",
+    "streak_card_title": "Body Signal",
+    "streak_label_days": "{{count}} Day Streak",
+    "streak_summary_clear": "Clear signal for {{count}} days.",
+    "streak_summary_watch": "Body has been signaling for {{count}} day(s).",
+    "streak_summary_sick": "Signs of illness detected. Take it easy.",
+    "streak_cta_report": "Get detailed live status report"
   },
   "last_run": {
     "card_title": "Review your last run",

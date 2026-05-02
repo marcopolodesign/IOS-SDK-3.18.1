@@ -370,7 +370,13 @@
     "detail_warning_hrv": "La VFC está {{delta}} {{unit}} por debajo del promedio — tu cuerpo puede estar bajo estrés.",
     "detail_warning_spo2": "El SpO₂ bajó a {{value}} (promedio {{baseline}}) — presta atención a síntomas respiratorios.",
     "detail_warning_temperature": "La temperatura cutánea está {{delta}} °C por encima del promedio — posible respuesta inflamatoria.",
-    "detail_warning_sleep": "El tiempo despierto es {{delta}} {{unit}} por encima del promedio — el sueño fragmentado puede preceder a una enfermedad."
+    "detail_warning_sleep": "El tiempo despierto es {{delta}} {{unit}} por encima del promedio — el sueño fragmentado puede preceder a una enfermedad.",
+    "streak_card_title": "Señal Corporal",
+    "streak_label_days": "Racha de {{count}} días",
+    "streak_summary_clear": "Señal clara durante {{count}} días.",
+    "streak_summary_watch": "Tu cuerpo lleva {{count}} día(s) avisando.",
+    "streak_summary_sick": "Signos de enfermedad detectados. Tómatelo con calma.",
+    "streak_cta_report": "Obtener reporte detallado en vivo"
   },
   "last_run": {
     "card_title": "Revisa tu última carrera",

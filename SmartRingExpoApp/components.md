@@ -218,6 +218,16 @@ Use these terms consistently in code, comments, and conversation. The cover is a
 
 ---
 
+### `IllnessStreakCard`
+**File:** `src/components/focus/IllnessStreakCard.tsx`
+**Props:** `history: IllnessScore[]` (up to 30 rows, newest-first), `latestRow: IllnessScore`
+**Renders:** Dark glass card (same chrome as `IllnessWatchCard` — dark base + 4 status-tinted edge gradients). Header: "Body Signal" title left, `⚡ N Day Streak` pill right (hidden when streak = 0). Body: 30-cell grid in 3 rows × 10 cols — each rounded-square cell colored by that day's status (CLEAR=green, WATCH=amber, SICK=red); empty days = dim grey; today (bottom-right) gets a white border ring. Below: summary line by status, then full-width white "Get detailed live status report" CTA button with sparkles icon → navigates to `/chat` with a pre-filled illness analysis query in `analyst` mode.
+**Logic:** `computeClearStreak` — counts consecutive CLEAR days from today backwards, stops on status break or day gap >1. `buildIllnessAnalysisQuery` formats signal + baseline values + recent status sequence into a coach prompt. Grid indexing: offset 0 = today (bottom-right), 29 = oldest (top-left).
+**Invariant:** Always renders even with 0 history rows (all-empty grid, streak pill hidden, streak = 0 summary). Doesn't crash when a signal value is null — formats as "no data".
+**Mounted in:** `IllnessDetailScreen` — between the hero block and the 5 SignalCards.
+
+---
+
 ### `LastRunContextCard`
 **File:** `src/components/focus/LastRunContextCard.tsx`
 **Props:** `lastRun: LastRunContext | null`, `isLoading: boolean`, `hasStrava: boolean`

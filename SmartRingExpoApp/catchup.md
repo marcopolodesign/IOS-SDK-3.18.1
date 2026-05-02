@@ -4,6 +4,108 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-05-02: Sleep Cover — redesigned timeline layout to match Figma
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Redesigned the sleep cover card in the Overview tab. Time labels (bedtime/wake) are now in their own space-between row. The progress bar shows sleep stages as proportional colored segments (awake=100% white, REM=75%, core=50%, deep=25%) split into two bars at midnight with an 8px gap. White dot endpoints on both sides. Stats row has `BedtimeIcon` before each value.
+
+**Files modified:**
+- `src/screens/home/OverviewTab.tsx` — separated timeline into two rows (labels + progress bar), added `sleepProgressRow`/`sleepProgressDot`/`sleepProgressBar` styles, added `BedtimeIcon` import, wrapped stats in `sleepStatItem` Views with icon, updated `sleepStatsRow`/`sleepStatText` styles
+
+---
+
+### 2026-05-02: SleepHypnogram — in-bed awake rendering, label column, layout polish
+
+**Source:** Claude Code — Macbook Pro
+
+**Change:** Improved the sleep hypnogram to render the pre-sleep in-bed awake period as a real awake block (gradient fill + grey 45° diagonal hatch overlay) with a connector down to the first sleep stage, instead of a hatched-only block with no connector. Moved stage labels from SVG text overlays to a native flex column for cleaner layout, and added a right margin so the chart doesn't bleed to the screen edge. Applies to both SleepTab and sleep-detail (shared component).
+
+**Files modified:**
+- `src/components/home/SleepHypnogram.tsx` — in-bed block: gradient + hatch overlay, connector restored; labels moved to native `View`/`Text` column (`LABEL_COL_W = 38`); `MARGIN_RIGHT = 20` added; `isInBed` typed properly (removed `as any`); fixed missing `getXPosition` in `stepPaths` useMemo deps; fixed `tooltipReplacement` justifyContent (`space-between` → `center`); restored missing `paddingRight` on `chartRow`
+
+---
+
+### 2026-05-02: SVG icon pattern — BedtimeIcon + SleptIcon extracted, CLAUDE.md rule added
+
+**Source:** Claude Code — Macbook Pro
+
+Extracted the two inline SVG icon functions from `SleepHypnogram.tsx` into proper icon files:
+- `src/assets/icons/BedtimeIcon.tsx` — bed icon (17×14, props: width/height/color)
+- `src/assets/icons/SleptIcon.tsx` — crescent moon (20×20, props: size/color)
+
+Both exported from `src/assets/icons/index.ts`. Also added `WakeTimeIcon` and `NightTimeIcon` to the barrel (they existed but weren't exported). `SleepHypnogram` now imports `{ BedtimeIcon, SleptIcon, WakeTimeIcon }` from the icons barrel — no inline SVG components remain.
+
+Added rule to `CLAUDE.md`: when a user pastes an SVG, always create it in `src/assets/icons/` and import from there — never define inline SVG components inside screen/component files.
+
+Agent prompt for full-app audit written to `.claude/agents/svg-icon-audit.md`.
+
+**Files modified:**
+- `src/assets/icons/BedtimeIcon.tsx` (new)
+- `src/assets/icons/SleptIcon.tsx` (new)
+- `src/assets/icons/index.ts`
+- `src/components/home/SleepHypnogram.tsx`
+- `CLAUDE.md`
+- `.claude/agents/svg-icon-audit.md` (new)
+
+---
+
+### 2026-05-02: Hypnogram — stage labels as left column, horizontal lines restored
+
+**Source:** Claude Code — Macbook Pro
+
+Stage labels (Awake/REM/Core/Deep + duration) moved from SVG overlay to a dedicated 48px React View column left of the chart, with `marginLeft: 4`. Horizontal lane separator lines restored between lanes. `CHART_WIDTH` reduced by `LABEL_COL_W` so the SVG fills the remaining space exactly. Labels align with lanes via `paddingTop: PADDING_TOP` + per-lane slot heights matching `LANE_HEIGHT + LANE_GAP`.
+
+**Files modified:** `src/components/home/SleepHypnogram.tsx`
+
+---
+
+### 2026-05-02: Hypnogram polish — header redesign, no dashes on in-bed, x-axis overlap fix
+
+**Source:** Claude Code — Macbook Pro
+
+**Changes:**
+1. **Header redesign** — replaced the plain SLEPT/BEDTIME/WAKE text row with icon + label + value columns. BedIcon (custom SVG bed) for Bedtime, MoonIcon (custom SVG crescent) for Slept, Ionicons `sunny-outline` for Wake Up. Same tooltip replacement slot (height 68).
+2. **In-bed awake** — the synthetic pre-sleep awake segment now renders as empty space (no fill, no dashes). The chart just starts from bedtime but shows nothing until sleep onset, making the gap self-evident.
+3. **X-axis overlap fix** — bedtime label changed from `textAnchor="middle"` at x=0 (half off-screen) to `textAnchor="start"`. Hour mark filter updated to exclude marks within 55px of the left edge (to avoid overlapping the start-anchored bedtime label).
+
+**Files modified:**
+- `src/components/home/SleepHypnogram.tsx`
+
+---
+
+### 2026-05-01: Adenosine Detail — Window Phases Fixed to Wake Time Only
+
+**Source:** Claude Code — Macbook Pro
+
+**Bug:** Logging a drink on the adenosine detail page shifted the window phase boundaries (pre/open/closed) because `openEnd` was derived from `clearHour` (`clearanceHour(doses)`). Logging an espresso changed `clearHour`, which moved the green "open" segment end further right and shrank the red "closed" segment.
+
+**Fix:** In `app/detail/adenosine-detail.tsx`:
+- `activePhase` calculation: replaced `clearHour ?? win.end` with `win.end` — phase is now purely time-based on the recommended window.
+- `WindowPhaseBar` component: removed `clearHour` prop and replaced `Math.min(clearHour ?? win.end, timeEnd)` with `Math.min(win.end, timeEnd)`.
+- Removed dead `openEnd = clearHour ?? win.end` variable inside `CaffeineBarChart` (was defined but never used).
+
+**Result:** The three window phases (pre/open/closed) always reflect wake time → `recommendedWindow(wakeHour, bedHour)` → bed time, identical to the cover card. Caffeine clearance (`clearHour`) still appears in the insight text and metrics grid but no longer moves the window.
+
+---
+
+### 2026-05-01: IllnessDetailScreen — Streak Grid Card + Coach CTA
+
+**Source:** Claude Code — Macbook Pro
+
+**What the user sees:** On the illness detail page, between the big score + recommendations and the first signal chart, a new "Body Signal" card now appears. It shows a 30-day grid of rounded squares (3 rows × 10 columns), each cell colored by that day's illness status: green = CLEAR, amber = WATCH, red = SICK. Today's cell (bottom-right) has a white border ring. Days with no data are dim grey. The top-right of the card shows `⚡ N Day Streak` when there's an active clear-day streak. Below the grid: a short summary sentence, then a full-width white button "Get detailed live status report" — tapping it fires a pre-filled illness analysis prompt to the AI coach in analyst mode (auto-streams immediately). The Supabase fetch was extended from 7→30 days so the grid has data.
+
+**Files created:**
+- `src/components/focus/IllnessStreakCard.tsx`
+
+**Files modified:**
+- `src/screens/IllnessDetailScreen.tsx` — import + mount `IllnessStreakCard`, `.limit(7)` → `.limit(30)`
+- `src/i18n/locales/en.json` — 6 new keys under `illness_watch`
+- `src/i18n/locales/es.json` — same 6 keys in Spanish
+- `components.md` — `IllnessStreakCard` entry
+
+---
+
 ### 2026-05-01: Fix — hypnogram shows inBedTime as BEDTIME; suppress false gap banner
 
 **Source:** Claude Code — Macbook Pro
