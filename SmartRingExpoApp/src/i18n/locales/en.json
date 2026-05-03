@@ -45,7 +45,9 @@
     "hr_declining": "↑ Resting HR elevated",
     "hr_stable": "→ Resting HR steady",
     "avg_hr_label": "Avg HR",
-    "hrv_label": "HRV"
+    "hrv_label": "HRV",
+    "no_data_title": "Still gathering data",
+    "no_data_body": "Wear your ring for a few nights to start seeing your personal trends and baselines here."
   },
   "home": {
     "greeting_morning": "Good morning",
@@ -326,6 +328,7 @@
     "stale_warning": "Last sync was over 48 hours ago",
     "building_baseline": "Building your baseline...",
     "empty_sync": "Sync your device to see illness signals",
+    "summary_peak": "Your biometrics are above your personal baseline. Peak condition.",
     "summary_clear": "All signals within your normal range.",
     "summary_watch": "Some signals are deviating from your baseline. Keep an eye on how you feel.",
     "summary_sick": "Multiple signals suggest your body is under strain. Consider resting today.",
@@ -343,6 +346,9 @@
     "detail_explain_spo2": "Your minimum blood oxygen during sleep can dip when respiratory function is compromised. Readings below 94% may indicate early respiratory involvement and distinguish a cold from something more serious. Your ring captures the lowest point each night.",
     "detail_explain_temperature": "Your ring tracks skin temperature trends relative to your own baseline — not absolute body temperature. A sustained rise of +0.3°C or more can precede a measurable fever by 1–2 days, as your body raises its internal thermostat to fight pathogens.",
     "detail_explain_sleep": "When your immune system activates, inflammatory cytokines disrupt sleep architecture and cause more awakenings. More than 30 minutes of awake time above your normal pattern is a meaningful early signal that your body is fighting something.",
+    "detail_rec_peak_1": "Your body is primed — push your training today.",
+    "detail_rec_peak_2": "HRV and nocturnal HR are above your baseline. Take advantage.",
+    "detail_rec_peak_3": "Stay consistent — what you did yesterday is working.",
     "detail_rec_clear_1": "All signals normal — train as planned.",
     "detail_rec_clear_2": "Stay hydrated and keep consistent sleep habits.",
     "detail_rec_clear_3": "Your next check runs tomorrow at 9am.",
@@ -359,6 +365,7 @@
     "detail_warning_sleep": "Awake time is {{delta}} {{unit}} above baseline — fragmented sleep can precede illness.",
     "streak_card_title": "Body Signal",
     "streak_label_days": "{{count}} Day Streak",
+    "streak_summary_peak": "Peak condition — body performing above baseline.",
     "streak_summary_clear": "Clear signal for {{count}} days.",
     "streak_summary_watch": "Body has been signaling for {{count}} day(s).",
     "streak_summary_sick": "Signs of illness detected. Take it easy.",
@@ -382,7 +389,8 @@
     "hr_comparison": "Avg HR: {{actual}} bpm · Expected: ~{{expected}} bpm",
     "body_as_expected": "A solid {{distance}} km run {{date}} at {{pace}}. Your effort of {{avgHR}} BPM matched your expected range of {{low}}–{{high}} BPM",
     "body_harder": "A tough {{distance}} km run {{date}} at {{pace}}. Your effort of {{avgHR}} BPM exceeded your expected range of {{low}}–{{high}} BPM",
-    "body_easier": "An easy {{distance}} km run {{date}} at {{pace}}. Your effort of {{avgHR}} BPM was below your expected range of {{low}}–{{high}} BPM"
+    "body_easier": "An easy {{distance}} km run {{date}} at {{pace}}. Your effort of {{avgHR}} BPM was below your expected range of {{low}}–{{high}} BPM",
+    "cta_analyze": "Analyze with Coach"
   },
   "strava": {
     "header_title": "Training",

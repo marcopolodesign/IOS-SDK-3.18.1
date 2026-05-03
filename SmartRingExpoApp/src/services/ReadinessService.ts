@@ -361,6 +361,7 @@ export interface IllnessParams {
 }
 
 function buildIllnessSummary(status: IllnessStatus, signals: IllnessSignals): string {
+  if (status === 'PEAK') return 'Your biometrics are above your personal baseline. Peak condition.';
   if (status === 'CLEAR') return 'All signals within your normal range.';
   if (status === 'SICK') {
     const flagged: string[] = [];
@@ -432,8 +433,17 @@ export function computeIllnessWatch(params: IllnessParams): IllnessWatch {
     sleepFragmented,
   };
 
+  // Detect PEAK: no illness signals + ≥2 positive biometric indicators
+  let peakSignals = 0;
+  if (hrv != null && hrvMed != null && hrv >= hrvMed * 1.10) peakSignals++;
+  if (restingHR != null && hrMed != null && restingHR <= hrMed - 3) peakSignals++;
+  if (sleepFragmentCount != null && sleepFragmentCount <= 15) peakSignals++;
+
   const status: IllnessStatus =
-    signalCount >= 3 ? 'SICK' : signalCount >= 1 ? 'WATCH' : 'CLEAR';
+    signalCount >= 3 ? 'SICK'
+    : signalCount >= 1 ? 'WATCH'
+    : peakSignals >= 2 ? 'PEAK'
+    : 'CLEAR';
 
 
   const details: IllnessWatchDetails = {

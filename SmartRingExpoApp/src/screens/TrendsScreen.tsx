@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useTranslation } from 'react-i18next';
 import { SleepTrendCover } from '../components/trends/SleepTrendCover';
 import { RecoveryTrendCover } from '../components/trends/RecoveryTrendCover';
@@ -54,16 +55,70 @@ const styles = StyleSheet.create({
   },
 });
 
+function TrendsEmptyBanner() {
+  const { t } = useTranslation();
+  return (
+    <View style={bannerStyles.glowWrap}>
+      <BlurView intensity={50} tint="systemUltraThinMaterialDark" style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={bannerStyles.edgeLeft} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={bannerStyles.edgeRight} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={bannerStyles.edgeTop} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={bannerStyles.edgeBottom} pointerEvents="none" />
+      <View style={bannerStyles.body}>
+        <Text style={bannerStyles.title}>{t('trends.no_data_title')}</Text>
+        <Text style={bannerStyles.bodyText}>{t('trends.no_data_body')}</Text>
+      </View>
+    </View>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  glowWrap: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: 'rgba(255,255,255,0.6)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+  },
+  edgeLeft: { position: 'absolute', top: 0, left: 0, bottom: 0, width: '15%' },
+  edgeRight: { position: 'absolute', top: 0, right: 0, bottom: 0, width: '15%' },
+  edgeTop: { position: 'absolute', top: 0, left: 0, right: 0, height: '15%' },
+  edgeBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%' },
+  body: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: 8,
+    alignItems: 'center',
+  },
+  title: {
+    fontFamily: fontFamily.demiBold,
+    fontSize: fontSize.xl,
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
+  },
+  bodyText: {
+    fontFamily: fontFamily.regular,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+});
+
 export function TrendsScreen() {
   const { t } = useTranslation();
   const homeData = useHomeDataContext();
 
   const [baselines, setBaselines] = useState<FocusBaselines>(EMPTY_BASELINES);
+  const [baselinesLoaded, setBaselinesLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchBaselines = useCallback(async () => {
     const b = await loadBaselines();
     setBaselines(b);
+    setBaselinesLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -106,6 +161,7 @@ export function TrendsScreen() {
           }
         >
           <Text style={styles.title}>{t('trends.title')}</Text>
+          {baselinesLoaded && baselines.daysLogged === 0 && <TrendsEmptyBanner />}
           <SleepTrendCover baselines={baselines} />
           <RecoveryTrendCover baselines={baselines} />
           <HRTrendCover baselines={baselines} />

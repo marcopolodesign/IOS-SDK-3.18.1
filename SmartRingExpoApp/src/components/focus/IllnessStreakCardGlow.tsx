@@ -14,13 +14,14 @@ const COLS = 10;
 const ROWS = 3;
 
 // Apple Intelligence preset structure, driven by the illness status color
-function darkBg(status: 'CLEAR' | 'WATCH' | 'SICK'): string {
+export function darkBg(status: 'PEAK' | 'CLEAR' | 'WATCH' | 'SICK'): string {
+  if (status === 'PEAK') return 'rgba(24, 18, 0, 0.97)';
   if (status === 'SICK') return 'rgba(28, 4, 4, 0.97)';
   if (status === 'WATCH') return 'rgba(28, 16, 0, 0.97)';
   return 'rgba(4, 22, 12, 0.97)';
 }
 
-function createIllnessGlowPreset(accentColor: string, status: 'CLEAR' | 'WATCH' | 'SICK'): PresetConfig {
+export function createIllnessGlowPreset(accentColor: string, status: 'PEAK' | 'CLEAR' | 'WATCH' | 'SICK'): PresetConfig {
   const c = accentColor;
   const cDim = accentColor + '88';
   const cFaint = accentColor + '44';
@@ -156,6 +157,7 @@ export function IllnessStreakCardGlow({ history, latestRow }: IllnessStreakCardG
 
   const summaryText = useMemo(() => {
     if (sorted.length === 0) return t('illness_watch.empty_sync');
+    if (status === 'PEAK') return t('illness_watch.streak_summary_peak');
     if (status === 'CLEAR') return t('illness_watch.streak_summary_clear', { count: clearStreak });
     if (status === 'WATCH') return t('illness_watch.streak_summary_watch', { count: watchSickStreak });
     return t('illness_watch.streak_summary_sick');

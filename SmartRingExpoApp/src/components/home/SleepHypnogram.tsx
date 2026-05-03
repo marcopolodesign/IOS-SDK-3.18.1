@@ -216,10 +216,20 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
   const wakeX        = CHART_WIDTH - PADDING_RIGHT;
   const allHourMarks = generateHourMarks(timelineBed, timelineWake);
   // Filter hour marks too close to either edge (accounts for bedtime label width ~55px start-anchored)
-  const hourMarks    = allHourMarks.filter(mark => {
+  const allFilteredHourMarks = allHourMarks.filter(mark => {
     const x = getXPosition(mark);
     return x > 55 && (wakeX - x) > MIN_LABEL_GAP;
   });
+  const midnightMark = (() => {
+    const m = new Date(timelineBed);
+    m.setHours(0, 0, 0, 0);
+    m.setDate(m.getDate() + 1);
+    return m > timelineBed && m < timelineWake ? m : null;
+  })();
+  // Exclude midnight from regular hour marks — it's rendered separately as a divider
+  const hourMarks = midnightMark
+    ? allFilteredHourMarks.filter(m => m.getTime() !== midnightMark.getTime())
+    : allFilteredHourMarks;
 
   const xAxisLabels = useMemo(() => {
     if (resolvedSessions.length <= 1) return null;
@@ -332,6 +342,27 @@ export function SleepHypnogram({ segments, bedTime, wakeTime, sessions, onTouchS
             />
           );
         })}
+
+        {/* Midnight divider — solid, brighter than hourly guides */}
+        {midnightMark && (() => {
+          const x = getXPosition(midnightMark);
+          return (
+            <>
+              <Line
+                x1={x} y1={PADDING_TOP} x2={x} y2={laneAreaBottom}
+                stroke="rgba(255,255,255,0.45)"
+                strokeWidth={1.5}
+              />
+              <SvgText
+                x={x} y={CHART_HEIGHT - 10}
+                fill="rgba(255,255,255,0.75)" fontSize={10} textAnchor="middle"
+                fontWeight="600"
+              >
+                12 AM
+              </SvgText>
+            </>
+          );
+        })()}
 
         {/* Gap separators between sessions */}
         {gaps.map((gap, i) => (

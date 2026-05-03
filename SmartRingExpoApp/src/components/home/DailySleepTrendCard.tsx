@@ -117,6 +117,7 @@ export function DailySleepTrendCard({ headerRight }: DailySleepTrendCardProps = 
       ]}
       gradientCenter={{ x: 0.51, y: -0.86 }}
       gradientRadii={{ rx: '80%', ry: '300%' }}
+      showArrow={false}
       headerRight={headerRight}
     >
       <View style={styles.chart}>

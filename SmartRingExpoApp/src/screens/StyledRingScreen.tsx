@@ -23,6 +23,7 @@ import { HeartIcon } from '../components/common/HeartIcon';
 import { useSmartRing } from '../hooks';
 import { useOnboarding } from '../context/OnboardingContext';
 import { GlassCard } from '../components/home/GlassCard';
+import { InfoIcon } from '../assets/icons';
 import { fontFamily } from '../theme/colors';
 import UnifiedSmartRingService from '../services/UnifiedSmartRingService';
 import { SleepStageTimeline } from '../components/sleep/SleepStageTimeline';
@@ -930,7 +931,7 @@ export function StyledRingScreen() {
                     </GlassCard>
                   ) : initialDataError ? (
                     <GlassCard style={styles.errorCard}>
-                      <Ionicons name="information-circle" size={32} color="#6B7280" />
+                      <InfoIcon size={32} color="#6B7280" />
                       <Text style={styles.errorText}>
                         Could not fetch data right now.{'\n'}
                         Tap refresh to try again.

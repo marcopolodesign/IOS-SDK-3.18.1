@@ -16,7 +16,7 @@ import {
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import Reanimated, { FadeIn } from 'react-native-reanimated';
@@ -31,6 +31,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
+import { InfoIcon } from '../assets/icons';
 import { supabase } from '../services/SupabaseService';
 import { colors, fontFamily, fontSize } from '../theme/colors';
 import type { IllnessScore } from '../types/supabase.types';
@@ -40,7 +41,6 @@ import {
   severityColor,
   statusColor,
 } from '../components/focus/IllnessWatchCard';
-import { IllnessStreakCard } from '../components/focus/IllnessStreakCard';
 import { IllnessStreakCardGlow } from '../components/focus/IllnessStreakCardGlow';
 import { BackArrow } from '../components/detail/BackArrow';
 
@@ -102,12 +102,14 @@ function shortDate(dateStr: string): string {
 function scoreBarColor(status: string): string {
   if (status === 'SICK') return colors.error;
   if (status === 'WATCH') return '#FF8C42';
+  if (status === 'PEAK') return '#F5B800';
   return colors.success;
 }
 
 function gradientColor(status: IllnessStatus): string {
   if (status === 'SICK') return '#AB0D0D';
   if (status === 'WATCH') return '#7A3A00';
+  if (status === 'PEAK') return '#5C4500';
   return '#004D2E';
 }
 
@@ -303,11 +305,7 @@ function SignalCard({
       <View style={styles.signalTitleRow}>
         <Text style={styles.signalTitle}>{t(SIGNAL_LABEL_KEYS[sig.i18nKey])}</Text>
         <Pressable onPress={onInfo} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Svg width={18} height={18} viewBox="0 0 20 20">
-            <Circle cx={10} cy={10} r={9} stroke="rgba(255,255,255,0.45)" strokeWidth={1.5} fill="none" />
-            <Circle cx={10} cy={6.5} r={1.2} fill="rgba(255,255,255,0.45)" />
-            <SvgText x={10} y={15.5} fontSize={8} fontWeight="700" fill="rgba(255,255,255,0.45)" textAnchor="middle">i</SvgText>
-          </Svg>
+          <InfoIcon size={18} color="rgba(255,255,255,0.45)" />
         </Pressable>
       </View>
 
@@ -431,6 +429,7 @@ function TrendBars({
 
 export default function IllnessDetailScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [latestRow, setLatestRow] = useState<IllnessScore | null>(null);
   const [history, setHistory] = useState<IllnessScore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -477,36 +476,32 @@ export default function IllnessDetailScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
-        <View style={styles.navRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-            <BackArrow />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.screen}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.floatingBack, { top: insets.top + 8 }]} hitSlop={12}>
+          <BackArrow />
+        </TouchableOpacity>
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.tertiary} />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!latestRow) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
-        <View style={styles.navRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-            <BackArrow />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.screen}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.floatingBack, { top: insets.top + 8 }]} hitSlop={12}>
+          <BackArrow />
+        </TouchableOpacity>
         <View style={styles.loadingWrap}>
           <Text style={styles.emptyText}>{t('illness_watch.empty_sync')}</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const status = latestRow.status as IllnessStatus;
-  const s = status.toLowerCase() as 'clear' | 'watch' | 'sick';
+  const s = status.toLowerCase() as 'peak' | 'clear' | 'watch' | 'sick';
   const recs = [1, 2, 3].map(n => t(`illness_watch.detail_rec_${s}_${n}`));
   const gradColor = gradientColor(status);
   const gradId = 'illnessHeroGrad';
@@ -514,7 +509,7 @@ export default function IllnessDetailScreen() {
   const fadeId = 'illnessHeroFade';
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <View style={styles.screen}>
       {/* Full-screen gradient background */}
       <Reanimated.View entering={FadeIn.duration(600)} style={styles.gradientBg} pointerEvents="none">
         <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
@@ -538,20 +533,15 @@ export default function IllnessDetailScreen() {
         </Svg>
       </Reanimated.View>
 
+      {/* Floating back arrow — overlaid, takes no layout space */}
+      <TouchableOpacity onPress={() => router.back()} style={[styles.floatingBack, { top: insets.top + 8 }]} hitSlop={12}>
+        <BackArrow />
+      </TouchableOpacity>
+
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 52 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Nav row: back arrow + status chip ─────────────────────────── */}
-        <View style={styles.navRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-            <BackArrow />
-          </TouchableOpacity>
-          <View style={styles.statusChip}>
-            <Text style={styles.statusChipText}>{status}</Text>
-          </View>
-        </View>
-
         {/* ── Hero ──────────────────────────────────────────────────────── */}
         <View style={styles.hero}>
           <View style={styles.heroTopRow}>
@@ -572,12 +562,7 @@ export default function IllnessDetailScreen() {
           </View>
         </View>
 
-        {/* ── Streak card A — manual glow ───────────────────────────────── */}
-        <Text style={styles.variantLabel}>A — manual glow</Text>
-        <IllnessStreakCard history={history} latestRow={latestRow} />
-
-        {/* ── Streak card B — react-native-animated-glow (needs rebuild) ── */}
-        <Text style={styles.variantLabel}>B — animated glow (Skia)</Text>
+        {/* ── Streak card ───────────────────────────────────────────────── */}
         <IllnessStreakCardGlow history={history} latestRow={latestRow} />
 
         {/* ── Signal cards ──────────────────────────────────────────────── */}
@@ -591,16 +576,6 @@ export default function IllnessDetailScreen() {
             onInfo={() => openInfo(sig)}
           />
         ))}
-
-        {/* ── Overall score trend ───────────────────────────────────────── */}
-        {history.length > 1 && (
-          <>
-            <Text style={styles.sectionTitle}>{t('illness_watch.detail_trend_title')}</Text>
-            <View style={styles.trendSection}>
-              <TrendBars trend={history} t={t} />
-            </View>
-          </>
-        )}
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -628,7 +603,7 @@ export default function IllnessDetailScreen() {
           )}
         </BottomSheetView>
       </BottomSheetModal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -650,29 +625,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-
-  // Nav row (back arrow + chip)
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  backBtn: {
+  floatingBack: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 10,
     padding: 8,
-  },
-  statusChip: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-  },
-  statusChipText: {
-    fontFamily: fontFamily.demiBold,
-    fontSize: fontSize.sm,
-    color: '#FFFFFF',
-    letterSpacing: 1,
   },
 
   // Hero

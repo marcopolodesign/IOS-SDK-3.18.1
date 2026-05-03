@@ -4,6 +4,70 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-05-02: TrendsScreen — no-data banner
+
+Added `TrendsEmptyBanner` component inline in `TrendsScreen.tsx`. Renders at the top of the scroll list (before the trend covers) when `baselinesLoaded && baselines.daysLogged === 0` — i.e. the user has no baseline history yet. Matches the `LastRunContextCard` glassmorphic style: `BlurView` + 4 edge `LinearGradient` glows + white border + white glow shadow. Added `trends.no_data_title` / `trends.no_data_body` i18n keys in en/es. Banner disappears automatically once the user accumulates baseline data.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: LastRunContextCard — IllnessCard visual style (white glow)
+
+Replaced the BlurView + LinearGradient glassmorphic approach in `LastRunContextCard` with the same `AnimatedGlow` pattern used by `IllnessStreakCardGlow`. Uses a static white inner glow on a near-opaque dark background instead of the illness card's status-colored glow. Card now has an internal header row (title + effort verdict pill), body text, and a dedicated white CTA button ("Analyze with Coach") — matching the illness card's layout exactly. The `sectionLabel` that was previously above the card in `FocusScreen` was removed since the title is now inside the card. Added `cta_analyze` i18n key in en/es.
+
+**Files:** `src/components/focus/LastRunContextCard.tsx`, `src/screens/FocusScreen.tsx`, `src/i18n/locales/en.json`, `src/i18n/locales/es.json`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: Remove trimAwakeEdges — restore raw ring bedtime
+
+Removed `trimAwakeEdges` from `useHomeData.ts`. `bedTime` and `wakeTime` in `buildBlockResult` and `blockToRingNap` now use raw ring record bounds (`block.start` / `block.end`) instead of trimming leading/trailing awake segments. This fixes a false positive in the "Ring Missed" bedtime gap banner — the trim was shifting `bedTime` to sleep onset, making it appear the ring missed time the user was in bed, even when the ring tracked correctly.
+
+**Files:** `src/hooks/useHomeData.ts`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: SleepHypnogram — Midnight divider on detail hypnogram
+
+Applied the same midnight divider to `SleepHypnogram.tsx` (used in the Sleep tab / sleep detail). When sleep crosses midnight, a solid white vertical line (1.5px, 45% opacity) appears at 12 AM across all four stage lanes, with a brighter "12 AM" x-axis label (75% opacity, semi-bold). The midnight mark is excluded from the regular dashed hourly guides to avoid double-rendering.
+
+**Files:** `src/components/home/SleepHypnogram.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: InfoIcon — Rolled out custom SVG info icon to all covers and detail screens
+
+`InfoButton.tsx` now renders `InfoIcon` instead of its own inline SVG. This propagates to every existing usage: OverviewTab (3×), SleepTab (5×), ActivityTab (3×), SleepBaselineTierCard, SleepDebtCard (2×), CaffeineWindowCard. `IllnessDetailScreen.tsx` `SignalCard` inline SVG replaced with `InfoIcon` as well. Total coverage: 16 info-icon instances now use the custom brand SVG.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: InfoIcon — Custom SVG info icon added app-wide
+
+Created `src/assets/icons/InfoIcon.tsx` from the custom SVG design (circle outline + "i" glyph). Exported from `src/assets/icons/index.ts`. Replaced the one existing `Ionicons name="information-circle"` usage in `StyledRingScreen.tsx` with `<InfoIcon>`. Accepts `size` and `color` props; defaults to `19px` / white.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
+### 2026-05-02: Sleep Cover — Midnight divider on hypnogram bar
+
+The sleep stages bar in `SleepHypnogramContinuous` now shows a solid white vertical line at midnight when the sleep window crosses midnight. The midnight mark is visually distinct from regular hourly dashed guides (solid, 1.5px, 55% opacity) and its "12 AM" axis label is brighter (80% opacity, semi-bold). Regular hourly marks that coincide with midnight are filtered out to avoid double-rendering.
+
+**Files:** `src/components/home/SleepHypnogramContinuous.tsx`
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ### 2026-05-02: Sleep Cover — redesigned timeline layout to match Figma
 
 **Source:** Claude Code — Macbook Pro

@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
+import AnimatedGlow from 'react-native-animated-glow';
 import { colors, fontFamily, fontSize, spacing } from '../../theme/colors';
 import type { IllnessWatch, IllnessStatus } from '../../types/focus.types';
+import { createIllnessGlowPreset, darkBg } from './IllnessStreakCardGlow';
 
 interface IllnessWatchCardProps {
   illness: IllnessWatch | null;
@@ -13,6 +14,7 @@ interface IllnessWatchCardProps {
 }
 
 export function statusColor(status: IllnessStatus): string {
+  if (status === 'PEAK') return '#F5B800';
   if (status === 'CLEAR') return colors.success;
   if (status === 'WATCH') return colors.warning;
   return colors.error;
@@ -82,7 +84,7 @@ function IllnessWatchCardInner({ illness, isLoading }: IllnessWatchCardProps) {
   const status = illness?.status ?? 'CLEAR';
   const score = illness?.score ?? 0;
   const collarColor = statusColor(status);
-  const edgeColors = useMemo<[string, string]>(() => [collarColor + '80', collarColor + '00'], [collarColor]);
+  const glowPreset = useMemo(() => createIllnessGlowPreset(collarColor, status as 'CLEAR' | 'WATCH' | 'SICK'), [collarColor, status]);
 
   const nhrSeverity: Severity = illness
     ? (illness.signals.restingHRElevated ? getSeverityFromDelta(illness.details.hrDelta) : 'normal')
@@ -103,20 +105,12 @@ function IllnessWatchCardInner({ illness, isLoading }: IllnessWatchCardProps) {
   const canNavigate = !isLoading && illness != null;
 
   return (
-    <View style={styles.glowWrap}>
+    <AnimatedGlow preset={glowPreset} style={styles.glowWrap}>
       <Pressable
         onPress={() => router.push('/(tabs)/coach/illness-detail')}
         disabled={!canNavigate}
         style={({ pressed }) => [styles.card, pressed && canNavigate && styles.cardPressed]}
       >
-      {/* Dark glass base — no BlurView (GPU-heavy, causes RAM spike + transition lag) */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(18,18,28,0.92)' }]} />
-
-      {/* Subtle inward color bleed from each edge */}
-      <LinearGradient colors={edgeColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.edgeLeft} pointerEvents="none" />
-      <LinearGradient colors={edgeColors} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={styles.edgeRight} pointerEvents="none" />
-      <LinearGradient colors={edgeColors} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.edgeTop} pointerEvents="none" />
-      <LinearGradient colors={edgeColors} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.edgeBottom} pointerEvents="none" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -180,7 +174,7 @@ function IllnessWatchCardInner({ illness, isLoading }: IllnessWatchCardProps) {
         )}
       </View>
     </Pressable>
-    </View>
+    </AnimatedGlow>
   );
 }
 
@@ -227,23 +221,9 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
   },
   cardPressed: {
     opacity: 0.82,
-  },
-  edgeLeft: {
-    position: 'absolute', top: 0, left: 0, bottom: 0, width: '15%',
-  },
-  edgeRight: {
-    position: 'absolute', top: 0, right: 0, bottom: 0, width: '15%',
-  },
-  edgeTop: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: '15%',
-  },
-  edgeBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: '15%',
   },
   header: {
     flexDirection: 'row',

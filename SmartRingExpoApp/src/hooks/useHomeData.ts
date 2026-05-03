@@ -918,32 +918,10 @@ interface RingNapBlock {
 // Trims leading & trailing awake segments so the displayed sleep window
 // matches actual sleep onset → offset. Mid-night awakenings are preserved
 // because they're real sleep disturbances.
-function trimAwakeEdges(segments: SleepSegment[]): {
-  segments: SleepSegment[];
-  bedTime: Date;
-  wakeTime: Date;
-} | null {
-  const firstIdx = segments.findIndex(s => s.stage !== 'awake');
-  if (firstIdx === -1) return null;
-  let lastIdx = segments.length - 1;
-  while (lastIdx >= 0 && segments[lastIdx].stage === 'awake') lastIdx--;
-  const trimmed = segments.slice(firstIdx, lastIdx + 1);
-  return {
-    segments: trimmed,
-    bedTime: trimmed[0].startTime,
-    wakeTime: trimmed[trimmed.length - 1].endTime,
-  };
-}
-
 function blockToRingNap(b: { start: number; end: number; records: any[] }): RingNapBlock {
   const segs = buildBlockSegments(b);
-  const trimmed = trimAwakeEdges(segs);
-  if (!trimmed) {
-    // Block was entirely awake — caller filters on totalMin > 0 and will drop this.
-    return { startMs: b.start, endMs: b.end, segments: [], deepMin: 0, lightMin: 0, remMin: 0, awakeMin: 0, totalMin: 0 };
-  }
   let deepMin = 0, lightMin = 0, remMin = 0, awakeMin = 0;
-  for (const seg of trimmed.segments) {
+  for (const seg of segs) {
     const durMin = Math.round((seg.endTime.getTime() - seg.startTime.getTime()) / 60000);
     if (seg.stage === 'deep') deepMin += durMin;
     else if (seg.stage === 'core') lightMin += durMin;
@@ -951,9 +929,9 @@ function blockToRingNap(b: { start: number; end: number; records: any[] }): Ring
     else awakeMin += durMin;
   }
   return {
-    startMs: trimmed.bedTime.getTime(),
-    endMs: trimmed.wakeTime.getTime(),
-    segments: trimmed.segments,
+    startMs: b.start,
+    endMs: b.end,
+    segments: segs,
     deepMin,
     lightMin,
     remMin,
@@ -1037,20 +1015,15 @@ function buildBlockResult(
     dayIndex: 0,
   });
 
-  // Trim leading/trailing awake segments so BEDTIME/WAKE and the hypnogram
-  // window reflect sleep onset → offset, not raw ring record bounds.
-  const trimmed = trimAwakeEdges(segments);
-  if (!trimmed) return null;
-
   return {
     score,
     timeAsleep: formatSleepDuration(actualSleepMinutes),
     timeAsleepMinutes: actualSleepMinutes,
     restingHR: extractedVitals.restingHR,
     respiratoryRate: extractedVitals.respiratoryRate,
-    segments: trimmed.segments,
-    bedTime: trimmed.bedTime,
-    wakeTime: trimmed.wakeTime,
+    segments,
+    bedTime: new Date(block.start),
+    wakeTime: new Date(block.end),
     inBedTime: new Date(block.start),
   };
 }

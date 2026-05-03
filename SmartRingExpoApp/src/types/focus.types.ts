@@ -42,7 +42,7 @@ export interface ReadinessScore {
   computedAt: string;                     // ISO date string
 }
 
-export type IllnessStatus = 'CLEAR' | 'WATCH' | 'SICK';
+export type IllnessStatus = 'PEAK' | 'CLEAR' | 'WATCH' | 'SICK';
 
 export interface IllnessSignals {
   tempDeviation: boolean;

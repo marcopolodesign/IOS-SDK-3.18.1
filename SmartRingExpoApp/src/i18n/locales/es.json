@@ -45,7 +45,9 @@
     "hr_declining": "↑ FC en reposo elevada",
     "hr_stable": "→ FC en reposo estable",
     "avg_hr_label": "FC prom.",
-    "hrv_label": "VFC"
+    "hrv_label": "VFC",
+    "no_data_title": "Recopilando datos",
+    "no_data_body": "Usa el anillo algunas noches para empezar a ver tus tendencias y baselines personales aquí."
   },
   "home": {
     "greeting_morning": "Buenos días",
@@ -340,6 +342,7 @@
     "stale_warning": "La última sincronización fue hace más de 48 horas",
     "building_baseline": "Construyendo tu línea base...",
     "empty_sync": "Sincroniza tu dispositivo para ver señales de enfermedad",
+    "summary_peak": "Tus biomarcadores están por encima de tu línea base. Condición pico.",
     "summary_clear": "Todas las señales dentro de tu rango normal.",
     "summary_watch": "Algunas señales se están desviando de tu línea base. Presta atención a cómo te sientes.",
     "summary_sick": "Múltiples señales sugieren que tu cuerpo está bajo estrés. Considera descansar hoy.",
@@ -357,6 +360,9 @@
     "detail_explain_spo2": "El mínimo de oxígeno en sangre durante el sueño puede bajar cuando la función respiratoria está comprometida. Lecturas por debajo del 94% pueden indicar compromiso respiratorio temprano. Tu anillo registra el punto más bajo de cada noche.",
     "detail_explain_temperature": "Tu anillo rastrea tendencias de temperatura cutánea respecto a tu propia línea base, no la temperatura corporal absoluta. Un aumento sostenido de +0,3°C o más puede preceder a la fiebre en 1–2 días.",
     "detail_explain_sleep": "Cuando el sistema inmune se activa, las citoquinas inflamatorias alteran la arquitectura del sueño y provocan más despertares. Más de 30 minutos de vigilia por encima de tu patrón habitual es una señal temprana significativa.",
+    "detail_rec_peak_1": "Tu cuerpo está en su punto — empuja el entrenamiento hoy.",
+    "detail_rec_peak_2": "VFC y FC nocturna por encima de tu línea base. Aprovéchalo.",
+    "detail_rec_peak_3": "Sé consistente — lo que hiciste ayer está funcionando.",
     "detail_rec_clear_1": "Todas las señales normales — entrena según lo planeado.",
     "detail_rec_clear_2": "Mantente hidratado y mantén hábitos de sueño consistentes.",
     "detail_rec_clear_3": "Tu próxima verificación es mañana a las 9am.",
@@ -373,6 +379,7 @@
     "detail_warning_sleep": "El tiempo despierto es {{delta}} {{unit}} por encima del promedio — el sueño fragmentado puede preceder a una enfermedad.",
     "streak_card_title": "Señal Corporal",
     "streak_label_days": "Racha de {{count}} días",
+    "streak_summary_peak": "Condición pico — cuerpo rindiendo por encima de la línea base.",
     "streak_summary_clear": "Señal clara durante {{count}} días.",
     "streak_summary_watch": "Tu cuerpo lleva {{count}} día(s) avisando.",
     "streak_summary_sick": "Signos de enfermedad detectados. Tómatelo con calma.",
@@ -396,7 +403,8 @@
     "hr_comparison": "FC media: {{actual}} bpm · Esperada: ~{{expected}} bpm",
     "body_as_expected": "Una buena carrera de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo dentro del rango esperado de {{low}}–{{high}} BPM",
     "body_harder": "Una carrera exigente de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM superó el rango esperado de {{low}}–{{high}} BPM",
-    "body_easier": "Una carrera liviana de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo por debajo del rango esperado de {{low}}–{{high}} BPM"
+    "body_easier": "Una carrera liviana de {{distance}} km {{date}} a {{pace}}. Tu esfuerzo de {{avgHR}} BPM estuvo por debajo del rango esperado de {{low}}–{{high}} BPM",
+    "cta_analyze": "Analizar con el Coach"
   },
   "strava": {
     "header_title": "Entrenamiento",
