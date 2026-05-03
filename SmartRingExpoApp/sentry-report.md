@@ -337,6 +337,28 @@
 - `gh` CLI not available — PR creation skipped.
 - No new issue types seen today vs. prior daily runs.
 
+## 2026-05-03
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7456350648 | ReferenceError: Property 'fontSize' doesn't exist (LastRunContextCard) | fatal | 2026-05-03T01:31:53Z | 2026-05-03T01:31:57Z | Needs manual review — HMR dev-mode error only; occurred via Metro `metroHotUpdateModule` during an active development session. `fontSize` is correctly imported in the current source (`theme/colors.ts:99`). Not reproducible in production builds. No code change needed. |
+| 7456148752 | ReferenceError: Property 'backgroudn' doesn't exist (SleepHypnogram) | fatal | 2026-05-02T21:24:26Z | 2026-05-02T21:24:26Z | Needs manual review — HMR dev-mode error only; single occurrence triggered via `HMRClient.js → metroHotUpdateModule`. The string `backgroudn` does not exist anywhere in the current source — developer typed the typo and immediately fixed it during a hot-reload session. Not a production bug. No code change needed. |
+| 7456161996 | Error: Unknown std::runtime_error error. | warning | 2026-05-02T21:41:43Z | 2026-05-03T01:31:45Z | Needs manual review — native C++ runtime error with no JS stack trace; 14 events. Not auto-fixable from JS code. |
+| 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | 2026-05-03T01:23:12Z | Needs manual review — recurring (115 total events); intentional telemetry from `JstyleService.ts:normalizeNativeError`. Expected BLE condition. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-03T01:23:12Z | Needs manual review — recurring BLE race condition; no stack trace available. `JstyleBridge.m` rejects pending request on disconnect. |
+| 7431794314 | Error: sleep_ring_empty | warning | 2026-04-22T00:59:34Z | 2026-05-03T01:18:51Z | Needs manual review — intentional `reportError` at `useHomeData.ts:1685`; ring returned 0 sleep records, Supabase fallback runs. |
+| 7434372098 | Error: getStepsData timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-05-03T01:11:35Z | Needs manual review — `withNativeTimeout` fires correctly; expected BLE timeout when ring is out of range or native SDK is busy. |
+| 7431794260 | Error: com.apple.healthkit Code=5 "Authorization status is not determined" | warning | 2026-04-22T00:59:31Z | 2026-05-02T21:32:54Z | Fix already applied in PR #4 (`isExpectedHealthKitError` guard). Events originate from pre-fix builds. |
+
+### 2026-05-03 Notes
+- 25 unresolved issues total; 8 active within the last 24 h (cutoff 2026-05-02T02:00Z).
+- **No auto-fixes applied today.** Analysis of all 8 recent issues:
+  - **7456350648 / 7456148752 (NEW TODAY — FATAL, HMR dev artifacts):** Both fatal `ReferenceError` crashes occurred during a live hot-reload session (stack trace: `HMRClient.js → metroHotUpdateModule → eval`). These are not production crashes — Metro's HMR injector re-evaluated the module after the developer typed a temporary typo. `fontSize` is correctly defined in `theme/colors.ts`. `backgroudn` was never committed. Neither string exists anywhere in the current checkout. Sentry captured the in-flight error before the developer saved the corrected version. Zero action required.
+  - **7456161996 (NEW — Unknown std::runtime_error):** Native C++ error with 14 occurrences and no JS stack trace. Likely originates in a CoreBluetooth or Reanimated native layer. Requires native profiling to diagnose; not auto-fixable.
+  - **Recurring operational issues (7431794312, 7434391393, 7431794314, 7434372098, 7431794260):** All documented in prior daily runs. Same root causes apply: BLE state conditions, intentional monitoring instrumentation, and pre-fix HealthKit events from old builds.
+- `gh` CLI not available — PR creation skipped.
+- No new issue types introduced today.
+
 ### 2026-05-01 Notes
 - 25 unresolved issues total; 10 active within the last 24 h (cutoff ≈ 2026-04-30T12:00Z).
 - **No auto-fixes applied today.** None of the within-24h issues meet the confidence threshold for an automated fix — all have either minified-only stack traces or are expected runtime conditions.
