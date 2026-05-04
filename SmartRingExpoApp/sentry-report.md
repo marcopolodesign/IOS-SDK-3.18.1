@@ -359,6 +359,26 @@
 - `gh` CLI not available — PR creation skipped.
 - No new issue types introduced today.
 
+## 2026-05-04
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7452006057 | Error: SDK returned DataError (pending data type 27) | warning | 2026-04-30T14:06:15Z | 2026-05-04T09:01:17Z | Needs manual review — SDK signals an unhandled data type 27 from the X3 BLE stack; no JS stack trace available. Third occurrence since 2026-04-30 (3 events, 2 users). Investigate `JstyleBridge.m` `DataError_X3` branch for type 27 handling. |
+| 7431041612 | Error: getSleepData timed out after 10000ms | warning | 2026-04-21T19:45:57Z | 2026-05-04T01:25:02Z | Needs manual review — recurring BLE timeout (41 events total, 4 users); `withNativeTimeout` fires correctly. Expected when ring is out of range or native SDK is busy during sleep data sync. |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | 2026-05-04T00:48:18Z | Needs manual review — recurring (63 events, 3 users); sync invoked while ring is disconnected. Minified-only stack; expected BLE state condition. Consider a pre-flight connectivity guard at call sites. |
+| 7450693721 | Error: sleep_ring_empty | warning | 2026-04-30T00:10:55Z | 2026-05-04T00:48:17Z | Needs manual review — recurring (4 events, 2 users); intentional `reportError` when ring returns 0 sleep records and Supabase fallback runs. Not a code bug. Consider downgrading to `info` when fallback succeeds. |
+| 7457620318 | Error: Unknown St13runtime_error error. | warning | 2026-05-04T00:48:14Z | 2026-05-04T00:48:14Z | Needs manual review — **new issue today** (1 event, 1 user). Native C++ `std::runtime_error` with no JS stack trace. Likely from CoreBluetooth or the X3 SDK native layer. Requires native profiling; not auto-fixable from JS. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-04T00:12:13Z | Needs manual review — recurring BLE race condition (30 events, 2 users); no stack trace. `JstyleBridge.m` correctly calls `rejectPendingDataRequest` on disconnect. Consider calling `cancelPendingDataRequest()` proactively in the JS disconnect handler. |
+
+### 2026-05-04 Notes
+- 25 unresolved issues total; 6 active within the last 24 h (cutoff 2026-05-03T09:01Z). Project slug: `focus-app`.
+- **No auto-fixes applied today.** All 6 active issues have either minified-only stack traces or no JS stack trace at all — none meet the confidence threshold for an automated fix.
+- **7457620318 (NEW TODAY — Unknown St13runtime_error):** Single occurrence. Native C++ `std::runtime_error` propagated through the Jstyle SDK without a JS-level stack. Same error class as 7456161996 (which accrued 14 events on 2026-05-02/03). If this continues escalating, a native engineer should enable Sentry's native crash symbolication or attach a device profiler session during the error window.
+- **7452006057 (DataError type 27):** Third distinct occurrence (different session from the 2026-04-30 first-seen). The X3 SDK's `DataError_X3` path in `JstyleBridge.m` rejects the pending resolver when it receives an unhandled data type. Type 27 is not in the standard X3 API doc. Could be a firmware-specific diagnostic packet. Monitor for volume increase; if it crosses 10 events recommend reviewing the X3 SDK changelog.
+- **Recurring BLE operational issues (7431041612, 7434824620, 7450693721, 7434391393):** All previously documented. No new patterns. Combined 138 events across 4 issues.
+- `gh` CLI not available — PR creation skipped.
+- No new issue types requiring code changes identified today.
+
 ### 2026-05-01 Notes
 - 25 unresolved issues total; 10 active within the last 24 h (cutoff ≈ 2026-04-30T12:00Z).
 - **No auto-fixes applied today.** None of the within-24h issues meet the confidence threshold for an automated fix — all have either minified-only stack traces or are expected runtime conditions.
