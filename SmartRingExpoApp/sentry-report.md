@@ -379,6 +379,21 @@
 - `gh` CLI not available — PR creation skipped.
 - No new issue types requiring code changes identified today.
 
+## 2026-05-06
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7444044573 | Error: sleep_ring_empty | warning | 2026-04-27T08:16:30Z | 2026-05-06T08:48:39Z | Needs manual review — intentional `reportError` at `useHomeData.ts:1658`; fires when ring returns 0 sleep records and Supabase fallback runs. 28 total events, 2 users. Not a code bug. |
+| 7431041612 | Error: getSleepData timed out after 10000ms | warning | 2026-04-21T19:45:57Z | 2026-05-06T08:48:36Z | Needs manual review — BLE native timeout from `withNativeTimeout(JstyleBridge.getSleepData(), 10000, 'getSleepData')` in `JstyleService.ts:565`. Recovery via `cancelPendingDataRequest` already in place. Hardware/BLE timing condition; not auto-fixable. |
+
+### 2026-05-06 Notes
+- 25 unresolved issues total; 2 active within the last 24 h (cutoff 2026-05-05T08:48Z). Project slug: `focus-app`.
+- **No auto-fixes applied today.** Both active issues are recurring, well-documented operational conditions:
+  - **7444044573 (sleep_ring_empty):** `reportError(new Error('sleep_ring_empty'), { op: 'sync.sleep.empty' }, 'warning')` at `useHomeData.ts:1658` fires after 3 failed `getSleepDataRaw()` retries when the ring returns 0 records. The Supabase fallback (lines 1660–1689) runs immediately after. Intentional monitoring instrumentation. Consider changing to `reportError(..., 'info')` or suppressing when fallback succeeds.
+  - **7431041612 (getSleepData timed out after 10000ms):** `withNativeTimeout` at `JstyleService.ts:565` rejects after 10 s when the X3 SDK's `getSleepData` BLE response does not arrive. The `enqueueNativeCall` BUSY-retry path then calls `cancelPendingDataRequest()` to clean up native state. This issue has cycled through several timeout variants over the past two weeks (syncTime, getStepsData, query timeout, getSleepData) — the representative event changes as different operations timeout. All are the same underlying mechanism. Not auto-fixable from JS; a larger timeout or native-side optimisation would be needed.
+- `gh` CLI not available — PR creation skipped.
+- No new issue types identified today.
+
 ## 2026-05-05 — No new issues
 
 ### 2026-05-01 Notes
