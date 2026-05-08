@@ -413,6 +413,24 @@
 
 ## 2026-05-05 — No new issues
 
+## 2026-05-08
+
+| Issue ID | Title | Severity | First Seen | Last Seen | 24h Events | Action Taken |
+|---|---|---|---|---|---|---|
+| 7431041612 | Error: getSleepData timed out after 10000ms | warning | 2026-04-21T19:45:57Z | 2026-05-08T10:19:42Z | 6 | Needs manual review — minified stack only; `withNativeTimeout` at `JstyleService.ts:565` fires correctly; expected BLE timeout. |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | 2026-05-08T10:17:05Z | 7 | Needs manual review — minified stack only; sync invoked while ring is disconnected; expected BLE state condition. |
+| 7452006057 | Error: SDK returned DataError (pending data type 41) | warning | 2026-04-30T14:06:15Z | 2026-05-08T10:01:31Z | 20 | Needs manual review — no JS stack trace; **spike of 20 events in 24 h** (up from 3 total as of 2026-05-04). DataError type now reported as 41 (previously 27/28). Investigate X3 SDK `DataError_X3` branch in `JstyleBridge.m` for type 41 handling. |
+| 7457620318 | Error: Unknown St13runtime_error error. | warning | 2026-05-04T00:48:14Z | 2026-05-07T18:24:50Z | 1 | Needs manual review — no JS stack trace; native C++ `std::runtime_error` from X3 SDK or CoreBluetooth layer; 2 total events. Not auto-fixable from JS. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-07T14:57:15Z | 1 | Needs manual review — no JS stack trace; BLE peripheral disconnected mid-request; `JstyleBridge.m` already calls `rejectPendingDataRequest` on disconnect. |
+
+### 2026-05-08 Notes
+- 25 unresolved issues total; **5 active within the last 24 h** (cutoff 2026-05-07T10:17Z). Project slug: `focus-app`.
+- **No auto-fixes applied today.** All 5 active issues have minified-only or absent JS stack traces — none meet the confidence threshold for an automated fix.
+- **7452006057 (DataError) — ESCALATING SPIKE:** Jumped from 3 total events on 2026-05-04 to 23 total events with **20 events in a single 24 h window**. The representative event's data type has changed from 27 → 28 → 41, suggesting multiple firmware packets are hitting the unhandled `DataError_X3` path in `JstyleBridge.m`. Type 41 is not documented in the current X3 API reference. **Recommend manual native investigation:** open `JstyleBridge.m` and review the `DataError_X3` / `JSTYLE_DATA_TYPE_ERROR` handler; add a no-op case for type 41 (or a `Sentry.addBreadcrumb` instead of a full `reportError`) until the SDK doc is clarified.
+- **7431041612 (getSleepData timeout) / 7434824620 (NOT_CONNECTED):** Both recurring with 6–7 events today, consistent with prior days. All stack traces are minified; analysis relies on breadcrumbs and local source reading. No new patterns.
+- **7457620318 (St13runtime_error) / 7434391393 (Connection dropped):** 1 event each in the window; ongoing low-frequency native-layer conditions. No JS-side fix possible without native profiling.
+- `gh` CLI not available — PR creation skipped.
+
 ### 2026-05-01 Notes
 - 25 unresolved issues total; 10 active within the last 24 h (cutoff ≈ 2026-04-30T12:00Z).
 - **No auto-fixes applied today.** None of the within-24h issues meet the confidence threshold for an automated fix — all have either minified-only stack traces or are expected runtime conditions.
