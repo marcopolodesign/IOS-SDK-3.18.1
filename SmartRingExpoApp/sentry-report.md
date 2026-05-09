@@ -77,16 +77,16 @@
 | 7440315317 | Error: [object Object] — getStravaActivities | error | 2026-04-25T01:40:55Z | Auto-fixed (PR #5) |
 | 7440315531 | Error: [object Object] — getStepsReadings | error | 2026-04-25T01:41:02Z | Auto-fixed (PR #5) |
 | 7440315931 | Error: [object Object] — getHRVReadings | error | 2026-04-25T01:41:21Z | Auto-fixed (PR #5) |
-| 7434420739 | autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | Needs manual review — intentional diagnostic; reconnect failure is expected when ring is out of range. Consider downgrading to warning. |
-| 7431794312 | NOT_CONNECTED: No device connected (escalating, 55 events) | warning | 2026-04-22T00:59:35Z | Needs manual review — expected BLE state; high volume suggests callers need a connectivity guard before issuing commands. |
-| 7431794314 | sleep_ring_empty (useHomeData) | warning | 2026-04-22T00:59:34Z | Needs manual review — ring returned no sleep data; normal when ring wasn't worn. |
-| 7434391393 | Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — expected BLE race; consider cancelling pending requests on disconnect. |
-| 7434372098 | getTemperatureData timed out after 10000ms (48 events) | warning | 2026-04-22T17:51:23Z | Needs manual review — high-volume BLE timeout. Temperature command may be unreliable on X3 firmware. |
+| 7434420739 | Error: autoReconnect.jstyle returned failure | error | 2026-04-22T18:08:47Z | Needs manual review — intentional diagnostic; reconnect failure is expected when ring is out of range. Consider downgrading to warning. |
+| 7431794312 | Error: NOT_CONNECTED: No device connected (escalating, 55 events) | warning | 2026-04-22T00:59:35Z | Needs manual review — expected BLE state; high volume suggests callers need a connectivity guard before issuing commands. |
+| 7431794314 | Error: sleep_ring_empty (useHomeData) | warning | 2026-04-22T00:59:34Z | Needs manual review — ring returned no sleep data; normal when ring wasn't worn. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — expected BLE race; consider cancelling pending requests on disconnect. |
+| 7434372098 | Error: getTemperatureData timed out after 10000ms (48 events) | warning | 2026-04-22T17:51:23Z | Needs manual review — high-volume BLE timeout. Temperature command may be unreliable on X3 firmware. |
 
 ### 2026-04-25 Notes
 - 13 issues seen within the last 24 hours.
 - **Root cause of 7 `[object Object]` errors:** `reportError()` in `src/utils/sentry.ts` called `String(supabaseError)` which serialises as `[object Object]` since `PostgrestError` has no `toString()`. Fixed by preferring `.message` when available. Single-file fix covers all 7 issues. PR #5 created (`sentry/fix-7440312497`).
-- **[Worklets] leftRoundedRect (7441113294):** Fatal, 29 occurrences in < 5 minutes. `leftRoundedRect` helper is called from a Reanimated `useDerivedValue`/`useAnimatedStyle` context in `sleep-detail.tsx` without the `'worklet'` directive. Function not found in current repo — must be in OTA-deployed code. Requires dev to add `'worklet'` to the function or refactor it out of the animated callback.
+- **[Worklets] leftRoundedRect (7441113294):** Fatal, 29 occurrences in < 5 minutes. `leftRoundedRect` helper is called from a Reanimated `useDerivedValue`/`useAnimatedStyle` context in `sleep-detail.tsx` without the `'worklet'` directive. Function not found in current repo — must be in OTA-deployed code. Requires dev to add `'worklet'` to the function body or refactor it out of the animated callback.
 - **NOT_CONNECTED cluster (7431794312):** 55 events, escalating. Multiple callers invoke ring data commands without first checking connection state. Needs a connectivity guard at the call sites.
 
 ### 2026-04-17 Notes
@@ -165,7 +165,7 @@
 | 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | Needs manual review — same pattern |
 | 7435110956 | Error: No device connected (DataSyncService→getSleepDataRaw→ensureConnected) | error | 2026-04-23T00:10:43Z | Needs manual review — sync burst while ring disconnected |
 | 7435111574 / 7435111082 / 7435115700 / 7435110949 / 7435111092 / 7435111107 / 7435111093 / 7435110932 / 7435112378 / 7435111538 / 7435111519 / 7435111605 / 7435116696 | Error: No device connected (various callers) | error/warning | 2026-04-23T00:10–00:14Z | Needs manual review — same root cause; all from `ensureConnected` in UnifiedSmartRingService |
-| 7431794956 | Error: V8 getActivityModeData timed out after 10000ms | error | 2026-04-22T00:59:59Z | Skipped — V8 service off-limits per project constraints |
+| 7431794956 | Error: V8 getActivityModeData timed out after 10000ms | error | 2026-04-22T00:59:59Z | Skipped — V8 service off-limits per constraints |
 | 7406751015 | WatchdogTermination: OS watchdog terminated app (possible RAM overuse) | fatal | 2026-04-13T00:38:05Z | Needs manual review — recurring fatal, no JS stack; requires Xcode Instruments profiling |
 
 ## 2026-04-29
@@ -257,7 +257,7 @@
 
 | Issue ID | Title | Severity | First Seen | Action Taken |
 |---|---|---|---|---|
-| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | Needs manual review — recurring (26 events total, last seen today). Sync attempted while ring disconnected; expected runtime condition. No auto-fix applied. |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | Needs manual review — recurring (26 events total, last seen today). Sync attempted while ring is disconnected; expected runtime condition. No auto-fix applied. |
 | 7450693721 | Error: sleep_ring_empty | warning | 2026-04-30T00:10:55Z | Needs manual review — new issue ID (1 event). Same root cause as 7444044573; intentional `reportError` in `useHomeData.ts:1634` when ring returns 0 sleep records and Supabase fallback is used. Not a code bug. No auto-fix applied. |
 | 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | Needs manual review — recurring (21 events total, last seen today). Native bridge rejects pending data request on BLE disconnect (`JstyleBridge.m:1188`); no in-app stack frames available. Expected BLE race condition. No auto-fix applied. |
 
@@ -275,7 +275,7 @@
 |---|---|---|---|---|
 | 7446778802 | TypeError: JstyleBridge.getSleepAndActivityData is not a function (it is undefined) | warning | 2026-04-28T12:08:51Z | Needs manual review — `getSleepAndActivityData` does not exist in `JstyleBridge.m` or `JstyleService.ts`; error originates from a stale OTA bundle calling a method that was never defined (or was removed). Will self-resolve once all clients upgrade. |
 | 7446777310 | Error: Pending data request cancelled by JS timeout recovery | warning | 2026-04-28T12:07:58Z | Needs manual review — `cancelPendingDataRequest()` JS-side recovery path fired; transient BLE state where a queued native call was cancelled during timeout cleanup. Expected behavior; not a code bug. |
-| 7445344177 | ReferenceError: Property 'SCREEN_H' doesn't exist (FocusScoreRing) | fatal | 2026-04-27T19:23:36Z | Needs manual review — crash originated in Metro HMR hot-update path (`HMRClient.js` → `metroHotUpdateModule`), not production runtime. `FocusScoreRing.tsx` uses `SCREEN_W`/`SVG_H` — `SCREEN_H` is not defined anywhere in the repo. Development-only; not reproducible in production builds. |
+| 7445344177 | ReferenceError: Property 'SCREEN_H' doesn't exist (FocusScoreRing) | fatal | 2026-04-27T19:23:36Z | Needs manual review — crash originated in Metro HMR hot-update path (`HMRClient.js` → `metroHotUpdateModule`), not production runtime. `FocusScoreRing.tsx` uses `SCREEN_W`/`SVG_H` — `SCREEN_H` is not defined anywhere in the repo. Development-only; not reproducible in production builds. No code change needed. |
 | 7444201961 | Error: Query timeout after 10s (StravaService) | error | 2026-04-27T09:51:33Z | Needs manual review — recurring from yesterday; `StravaService.loadTokensFromDatabase` 10 s `Promise.race` guard fires when Supabase is slow/unreachable. Caught and handled (`_isConnected = false`). Consider downgrading `reportError` severity to `warning`. |
 | 7431041612 | Error: Query timeout after 10s (StravaService) | error | 2026-04-21T19:45:57Z | Needs manual review — same root as 7444201961; recurring since 2026-04-21. |
 | 7434372098 | Error: getFirmwareVersion timed out after 5000ms | warning | 2026-04-22T17:51:23Z | Needs manual review — recurring; 65 total events. `withNativeTimeout` fires correctly when native SDK does not respond within 5 s. BLE device-side condition; not a code bug. |
@@ -315,7 +315,7 @@
 | Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
 |---|---|---|---|---|---|
 | 7431794260 | Error: com.apple.healthkit Code=5 "Authorization status is not determined for all types provided." | warning | 2026-04-22T00:59:31Z | 2026-05-02T11:46:39Z | Needs manual review — HealthKit permissions not yet granted by user; fix guard already in PR #4 (`isExpectedHealthKitError`). Events from pre-fix builds. |
-| 7434372098 | Error: getStepsData timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-05-02T11:43:15Z | Needs manual review — `withNativeTimeout` fires at `JstyleService.ts:69`; expected BLE timeout when ring is out of range or native SDK is busy. 88 total events. |
+| 7434372098 | Error: getStepsData timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-05-02T11:43:15Z | Needs manual review — `withNativeTimeout` fires at `JstyleService.ts:69`; expected BLE timeout when ring is out of range or Native SDK is busy. 88 total events. |
 | 7431794312 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T00:59:35Z | 2026-05-02T11:37:01Z | Needs manual review — `normalizeNativeError` at `JstyleService.ts:131` surfaces this correctly; expected when sync is attempted before ring reconnects. 109 total events. |
 | 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-02T11:37:01Z | Needs manual review — no stack trace; BLE peripheral disconnected while a native data request was in flight. `JstyleBridge.m` already calls `rejectPendingDataRequest` on disconnect. 28 total events. |
 | 7431794314 | Error: sleep_ring_empty | warning | 2026-04-22T00:59:34Z | 2026-05-02T11:34:57Z | Needs manual review — intentional `reportError` at `useHomeData.ts:1685` when ring returns 0 sleep records; Supabase fallback runs immediately after. Not a code bug. 24 total events. |
@@ -379,22 +379,7 @@
 - `gh` CLI not available — PR creation skipped.
 - No new issue types requiring code changes identified today.
 
-## 2026-05-07
-
-| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
-|---|---|---|---|---|---|
-| 7444044573 | Error: autoReconnect.jstyle returned failure | error | 2026-04-27T08:16:30Z | 2026-05-07T09:44:13Z | Needs manual review — expected BLE timeout, not a code defect |
-
-### 2026-05-07 Notes
-- 25 unresolved issues total; **1 active within the last 24 h** (cutoff 2026-05-06T09:44Z). Project slug corrected from `focus-app-1` → `focus-app`.
-- **No auto-fixes applied today.** The single within-24h issue does not meet the confidence threshold for an automated fix.
-- **7444044573 (autoReconnect.jstyle returned failure) — 5 events today, 33 total, 2 users:**
-  - Code path: `UnifiedSmartRingService.ts:383` — `reportError(new Error('autoReconnect.jstyle returned failure'), { op: 'autoReconnect.jstyle', reason: result?.message ?? 'unknown' })` fires when `JstyleService.autoReconnect()` returns `{ success: false }`. This happens because `withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')` in `JstyleService.ts:379` times out after 12 seconds when the ring is out of BLE range.
-  - Sentry tag `reason: autoReconnect timed out` confirms the timeout path. Tag `handled: yes` confirms the error is caught. Breadcrumb trail shows HealthKit fallback runs immediately after and succeeds ("HealthKit fallback applied").
-  - This is **expected behavior** — when the ring is not nearby, reconnect times out and the app gracefully falls back to HealthKit data. No user-visible failure occurs.
-  - **Recommendation (manual):** Change `reportError(...)` at `UnifiedSmartRingService.ts:383` to `addBreadcrumb('ble', 'autoReconnect.jstyle failed', ...)` to eliminate Sentry noise for this normal operational path. Alternatively, only call `reportError` if the HealthKit fallback also fails. Either change is a product decision.
-- `gh` CLI not available — PR creation skipped.
-- Stack traces are minified (`app:///main.jsbundle`, no source maps). All analysis based on breadcrumbs, Sentry tags, and local source reading.
+## 2026-05-05 — No new issues
 
 ## 2026-05-06
 
@@ -411,7 +396,22 @@
 - `gh` CLI not available — PR creation skipped.
 - No new issue types identified today.
 
-## 2026-05-05 — No new issues
+## 2026-05-07
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7444044573 | Error: autoReconnect.jstyle returned failure | error | 2026-04-27T08:16:30Z | 2026-05-07T09:44:13Z | Needs manual review — expected BLE timeout, not a code defect |
+
+### 2026-05-07 Notes
+- 25 unresolved issues total; **1 active within the last 24 h** (cutoff 2026-05-06T09:44Z). Project slug corrected from `focus-app-1` → `focus-app`.
+- **No auto-fixes applied today.** The single within-24h issue does not meet the confidence threshold for an automated fix.
+- **7444044573 (autoReconnect.jstyle returned failure) — 5 events today, 33 total, 2 users:**
+  - Code path: `UnifiedSmartRingService.ts:383` — `reportError(new Error('autoReconnect.jstyle returned failure'), { op: 'autoReconnect.jstyle', reason: result?.message ?? 'unknown' })` fires when `JstyleService.autoReconnect()` returns `{ success: false }`. This happens because `withNativeTimeout(JstyleBridge.autoReconnect(), 12000, 'autoReconnect')` in `JstyleService.ts:379` times out after 12 seconds when the ring is out of BLE range.
+  - Sentry tag `reason: autoReconnect timed out` confirms the timeout path. Tag `handled: yes` confirms the error is caught. Breadcrumb trail shows HealthKit fallback runs immediately after and succeeds ("HealthKit fallback applied").
+  - This is **expected behavior** — when the ring is not nearby, reconnect times out and the app gracefully falls back to HealthKit data. No user-visible failure occurs.
+  - **Recommendation (manual):** Change `reportError(...)` at `UnifiedSmartRingService.ts:383` to `addBreadcrumb('ble', 'autoReconnect.jstyle failed', ...)` to eliminate Sentry noise for this normal operational path. Alternatively, only call `reportError` if the HealthKit fallback also fails. Either change is a product decision.
+- `gh` CLI not available — PR creation skipped.
+- Stack traces are minified (`app:///main.jsbundle`, no source maps). All analysis based on breadcrumbs, Sentry tags, and local source reading.
 
 ## 2026-05-08
 
@@ -430,6 +430,19 @@
 - **7431041612 (getSleepData timeout) / 7434824620 (NOT_CONNECTED):** Both recurring with 6–7 events today, consistent with prior days. All stack traces are minified; analysis relies on breadcrumbs and local source reading. No new patterns.
 - **7457620318 (St13runtime_error) / 7434391393 (Connection dropped):** 1 event each in the window; ongoing low-frequency native-layer conditions. No JS-side fix possible without native profiling.
 - `gh` CLI not available — PR creation skipped.
+
+## 2026-05-09
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7431041612 | Error: getStepsData timed out after 5000ms | warning | 2026-04-21T19:45:57Z | 2026-05-09T03:05:30Z | Needs manual review — recurring BLE timeout (49 events); `withNativeTimeout` + `cancelPendingDataRequest` already in place. Not auto-fixable. |
+| 7469146075 | EXC_BAD_ACCESS: Unhandled JS Exception: Error: Rendered fewer hooks than expected (ContinuousHRLine) | fatal | 2026-05-09T03:01:22Z | 2026-05-09T03:01:22Z | Auto-fixed (PR #9) — `activityPins = useMemo(...)` in `app/detail/heart-rate-detail.tsx` was declared after three early return statements, violating Rules of Hooks. Hoisted before all early returns. |
+
+### 2026-05-09 Notes
+- 25 unresolved issues total; 2 active within the last 24 h.
+- **Auto-fixed: 7469146075 (fatal hooks crash)** — `ContinuousHRLine` in `app/detail/heart-rate-detail.tsx:228` had an `activityPins = useMemo(...)` call positioned after early returns at lines 186, 189, and 205. When the ring reconnects with empty HR data (`filtered.length === 0`), the component exits before the useMemo, causing React to detect fewer hooks than on the initial render and throw a fatal `EXC_BAD_ACCESS`. Fix: hoisted the `useMemo` to line 187 (immediately after the last unconditional hook). Branch `sentry/fix-7469146075` → **PR #9**.
+- **7431041612 (getStepsData timeout):** Recurring since 2026-04-21 (49 events). `withNativeTimeout` fires at `JstyleService.ts:483` after 5 s when the native SDK does not respond. `cancelPendingDataRequest()` cleans up native state. Working as designed; not a code bug.
+- PR #9 created via GitHub MCP (label `sentry-auto-fix` does not exist in the repo).
 
 ### 2026-05-01 Notes
 - 25 unresolved issues total; 10 active within the last 24 h (cutoff ≈ 2026-04-30T12:00Z).
