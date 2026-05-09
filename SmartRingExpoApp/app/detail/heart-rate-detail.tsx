@@ -183,6 +183,19 @@ function ContinuousHRLine({
     })
   ).current;
 
+  // Must be called before any early return to satisfy Rules of Hooks
+  const activityPins = useMemo(() => {
+    const dayStart = new Date(dayDateISO + 'T00:00:00');
+    return activities.map(a => {
+      const startMs = new Date(a.startDate).getTime();
+      const startMin = Math.round((startMs - dayStart.getTime()) / 60_000);
+      if (startMin < 0 || startMin > maxMinute) return null;
+      const svgX = toX(startMin);
+      const leftPct = (svgX / CHART_W) * 100;
+      return { a, leftPct, svgX };
+    }).filter(Boolean) as Array<{ a: UnifiedActivity; leftPct: number; svgX: number }>;
+  }, [activities, dayDateISO, maxMinute]);
+
   if (filtered.length === 0) return null;
 
   // Single-point fallback: render a dot + axis labels without a line
@@ -223,19 +236,6 @@ function ContinuousHRLine({
   // Only show hour ticks up to maxMinute
   const maxHour = Math.ceil(maxMinute / 60);
   const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24].filter(h => h <= maxHour);
-
-  // Activity icon pins: positioned using % of CHART_W to avoid needing pixel layout
-  const activityPins = useMemo(() => {
-    const dayStart = new Date(dayDateISO + 'T00:00:00');
-    return activities.map(a => {
-      const startMs = new Date(a.startDate).getTime();
-      const startMin = Math.round((startMs - dayStart.getTime()) / 60_000);
-      if (startMin < 0 || startMin > maxMinute) return null;
-      const svgX = toX(startMin);
-      const leftPct = (svgX / CHART_W) * 100;
-      return { a, leftPct, svgX };
-    }).filter(Boolean) as Array<{ a: UnifiedActivity; leftPct: number; svgX: number }>;
-  }, [activities, dayDateISO, maxMinute]);
 
   return (
     <View style={chartStyles.outerWrapper}>
