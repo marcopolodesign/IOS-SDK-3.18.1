@@ -14,7 +14,7 @@ module.exports = {
     name,
     slug: 'smart-ring-expo-app',
     owner: 'mateoaldao',
-    version: '1.0.32',
+    version: '1.0.33',
     orientation: 'portrait',
     icon,
     userInterfaceStyle: 'dark',
@@ -27,13 +27,14 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: bundleId,
-      buildNumber: '33',
+      buildNumber: '34',
       infoPlist: {
         NSBluetoothAlwaysUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
         NSBluetoothPeripheralUsageDescription: 'Focus needs Bluetooth to connect to your ring and sync health data',
         NSHealthShareUsageDescription: 'Focus needs access to read your health data from Apple Health to provide comprehensive health insights',
         NSHealthUpdateUsageDescription: 'Focus needs access to write health data to Apple Health to keep your records synchronized',
-        UIBackgroundModes: ['bluetooth-central', 'fetch'],
+        UIBackgroundModes: ['bluetooth-central', 'processing'],
+        BGTaskSchedulerPermittedIdentifiers: ['com.expo.modules.backgroundtask.processing'],
       },
       config: {
         usesNonExemptEncryption: false,
@@ -59,6 +60,7 @@ module.exports = {
           },
         },
       ],
+      'expo-background-task',
       'expo-secure-store',
       'expo-router',
       'expo-localization',

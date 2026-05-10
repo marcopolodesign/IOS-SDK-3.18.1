@@ -647,7 +647,7 @@ SmartRingExpoApp/
 - **AuthService** - User authentication via Supabase
 - **DataSyncService** - Cloud data synchronization
 - **SupabaseService** - Database operations
-- **BackgroundSleepTask** - Background fetch task (5 AM–11 PM): syncs sleep data from ring, schedules "Sleep Ready" local notification, runs full DataSyncService.syncAllData() at most once every 2 hours
+- **BackgroundSleepTask** - Background task (`expo-background-task`, iOS `processing` mode, 5 AM–11 PM): syncs sleep data from ring, schedules "Sleep Ready" local notification, runs full DataSyncService.syncAllData() at most once every 2 hours
 - ~~QCBandService~~ - **NOT USED. Do not call.**
 
 ## Push Notifications

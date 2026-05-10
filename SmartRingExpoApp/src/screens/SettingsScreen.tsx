@@ -530,6 +530,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           </TouchableOpacity>
         )}
 
+        {/* ── Debug: force-fire background task (dev builds only) ── */}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={[styles.signOutBtn, { borderColor: 'rgba(107,142,255,0.4)', marginTop: 8 }]}
+            onPress={async () => {
+              try {
+                const BackgroundTask = await import('expo-background-task');
+                const fired = await BackgroundTask.triggerTaskWorkerForTestingAsync();
+                Alert.alert('BG Task', fired ? 'Task fired — check background_logs in Supabase' : 'Task did not fire (only works on physical device, debug build)');
+              } catch (e: any) {
+                Alert.alert('BG Task Error', e?.message);
+              }
+            }}
+          >
+            <Text style={[styles.signOutText, { color: 'rgba(107,142,255,0.9)' }]}>🐛 Fire BG Task (dev)</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>

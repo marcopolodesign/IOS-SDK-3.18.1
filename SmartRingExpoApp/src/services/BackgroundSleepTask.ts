@@ -1,14 +1,14 @@
 /**
  * Background Sleep Notification Task
  *
- * Uses expo-background-fetch to periodically wake the app in the background,
+ * Uses expo-background-task (iOS processing mode) to periodically wake the app in the background,
  * sync sleep data from the ring over BLE, detect the wake time (endTime),
  * and schedule a local notification for wakeTime + 30 minutes.
  *
  * Must be imported at the app root (before rendering) so the task is defined.
  */
 import * as TaskManager from 'expo-task-manager';
-import * as BackgroundFetch from 'expo-background-fetch';
+import * as BackgroundTask from 'expo-background-task';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
@@ -174,14 +174,14 @@ TaskManager.defineTask(TASK_NAME, async () => {
     // Only run between 5 AM and 11 PM — sleep check is morning; data sync runs all day
     if (hour < 5 || hour >= 23) {
       await bgLog('skipped_outside_window', { hour });
-      return BackgroundFetch.BackgroundFetchResult.NoData;
+      return BackgroundTask.BackgroundTaskResult.Success;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id;
     if (!userId) {
       await bgLog('no_user');
-      return BackgroundFetch.BackgroundFetchResult.NoData;
+      return BackgroundTask.BackgroundTaskResult.Success;
     }
 
     const today = now.toDateString();
@@ -268,13 +268,11 @@ TaskManager.defineTask(TASK_NAME, async () => {
       }
     }
 
-    return didSchedule || didSleepSync
-      ? BackgroundFetch.BackgroundFetchResult.NewData
-      : BackgroundFetch.BackgroundFetchResult.NoData;
+    return BackgroundTask.BackgroundTaskResult.Success;
   } catch (error: any) {
     await bgLog('task_error', { error: error?.message, stack: error?.stack?.slice(0, 300) });
     reportError(error, { op: 'backgroundSleepTask.topLevel' }, 'fatal');
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
 
@@ -285,18 +283,16 @@ TaskManager.defineTask(TASK_NAME, async () => {
 export async function registerBackgroundSleepTask(): Promise<void> {
   if (Platform.OS !== 'ios') return;
 
-  const status = await BackgroundFetch.getStatusAsync();
-  if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
+  const status = await BackgroundTask.getStatusAsync();
+  if (status === BackgroundTask.BackgroundTaskStatus.Restricted) {
     return;
   }
 
   const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
   if (isRegistered) return;
 
-  await BackgroundFetch.registerTaskAsync(TASK_NAME, {
-    minimumInterval: 15 * 60, // 15 min — iOS minimum
-    stopOnTerminate: false,
-    startOnBoot: true,
+  await BackgroundTask.registerTaskAsync(TASK_NAME, {
+    minimumInterval: 15, // 15 min — iOS minimum (unit: minutes)
   });
 }
 

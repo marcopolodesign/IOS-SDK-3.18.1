@@ -4,6 +4,21 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-05-10: Migrate background task from expo-background-fetch → expo-background-task
+
+Replaced the deprecated `expo-background-fetch` with `expo-background-task` (iOS `BGTaskScheduler` / `processing` mode). The `BACKGROUND_SLEEP_CHECK` task — which syncs sleep data from the ring, schedules the "Sleep Ready" notification, and runs a 2-hour full data sync — now registers via the modern API. No business logic changed.
+
+**Changes:**
+- `package.json`: removed `expo-background-fetch`, added `expo-background-task ~1.0.10`
+- `app.config.js`: swapped `UIBackgroundModes` from `fetch` → `processing`, added `BGTaskSchedulerPermittedIdentifiers: ['com.expo.modules.backgroundtask.processing']`, added `expo-background-task` plugin
+- `BackgroundSleepTask.ts`: import swap + enum swap (`BackgroundFetchResult.NewData/NoData/Failed` → `BackgroundTaskResult.Success/Failed`) + registration options (dropped `stopOnTerminate`/`startOnBoot`, corrected `minimumInterval` unit from seconds to minutes)
+
+**Requires native rebuild** — `Info.plist` `UIBackgroundModes` changed.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ### 2026-05-02: TrendsScreen — no-data banner
 
 Added `TrendsEmptyBanner` component inline in `TrendsScreen.tsx`. Renders at the top of the scroll list (before the trend covers) when `baselinesLoaded && baselines.daysLogged === 0` — i.e. the user has no baseline history yet. Matches the `LastRunContextCard` glassmorphic style: `BlurView` + 4 edge `LinearGradient` glows + white border + white glow shadow. Added `trends.no_data_title` / `trends.no_data_body` i18n keys in en/es. Banner disappears automatically once the user accumulates baseline data.
