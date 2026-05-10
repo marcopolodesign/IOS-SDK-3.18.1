@@ -530,8 +530,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           </TouchableOpacity>
         )}
 
-        {/* ── Debug: force-fire background task (dev builds only) ── */}
-        {__DEV__ && (
+        {/* ── Debug: force-fire background task ── */}
+        {(
           <TouchableOpacity
             style={[styles.signOutBtn, { borderColor: 'rgba(107,142,255,0.4)', marginTop: 8 }]}
             onPress={async () => {
