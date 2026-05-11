@@ -359,6 +359,27 @@
 | 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-09T23:07:51Z | Needs manual review — recurring BLE race (32 events); `rejectPendingDataRequest` in `JstyleBridge.m` already handles this correctly. |
 | 7457620318 | Error: Unknown St13runtime_error error. | warning | 2026-05-04T00:48:14Z | 2026-05-09T19:53:23Z | Needs manual review — no JS stack trace; `St13runtime_error` is a mangled C++ `std::runtime_error`. Thrown from native SDK layer. 3 events. |
 
+## 2026-05-11
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7431794312 | Error: NOT_CONNECTED: No device connected (JstyleService) | warning | 2026-04-22T00:59:35Z | 2026-05-11T03:08:26Z | Needs manual review — recurring (133 events, 2 users); `normalizeNativeError` in `JstyleService.ts:131` surfaces correctly; expected runtime condition when sync is attempted before ring reconnects. |
+| 7434391393 | Error: Connection dropped before pending data request completed | warning | 2026-04-22T17:57:54Z | 2026-05-11T00:07:57Z | Needs manual review — recurring BLE race; no in-app stack frames; `rejectPendingDataRequest` in `JstyleBridge.m` already handles this correctly. |
+| 7434372098 | Error: getStepGoal timed out after 5000ms | warning | 2026-04-22T17:51:23Z | 2026-05-11T00:07:52Z | Needs manual review — `withNativeTimeout` fires at `JstyleService.ts:69`; native SDK did not resolve within 5 s. Timeout mechanism is working as designed. |
+| 7434824620 | Error: NOT_CONNECTED: No device connected | warning | 2026-04-22T21:19:50Z | 2026-05-10T22:40:48Z | Needs manual review — recurring (minified stack); sync attempted while ring disconnected. Same class as 7431794312. |
+| 7431041612 | Error: getBatteryLevel timed out after 5000ms | warning | 2026-04-21T19:45:57Z | 2026-05-10T22:20:10Z | Needs manual review — recurring BLE timeout (minified stack); `withNativeTimeout` + `cancelPendingDataRequest` already in place. |
+| 7456161996 | Error: Unknown std::runtime_error error. | warning | 2026-05-02T21:41:43Z | 2026-05-10T21:56:28Z | Needs manual review — native C++ `std::runtime_error` from X3 BLE SDK; no JS stack frames. Same class as 7457620318 (reported 2026-05-10). |
+
+### 2026-05-11 Notes
+- 6 issues active within the last 24 hours (cutoff ≈ 2026-05-10T03:08Z). Project slug: `focus-app`.
+- **No auto-fixes applied today.** All 6 active issues are well-documented, recurring operational conditions — none meet the confidence threshold for an automated fix:
+  - **NOT_CONNECTED cluster (7431794312, 7434824620):** 133 + recurring events. `normalizeNativeError` at `JstyleService.ts:131` is working as designed. Root fix remains adding a pre-flight connectivity guard at call sites before issuing BLE data commands.
+  - **BLE timeouts (7434372098, 7431041612):** `withNativeTimeout` at `JstyleService.ts:69` fires correctly when native SDK does not respond within 5 s. `cancelPendingDataRequest` cleans up native state afterwards. Not a code bug.
+  - **Connection dropped (7434391393):** No in-app stack frames; `rejectPendingDataRequest` in `JstyleBridge.m` already handles the disconnect-during-request race correctly. Not auto-fixable without stack info.
+  - **std::runtime_error (7456161996):** Native C++ error from X3 SDK layer; no JS involvement. Same class as 7457620318 (documented 2026-05-10). Investigate at native SDK / firmware level.
+- `gh` CLI not available — PR creation skipped (no fixes to land anyway).
+- No new issue types vs. prior daily runs.
+
 ### 2026-05-10 Notes
 - 8 issues active within the last 24 hours. Project slug: `focus-app`.
 - **PR #9 already open (hooks fix — 7469146075):** Root cause confirmed — `activityPins = useMemo(...)` was declared after three early `return` statements inside `ContinuousHRLine` (`app/detail/heart-rate-detail.tsx`). When the ring reconnects with empty HR data (`filtered.length === 0`), the component exits early without calling the `useMemo`, causing React's "Rendered fewer hooks than expected" fatal crash. The fix (hoisting `useMemo` above all early returns) is already applied in branch `sentry/fix-7469146075` → PR #9. Merge PR #9 to resolve.
