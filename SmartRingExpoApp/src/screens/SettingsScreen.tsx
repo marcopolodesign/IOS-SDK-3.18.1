@@ -531,22 +531,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         )}
 
         {/* ── Debug: force-fire background task ── */}
-        {(
-          <TouchableOpacity
-            style={[styles.signOutBtn, { borderColor: 'rgba(107,142,255,0.4)', marginTop: 8 }]}
-            onPress={async () => {
-              try {
-                const BackgroundTask = await import('expo-background-task');
-                const fired = await BackgroundTask.triggerTaskWorkerForTestingAsync();
-                Alert.alert('BG Task', fired ? 'Task fired — check background_logs in Supabase' : 'Task did not fire (only works on physical device, debug build)');
-              } catch (e: any) {
-                Alert.alert('BG Task Error', e?.message);
-              }
-            }}
-          >
-            <Text style={[styles.signOutText, { color: 'rgba(107,142,255,0.9)' }]}>🐛 Fire BG Task (dev)</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[styles.signOutBtn, { borderColor: 'rgba(107,142,255,0.4)', marginTop: 8 }]}
+          onPress={async () => {
+            try {
+              const { runBackgroundSleepCheck } = await import('../services/BackgroundSleepTask');
+              const result = await runBackgroundSleepCheck();
+              Alert.alert('BG Task ran', result || 'Done — check background_logs in Supabase');
+            } catch (e: any) {
+              Alert.alert('BG Task Error', e?.message);
+            }
+          }}
+        >
+          <Text style={[styles.signOutText, { color: 'rgba(107,142,255,0.9)' }]}>🐛 Run BG Task now</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
