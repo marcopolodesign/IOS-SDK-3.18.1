@@ -221,6 +221,18 @@ export function getSleepStageColor(type: number): string {
 const MIN_NIGHT_DURATION_MS = 180 * 60 * 1000; // 3 hours
 const MIN_WAKE_HOUR = 7; // Don't treat wakes before 7 AM as a full night
 
+/** Parses X3 SDK local-time strings ("YYYY.MM.DD HH:mm:ss") to a ms timestamp. */
+function parseX3DateTimeStr(value?: string): number | undefined {
+  if (!value || typeof value !== 'string') return undefined;
+  const [datePart, timePart] = value.trim().split(/\s+/);
+  if (!datePart) return undefined;
+  const [y, m, d] = datePart.split('.').map(Number);
+  if ([y, m, d].some(n => Number.isNaN(n))) return undefined;
+  const [hh = 0, mm = 0, ss = 0] = (timePart || '00:00:00').split(':').map(Number);
+  const ts = new Date(y, m - 1, d, hh, mm, ss).getTime();
+  return Number.isFinite(ts) && ts > 0 ? ts : undefined;
+}
+
 /**
  * Extracts the latest wake time (end of night) from raw SDK sleep records.
  * Only considers blocks ≥180 min that ended at or after 7 AM today.
@@ -238,9 +250,9 @@ export function extractWakeTime(rawRecords: any[]): Date | null {
 
   for (const record of rawRecords) {
     const startMs = (() => {
-      const candidates = [record.startTimestamp, record.startTime]
-        .filter((v: any) => typeof v === 'number' && Number.isFinite(v) && v > 0);
-      return candidates.length ? candidates[0] : undefined;
+      const numeric = [record.startTimestamp, record.startTime]
+        .find((v: any) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+      return numeric ?? parseX3DateTimeStr(record.startTime_SleepData);
     })();
 
     if (typeof startMs !== 'number') continue;
