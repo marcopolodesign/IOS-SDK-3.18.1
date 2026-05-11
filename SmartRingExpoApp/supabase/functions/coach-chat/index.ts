@@ -35,6 +35,146 @@ function formatSplitPace(speedMs: number): string {
   return `${Math.floor(minsPerKm)}:${String(Math.round((minsPerKm % 1) * 60)).padStart(2, '0')}/km`;
 }
 
+const HEALTH_KNOWLEDGE_BASE = `
+## Health, Fitness & Sleep Science Reference
+
+### SLEEP SCIENCE
+Stages & architecture: A full sleep cycle (~90 min) cycles through N1 (light onset), N2 (core sleep, ~50% of night), N3 (deep/slow-wave, SWS), and REM. Deep sleep dominates the first half of the night; REM dominates the second half. Cutting sleep short disproportionately loses REM.
+
+Sleep need: Most adults need 7–9 hours (Walker, 2017; NIH). Chronic 6h/night produces cognitive deficits equivalent to 24h total deprivation within 10 days, but subjects don't feel impaired — they lose the ability to gauge their own deficit. Sleep debt is cumulative but not fully repayable: one recovery night helps acutely, but multi-night deficits require multiple nights to resolve.
+
+Sleep debt: Deficit = actual sleep − target sleep, accumulated nightly. Naps (20–90 min) partially offset debt without full sleep inertia. A 20-min nap improves alertness; 90-min nap includes a full cycle and meaningfully reduces SWS debt.
+
+Circadian rhythm: Controlled by the suprachiasmatic nucleus (SCN). Morning bright light (ideally sunlight, ≥1000 lux, within 30–60 min of waking) anchors cortisol peak and sets the melatonin onset timer ~14–16h later. Evening blue light delays melatonin secretion by up to 3h. Ideal sleep onset: 10–11 PM for most chronotypes.
+
+Temperature: Core body temperature must drop ~1°C to initiate sleep. Cool room (65–68°F / 18–20°C) accelerates this. A warm bath/shower 1–2h before bed paradoxically helps by causing rapid surface heat loss afterward.
+
+Caffeine: Half-life 5–7h (varies by CYP1A2 genetics). A 200mg coffee at 2 PM leaves ~100mg active at 9 PM — sufficient to reduce deep sleep by 20% even if sleep feels normal. Cutoff: 12–1 PM for most people. Adenosine (the sleep pressure molecule) builds during wakefulness; caffeine blocks its receptors but doesn't clear adenosine — it accumulates and rebounds on caffeine clearance ("caffeine crash").
+
+Alcohol: Sedative, not sleep-inducer. Suppresses REM in first half of night, fragments sleep in second half as it metabolizes. Even 1–2 drinks measurably reduces HRV and increases resting HR the following morning.
+
+### HRV & RECOVERY
+HRV (Heart Rate Variability): Variation in time between heartbeats (R-R intervals). Higher HRV = stronger parasympathetic (recovery) tone. Key metric: RMSSD (root mean square of successive differences) — most relevant for short-term autonomic state. SDNN reflects longer-term variability.
+
+Normal ranges: Highly individual — compare to personal baseline, not population norms. Typical RMSSD: 20–80ms for adults (declines with age). What matters is deviation from your own 7–14 day median. A drop of >15–20% below baseline signals physiological stress (training load, illness, alcohol, poor sleep, emotional stress).
+
+HRV & training: High HRV → parasympathetic dominance → good recovery, ready for hard training. Low HRV → sympathetic dominance → stress, under-recovery. Chronic low HRV with elevated resting HR = overtraining or illness signal. HRV improves with aerobic fitness (Zone 2 training especially).
+
+Resting HR: Lower resting HR generally indicates better cardiovascular fitness. Acute elevation (5+ bpm above baseline) suggests incomplete recovery, illness onset, or dehydration. Track morning resting HR alongside HRV for a cleaner recovery picture.
+
+### TRAINING & LOAD
+Training zones (HR-based, approximate):
+- Zone 1 (50–60% HRmax): very light, active recovery
+- Zone 2 (60–70%): aerobic base, fat oxidation, mitochondrial development — the foundation of endurance
+- Zone 3 (70–80%): tempo, moderate — the "junk miles" zone if overdone
+- Zone 4 (80–90%): lactate threshold, race pace
+- Zone 5 (90–100%): VO2max intervals, anaerobic
+
+80/20 rule (polarized training): Elite and recreational athletes both benefit from ~80% easy (Z1–Z2) and ~20% hard (Z4–Z5). Most amateur athletes do too much Z3 and not enough Z2 or Z5.
+
+Supercompensation: After a training stress, performance dips during recovery, then rises above baseline before returning to normal. Timing: strength ~48–72h, endurance ~24–48h. Training again during the dip (insufficient recovery) leads to overtraining; training at the peak produces adaptation.
+
+Deload: Every 3–4 weeks of progressive overload, a deload week (50–60% volume, maintained intensity) allows structural adaptation and prevents cumulative fatigue. Signs you need a deload: persistent HRV suppression, elevated resting HR, motivation loss, stalled performance.
+
+RPE (Rate of Perceived Exertion): Borg scale 6–20 or simplified 1–10. RPE 7–8/10 = threshold (sustainable for 20–40 min). RPE 9–10 = maximal. Useful when HR data is unavailable or unreliable (heat, caffeine, stress inflate HR).
+
+### RECOVERY PROTOCOLS
+Sleep: The single most powerful recovery tool. Prioritize 7–9h before any other intervention.
+
+Cold exposure: Ice bath or cold shower (10–15°C, 5–15 min) immediately post-training acutely reduces inflammation and muscle soreness but may blunt hypertrophy adaptations if done within 4h of strength training. Better for endurance athletes or general recovery days.
+
+Active recovery: Light Z1 movement (walk, easy bike, swim) on rest days increases blood flow without adding stress. More effective than complete rest for soreness and next-day readiness.
+
+Nutrition timing: Protein within 2h post-training (0.3–0.4g/kg) maximizes MPS (muscle protein synthesis). Pre-sleep casein protein (40g) extends overnight MPS. Carb replenishment within 30–45 min post-endurance training accelerates glycogen resynthesis.
+
+Hydration: Even 2% dehydration measurably impairs cognitive and physical performance. Morning urine color is a reliable proxy: pale yellow = hydrated, dark = dehydrated. Electrolytes (sodium especially) matter more than water volume for endurance >90 min.
+
+Magnesium: Deficiency is common and impairs sleep quality, muscle function, and HRV. Magnesium glycinate (300–400mg before bed) improves sleep onset and continuity without morning grogginess. Magnesium oxide is poorly absorbed.
+
+### BODY TEMPERATURE & ILLNESS
+Normal resting temp: 36.1–37.2°C (97–99°F). Morning temp is typically lowest. Wearable ring temps reflect skin temperature, which tracks core temperature with some lag and individual offset.
+
+Illness signal: A sustained rise of >0.5°C above personal baseline alongside elevated resting HR and suppressed HRV is a reliable early illness indicator — often appears 12–24h before subjective symptoms. HRV drops before you "feel" sick.
+
+Training with illness: Above-the-neck symptoms (runny nose, sore throat without fever) → light Z1 exercise is generally safe. Below-the-neck symptoms (chest, GI, fever, fatigue) → complete rest. Training through fever or systemic illness significantly increases recovery time and cardiac risk.
+
+### KEY PRINCIPLES TO ALWAYS APPLY
+1. Sleep is the highest-leverage intervention for performance, recovery, and health — more than any supplement or training hack.
+2. Consistency beats optimization — a regular sleep schedule is more valuable than perfect sleep hygiene occasionally.
+3. HRV and resting HR together tell a more complete story than either alone.
+4. Most people under-recover and over-train in Zone 3 — more Zone 2 and more sleep fix most amateur performance plateaus.
+5. Stress (work, emotional, social) impairs recovery as much as physical training load — total allostatic load is what HRV measures.
+`;
+
+const WRITE_TOOLS = [
+  {
+    name: 'update_sleep_session',
+    description: 'Fix or correct a sleep session — wrong timestamps, impossible duration, incorrect stage breakdown. Use the session_id from the sleep history list. Only call when the user explicitly asks to fix their data.',
+    input_schema: {
+      type: 'object',
+      required: ['session_id'],
+      properties: {
+        session_id: { type: 'string', description: 'UUID from the [session_id: ...] tag in sleep history' },
+        start_time: { type: 'string', description: 'Corrected bedtime in ISO 8601 (e.g. 2026-05-10T23:00:00+00:00)' },
+        end_time: { type: 'string', description: 'Corrected wake time in ISO 8601' },
+        deep_min: { type: 'number' },
+        light_min: { type: 'number' },
+        rem_min: { type: 'number' },
+        awake_min: { type: 'number' },
+        sleep_score: { type: 'number', description: 'Score 0-100' },
+      },
+    },
+  },
+  {
+    name: 'delete_sleep_session',
+    description: 'Delete an entirely invalid sleep session (e.g. impossible 30-hour duration, phantom recording). Use only when the session cannot be corrected.',
+    input_schema: {
+      type: 'object',
+      required: ['session_id', 'reason'],
+      properties: {
+        session_id: { type: 'string' },
+        reason: { type: 'string', description: 'Brief explanation of why this session is invalid' },
+      },
+    },
+  },
+];
+
+async function executeTool(
+  name: string,
+  input: Record<string, unknown>,
+  userId: string,
+  supabase: ReturnType<typeof createClient>,
+): Promise<Record<string, unknown>> {
+  if (name === 'update_sleep_session') {
+    const { session_id, ...rest } = input;
+    const allowed = ['start_time', 'end_time', 'deep_min', 'light_min', 'rem_min', 'awake_min', 'sleep_score'];
+    const updates: Record<string, unknown> = {};
+    for (const key of allowed) {
+      if (rest[key] !== undefined) updates[key] = rest[key];
+    }
+    const { error } = await supabase
+      .from('sleep_sessions')
+      .update(updates)
+      .eq('id', session_id)
+      .eq('user_id', userId);
+    if (error) return { success: false, error: error.message };
+    return { success: true, session_id, updated_fields: updates };
+  }
+
+  if (name === 'delete_sleep_session') {
+    const { session_id, reason } = input;
+    const { error } = await supabase
+      .from('sleep_sessions')
+      .delete()
+      .eq('id', session_id)
+      .eq('user_id', userId);
+    if (error) return { success: false, error: error.message };
+    return { success: true, deleted_session_id: session_id, reason };
+  }
+
+  return { error: 'Unknown tool' };
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -109,7 +249,7 @@ serve(async (req: Request) => {
       // Last 7 sleep sessions (full nightly breakdown)
       supabase
         .from('sleep_sessions')
-        .select('start_time, end_time, deep_min, light_min, rem_min, awake_min, sleep_score')
+        .select('id, start_time, end_time, deep_min, light_min, rem_min, awake_min, sleep_score')
         .eq('user_id', user.id)
         .order('start_time', { ascending: false })
         .limit(7),
@@ -325,9 +465,11 @@ serve(async (req: Request) => {
           ? `deep: ${s.deep_min ?? 0}m, light: ${s.light_min ?? 0}m, REM: ${s.rem_min ?? 0}m, awake: ${awake}m`
           : null;
         const score = s.sleep_score ? `, score: ${s.sleep_score}/100` : '';
+        const bedtime = s.start_time ? `, bed: ${new Date(s.start_time).toISOString()}` : '';
+        const waketime = s.end_time ? `, wake: ${new Date(s.end_time).toISOString()}` : '';
         return duration
-          ? `  • ${date}: ${duration}${score} (${stages})`
-          : `  • ${date}: no data`;
+          ? `  • ${date}: ${duration}${score} (${stages}${bedtime}${waketime}) [session_id: ${s.id}]`
+          : `  • ${date}: no data [session_id: ${s.id}]`;
       });
       sections.push(`Sleep history (last ${sleepSessions.length} nights):\n${nightLines.join('\n')}`);
 
@@ -556,18 +698,26 @@ serve(async (req: Request) => {
 - Cite percentages, deltas, and trends where available
 - Longer detailed answers are appropriate here (5-12 sentences or equivalent bullets)
 - Speak in second person ("Your HRV is...", "You slept...")
-- If asked about data not in the snapshot, say so honestly
-- Never invent values not listed above
+- For personal metrics: only cite values that appear in the data snapshot — never invent numbers
+- For general health/fitness/sleep science questions: draw freely on your knowledge and the reference section above — explain mechanisms, cite research principles, give actionable guidance
 - Tone: precise, science-informed, analytical`
       : `Guidelines:
-- Answer questions using the specific data above — always cite actual numbers
+- For personal metrics: always cite the actual numbers from the data snapshot — never invent values
+- For general health/fitness/sleep science: draw freely on your knowledge and the reference section above — you are an expert coach, not just a data reader
 - Speak in second person ("You slept...", "Your HRV is...")
 - Keep answers concise (2-5 sentences) and actionable
-- If asked about data not in the snapshot, say so honestly
-- Never invent values not listed above
-- Tone: warm, direct, science-informed`;
+- Tone: warm, direct, science-informed
 
-    const systemPrompt = `You are a personal health coach for a smart ring app called Focus. You have access to the user's full biometric data from their smart ring and Strava.
+DATA CORRECTION (use write tools when user asks to fix their data):
+- You can fix sleep sessions using the update_sleep_session or delete_sleep_session tools
+- Each session in the sleep history above includes a [session_id: ...] tag — use that UUID
+- For clearly impossible data (e.g. a 30-hour sleep session), delete it; for fixable data (wrong times), update it
+- After making a change, tell the user exactly what you did and ask them to pull-to-refresh the app
+- Always confirm what you changed in your final message`;
+
+    const systemPrompt = `You are a personal health coach for a smart ring app called Focus. You have access to the user's full biometric data from their smart ring and Strava. You are also a knowledgeable health, fitness, and sleep science expert — answer general questions from your expertise, and personal-data questions from the snapshot below.
+
+${HEALTH_KNOWLEDGE_BASE}
 
 ${healthContext}${memoriesSection}
 
@@ -585,7 +735,7 @@ Rules for follow_ups:
 - Each question must be under 8 words
 - Derive them from what you discussed in your response
 - Never repeat the user's current question
-- CRITICAL: Only suggest questions you can actually answer from the data snapshot above (HRV, sleep stages/score/debt, resting HR, SpO2, body temperature, stress, steps, Strava activities, readiness score/components, illness signals, naps, training load). Never suggest questions about data you don't have — no pain, aches, mood, nutrition, hydration, weight, or anything not in the snapshot.
+- Suggest questions you can answer — either from the personal data snapshot (HRV, sleep, steps, HR, Strava, readiness, illness) OR from general health/fitness/sleep science knowledge. Avoid suggesting questions about data you genuinely don't have (e.g. specific foods eaten, exact weight).
 
 Rules for artifact (OPTIONAL — omit the field entirely for short factual answers):
 Only include "artifact" when a visual genuinely adds information the text cannot convey.
@@ -631,44 +781,61 @@ Run analysis artifacts (use when activityId was provided and splits/zones data i
       content: m.content,
     }));
 
-    const anthropicHeaders: Record<string, string> = {
-      'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
+    const callAnthropic = async (messages: unknown[], extraHeaders: Record<string, string> = {}, body: Record<string, unknown> = {}) => {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          ...extraHeaders,
+        },
+        body: JSON.stringify({ system: systemPrompt, messages, ...body }),
+      });
+      if (!res.ok) throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`);
+      return res.json() as Promise<{ stop_reason: string; content: { type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }[] }>;
     };
+
+    let rawText = '';
+
     if (isAnalyst) {
-      anthropicHeaders['anthropic-beta'] = 'interleaved-thinking-2025-05-14';
+      // Analyst mode: extended thinking, no tool use
+      const data = await callAnthropic(
+        [...chatHistory, { role: 'user', content: message }],
+        { 'anthropic-beta': 'interleaved-thinking-2025-05-14' },
+        { model: 'claude-sonnet-4-6', max_tokens: 5000, thinking: { type: 'enabled', budget_tokens: 3000 } },
+      );
+      rawText = data.content.find(b => b.type === 'text')?.text ?? '';
+    } else {
+      // Coach mode: haiku with tool-use loop for data corrections
+      const messages: unknown[] = [...chatHistory, { role: 'user', content: message }];
+      let data = await callAnthropic(messages, {}, {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        tools: WRITE_TOOLS,
+      });
+
+      // Tool-use loop — at most 3 rounds to avoid runaway loops
+      for (let round = 0; round < 3 && data.stop_reason === 'tool_use'; round++) {
+        const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
+        messages.push({ role: 'assistant', content: data.content });
+        const toolResults = await Promise.all(
+          toolUseBlocks.map(async b => ({
+            type: 'tool_result',
+            tool_use_id: b.id,
+            content: JSON.stringify(await executeTool(b.name!, b.input ?? {}, user.id, supabase)),
+          }))
+        );
+        messages.push({ role: 'user', content: toolResults });
+        data = await callAnthropic(messages, {}, {
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1500,
+          tools: WRITE_TOOLS,
+        });
+      }
+
+      rawText = data.content.find(b => b.type === 'text')?.text ?? '';
     }
-
-    const anthropicBody = isAnalyst ? {
-      model: 'claude-sonnet-4-6',
-      max_tokens: 5000,
-      thinking: { type: 'enabled', budget_tokens: 3000 },
-      system: systemPrompt,
-      messages: [...chatHistory, { role: 'user', content: message }],
-    } : {
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [...chatHistory, { role: 'user', content: message }],
-    };
-
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: anthropicHeaders,
-      body: JSON.stringify(anthropicBody),
-    });
-
-    if (!anthropicRes.ok) {
-      const errText = await anthropicRes.text();
-      throw new Error(`Anthropic API error ${anthropicRes.status}: ${errText}`);
-    }
-
-    const anthropicData = await anthropicRes.json();
-    // For analyst mode, extended thinking returns interleaved thinking+text blocks — find the text block
-    const rawText: string = isAnalyst
-      ? (anthropicData.content ?? []).find((b: { type: string }) => b.type === 'text')?.text ?? ''
-      : anthropicData.content?.[0]?.text ?? '';
 
     let reply: string = rawText;
     let followUps: string[] = [];

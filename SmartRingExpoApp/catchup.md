@@ -4,6 +4,24 @@ Reverse-chronological record of completed implementations. Updated after every s
 
 ---
 
+### 2026-05-11: Coach can now fix user data (write tools in coach-chat)
+
+Added Claude tool-use loop to `coach-chat` edge function. The coach can now correct or delete the authenticated user's sleep sessions directly from the chat. Only the requesting user's data can be touched (all writes filter by `user_id`).
+
+**Tools added:**
+- `update_sleep_session` — fix start/end times, stage breakdowns, sleep score for a specific session
+- `delete_sleep_session` — remove an entirely invalid session (e.g. a 30-hour phantom recording)
+
+**How it works:** Sleep history in the system prompt now includes `[session_id: UUID]` tags. When the user says "fix my sleep last night" or "delete that 30-hour session", Claude identifies the session, calls the appropriate tool, and confirms what changed. The user then pulls to refresh the app.
+
+**Security:** writes are guarded by `user_id = user.id` (verified via JWT). Analyst mode (Sonnet + thinking) stays read-only. Coach mode (Haiku) gets the write tools with a 3-round tool-use loop cap.
+
+**Also fixed in this session:** `extractWakeTime` bug — raw X3 SDK sleep records use `startTime_SleepData` string format (`"YYYY.MM.DD HH:mm:ss"`), not a pre-computed numeric `startTimestamp`. Added `parseX3DateTimeStr` fallback so background task correctly detects wake time from 68 ring records.
+
+**Source:** Claude Code — Macbook Pro
+
+---
+
 ### 2026-05-10: Migrate background task from expo-background-fetch → expo-background-task
 
 Replaced the deprecated `expo-background-fetch` with `expo-background-task` (iOS `BGTaskScheduler` / `processing` mode). The `BACKGROUND_SLEEP_CHECK` task — which syncs sleep data from the ring, schedules the "Sleep Ready" notification, and runs a 2-hour full data sync — now registers via the modern API. No business logic changed.
