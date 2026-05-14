@@ -387,3 +387,17 @@
 - **7457620318 — Unknown St13runtime_error:** C++ `std::runtime_error` surfaced from the X3 BLE SDK native layer. No JS stack. 3 events across 1 user. Likely a firmware-level data parsing error. Investigate if correlated with a specific ring firmware version or BLE data-type sequence.
 - **Recurring BLE conditions (7431041612, 7434824620, 7434391393, 7450693721, 7452006057):** All are known, handled, warning-level runtime conditions documented in prior reports. No new code changes warranted today.
 - PR #9 created via GitHub MCP; local fix branch (`sentry/fix-7469146075`) abandoned in favour of existing remote fix — identical change already committed by prior session.
+
+## 2026-05-14
+
+| Issue ID | Title | Severity | First Seen | Last Seen | Action Taken |
+|---|---|---|---|---|---|
+| 7456161996 | Error: Unknown std::runtime_error error. | warning | 2026-05-02T21:41:43Z | 2026-05-14T00:35:59Z | Needs manual review — native C++ `std::runtime_error` from X3 BLE SDK; no JS stack frames. Tag `op: healthKit.fetchStepsData`. Recurring (23 events); investigate at native SDK / firmware level. |
+| 7444201961 | Error: Query timeout after 10s (StravaService) | error | 2026-04-27T09:51:33Z | 2026-05-13T23:33:33Z | Needs manual review — `StravaService.loadTokensFromDatabase` 10 s `Promise.race` guard fires at `StravaService.ts:233` when Supabase `strava_tokens` query exceeds 10 s. Error is caught and handled (`_isConnected = false`); Sentry noise only. Consider changing `reportError` severity to `warning`. |
+
+### 2026-05-14 Notes
+- 2 issues active within the last 24 hours. Project slug: `focus-app`.
+- **No auto-fixes applied today.** Both active issues are either native-layer or intentional timeout logic:
+  - **7456161996** (std::runtime_error): Native C++ exception from the X3 BLE SDK; occurs during `healthKit.fetchStepsData` Sentry span. No JS stack trace makes a JS-level fix impossible. Escalate to native SDK / firmware investigation.
+  - **7444201961** (StravaService query timeout): The `setTimeout → reject` at `StravaService.ts:233` is intentional safeguard code working correctly. Root cause is Supabase network latency exceeding 10 s. The error is caught at line 259 and `_isConnected` is set to `false`. Repeated Sentry reporting is the only actionable item — recommend changing `reportError(e, { op: 'strava.loadTokens' })` to pass `'warning'` severity (or use `Sentry.addBreadcrumb` instead) to reduce noise without losing observability.
+- `gh` CLI not available — PR creation skipped (no fixes to land anyway).
