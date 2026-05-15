@@ -401,3 +401,5 @@
   - **7456161996** (std::runtime_error): Native C++ exception from the X3 BLE SDK; occurs during `healthKit.fetchStepsData` Sentry span. No JS stack trace makes a JS-level fix impossible. Escalate to native SDK / firmware investigation.
   - **7444201961** (StravaService query timeout): The `setTimeout → reject` at `StravaService.ts:233` is intentional safeguard code working correctly. Root cause is Supabase network latency exceeding 10 s. The error is caught at line 259 and `_isConnected` is set to `false`. Repeated Sentry reporting is the only actionable item — recommend changing `reportError(e, { op: 'strava.loadTokens' })` to pass `'warning'` severity (or use `Sentry.addBreadcrumb` instead) to reduce noise without losing observability.
 - `gh` CLI not available — PR creation skipped (no fixes to land anyway).
+
+## 2026-05-15 — No new issues
